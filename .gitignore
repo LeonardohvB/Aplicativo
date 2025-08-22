@@ -93,3 +93,4 @@ temp/
 .branches
 .temp
 supabase/.temp
+.vercel
