@@ -1,6 +1,6 @@
-import React from 'react';
-import { Edit2, Trash2, Camera } from 'lucide-react';
-import { Professional } from '../../types';
+import React from "react";
+import { Edit2, Trash2, Camera } from "lucide-react";
+import { Professional } from "../../types";
 
 interface ProfessionalCardProps {
   professional: Professional;
@@ -19,15 +19,22 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 }) => {
   const inputId = `avatar-file-${professional.id}`;
 
-  const placeholder = 'https://placehold.co/96x96?text=Foto';
-  const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
+  // placeholder padrão quando não há avatar real
+  const placeholder = "https://placehold.co/96x96?text=Foto";
+  const hasAvatar =
+    !!professional.avatar && professional.avatar !== placeholder;
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative inline-block group">
-            <label htmlFor={inputId} className="cursor-pointer block relative" title="Alterar foto">
+            {/* Label cobre a imagem (permite toque no mobile) */}
+            <label
+              htmlFor={inputId}
+              className="cursor-pointer block relative"
+              title="Alterar foto"
+            >
               <img
                 src={professional.avatar || placeholder}
                 alt={professional.name}
@@ -35,8 +42,10 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 loading="lazy"
               />
 
+              {/* Indicação só quando AINDA não há avatar */}
               {!hasAvatar && (
                 <>
+                  {/* Desktop: overlay aparece no hover */}
                   <span
                     className="
                       hidden md:flex
@@ -49,6 +58,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                     <Camera className="w-4 h-4" />
                   </span>
 
+                  {/* Mobile: badge discreto (somem quando houver foto) */}
                   <span
                     className="
                       md:hidden
@@ -63,6 +73,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </label>
 
+            {/* Input real – sem 'capture' (permite Câmera ou Galeria) */}
             <input
               id={inputId}
               type="file"
@@ -71,7 +82,8 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0];
                 if (file) onPhotoChange(professional.id, file);
-                e.currentTarget.value = '';
+                // permite reescolher o mesmo arquivo depois
+                e.currentTarget.value = "";
               }}
             />
           </div>
@@ -82,7 +94,9 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             <div className="flex items-center space-x-4 mt-2">
               <div>
                 <span className="text-blue-600 font-medium text-sm">Valor</span>
-                <p className="text-blue-600 font-semibold">R$ {professional.value}</p>
+                <p className="text-blue-600 font-semibold">
+                  R$ {professional.value}
+                </p>
               </div>
             </div>
           </div>
@@ -96,7 +110,12 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               onChange={() => onToggle(professional.id)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-gray-200 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 peer-checked:bg-red-500 relative">
+            <div
+              className="
+                w-11 h-6 bg-gray-200 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400
+                peer-checked:bg-red-500 relative
+              "
+            >
               <span className="absolute top-[2px] left-[2px] h-5 w-5 bg-white rounded-full transition-all peer-checked:translate-x-5" />
             </div>
           </label>
