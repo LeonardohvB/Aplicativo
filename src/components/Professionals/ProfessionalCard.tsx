@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, Camera } from 'lucide-react';
 import { Professional } from '../../types';
 
 interface ProfessionalCardProps {
@@ -7,6 +7,7 @@ interface ProfessionalCardProps {
   onToggle: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onPhotoChange: (id: string, photoFile: File) => void;
 }
 
 const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
@@ -14,16 +15,39 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   onToggle,
   onEdit,
   onDelete,
+  onPhotoChange,
 }) => {
+  const handlePhotoClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        onPhotoChange(professional.id, file);
+      }
+    };
+    input.click();
+  };
+
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-4">
-          <img
-            src={professional.avatar}
-            alt={professional.name}
-            className="w-12 h-12 rounded-full object-cover"
-          />
+          <div className="relative group">
+            <img
+              src={professional.avatar}
+              alt={professional.name}
+              className="w-12 h-12 rounded-full object-cover"
+            />
+            <button
+              onClick={handlePhotoClick}
+              className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Alterar foto"
+            >
+              <Camera className="w-5 h-5 text-white" />
+            </button>
+          </div>
           <div>
             <h3 className="font-semibold text-gray-900">{professional.name}</h3>
             <p className="text-gray-600 text-sm">{professional.specialty}</p>

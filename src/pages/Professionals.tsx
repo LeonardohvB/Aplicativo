@@ -10,6 +10,7 @@ const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
   const { professionals, loading, addProfessional, updateProfessional, toggleProfessional, deleteProfessional } = useProfessionals();
 
   const handleEdit = (id: string) => {
@@ -38,6 +39,43 @@ const Professionals: React.FC = () => {
     setIsEditModalOpen(false);
     setEditingProfessional(null);
   };
+
+  const handlePhotoChange = async (id: string, photoFile: File) => {
+    try {
+      setUploadingPhoto(id);
+      
+      // Criar URL temporária para preview imediato
+      const tempUrl = URL.createObjectURL(photoFile);
+      
+      // Simular upload (em produção, você faria upload para Supabase Storage)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Em produção, você substituiria por:
+      // const { data, error } = await supabase.storage
+      //   .from('avatars')
+      //   .upload(`${id}/${Date.now()}.jpg`, photoFile);
+      
+      const currentProfessional = professionals.find(p => p.id === id);
+      if (!currentProfessional) {
+        throw new Error('Profissional não encontrado');
+      }
+      
+      // Por enquanto, mantemos a URL temporária
+      await updateProfessional(id, {
+        name: currentProfessional.name,
+        specialty: currentProfessional.specialty,
+        value: currentProfessional.value,
+        avatar: tempUrl,
+      });
+      
+    } catch (error) {
+      console.error('Erro ao fazer upload da foto:', error);
+      alert('Erro ao alterar foto. Tente novamente.');
+    } finally {
+      setUploadingPhoto(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
@@ -66,8 +104,18 @@ const Professionals: React.FC = () => {
             onToggle={toggleProfessional}
             onEdit={handleEdit}
             onDelete={deleteProfessional}
+            onPhotoChange={handlePhotoChange}
           />
         ))}
+        
+        {uploadingPhoto && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-700">Alterando foto...</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <AddProfessionalModal
