@@ -8,7 +8,7 @@ interface AddProfessionalModalProps {
     name: string;
     specialty: string;
     value: number;
-    commission: number;
+    commissionRate?: number; // ← opcional (ou remova a linha)
   }) => void;
 }
 
@@ -25,7 +25,7 @@ const AddProfessionalModal: React.FC<AddProfessionalModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.specialty || !formData.value) {
       alert('Por favor, preencha todos os campos');
       return;
@@ -35,6 +35,7 @@ const AddProfessionalModal: React.FC<AddProfessionalModalProps> = ({
       name: formData.name,
       specialty: formData.specialty,
       value: parseFloat(formData.value),
+      // commissionRate: 20, // (opcional) se quiser definir aqui
     });
 
     setFormData({ name: '', specialty: '', value: '' });
@@ -51,7 +52,7 @@ const AddProfessionalModal: React.FC<AddProfessionalModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">Adicionar Profissional</h2>

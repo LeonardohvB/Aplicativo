@@ -9,7 +9,7 @@ interface EditProfessionalModalProps {
     name: string;
     specialty: string;
     value: number;
-    commissionRate: number;
+    commissionRate?: number; // agora é opcional
   }) => void;
   professional: Professional | null;
 }
@@ -38,7 +38,7 @@ const EditProfessionalModal: React.FC<EditProfessionalModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.specialty || !formData.value) {
       alert('Por favor, preencha todos os campos');
       return;
@@ -50,6 +50,7 @@ const EditProfessionalModal: React.FC<EditProfessionalModalProps> = ({
       name: formData.name,
       specialty: formData.specialty,
       value: parseFloat(formData.value),
+      // commissionRate fica opcional
     });
 
     onClose();
