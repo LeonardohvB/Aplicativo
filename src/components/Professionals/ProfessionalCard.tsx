@@ -19,7 +19,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 }) => {
   const inputId = `avatar-file-${professional.id}`;
 
-  // se tem avatar "de verdade", não mostramos nenhum overlay/badge
   const placeholder = 'https://placehold.co/96x96?text=Foto';
   const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
 
@@ -28,7 +27,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative inline-block group">
-            {/* label cobre a imagem (continua clicável/tocável), mas sem overlay quando já existe avatar */}
             <label htmlFor={inputId} className="cursor-pointer block relative" title="Alterar foto">
               <img
                 src={professional.avatar || placeholder}
@@ -37,10 +35,8 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 loading="lazy"
               />
 
-              {/* Só mostramos indicação quando AINDA NÃO há avatar (placeholder) */}
               {!hasAvatar && (
                 <>
-                  {/* Desktop: overlay apenas no hover */}
                   <span
                     className="
                       hidden md:flex
@@ -53,7 +49,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                     <Camera className="w-4 h-4" />
                   </span>
 
-                  {/* Mobile: badge discreto (some quando avatar existir) */}
                   <span
                     className="
                       md:hidden
@@ -68,7 +63,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </label>
 
-            {/* input real — sem capture p/ oferecer galeria OU câmera */}
             <input
               id={inputId}
               type="file"
@@ -77,7 +71,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0];
                 if (file) onPhotoChange(professional.id, file);
-                // permite selecionar o mesmo arquivo novamente
                 e.currentTarget.value = '';
               }}
             />
