@@ -19,6 +19,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 }) => {
   const inputId = `avatar-file-${professional.id}`;
 
+  // placeholder e detecção de “já tem foto”
   const placeholder = 'https://placehold.co/96x96?text=Foto';
   const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
 
@@ -27,6 +28,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-4">
           <div className="relative inline-block group">
+            {/* A label cobre a imagem → garante gesto direto do usuário no mobile */}
             <label htmlFor={inputId} className="cursor-pointer block relative" title="Alterar foto">
               <img
                 src={professional.avatar || placeholder}
@@ -35,8 +37,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 loading="lazy"
               />
 
+              {/* Só mostra indicação quando AINDA NÃO há avatar (placeholder). 
+                  Assim, depois de salvar a foto, a imagem fica “limpa”. */}
               {!hasAvatar && (
                 <>
+                  {/* Desktop: overlay só no hover */}
                   <span
                     className="
                       hidden md:flex
@@ -49,6 +54,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                     <Camera className="w-4 h-4" />
                   </span>
 
+                  {/* Mobile: badge discreto (só aparece enquanto é placeholder) */}
                   <span
                     className="
                       md:hidden
@@ -63,6 +69,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </label>
 
+            {/* Input real — sem `capture`, para abrir galeria OU câmera conforme o sistema */}
             <input
               id={inputId}
               type="file"
@@ -71,6 +78,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               onChange={(e) => {
                 const file = e.currentTarget.files?.[0];
                 if (file) onPhotoChange(professional.id, file);
+                // permite selecionar o mesmo arquivo novamente
                 e.currentTarget.value = '';
               }}
             />
@@ -101,7 +109,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             </div>
           </label>
 
-          <div className="flex space-x-2">
+        <div className="flex space-x-2">
             <button
               onClick={() => onEdit(professional.id)}
               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
