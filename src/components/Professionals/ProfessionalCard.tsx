@@ -17,37 +17,65 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   onDelete,
   onPhotoChange,
 }) => {
-  const handlePhotoClick = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        onPhotoChange(professional.id, file);
-      }
-    };
-    input.click();
-  };
+  const inputId = `avatar-file-${professional.id}`;
+
+  const placeholder = 'https://placehold.co/96x96?text=Foto';
+  const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-4">
-          <div className="relative group">
-            <img
-              src={professional.avatar}
-              alt={professional.name}
-              className="w-12 h-12 rounded-full object-cover"
+          <div className="relative inline-block group">
+            <label htmlFor={inputId} className="cursor-pointer block relative" title="Alterar foto">
+              <img
+                src={professional.avatar || placeholder}
+                alt={professional.name}
+                className="w-12 h-12 rounded-full object-cover"
+                loading="lazy"
+              />
+
+              {!hasAvatar && (
+                <>
+                  <span
+                    className="
+                      hidden md:flex
+                      absolute inset-0 items-center justify-center rounded-full
+                      bg-black/45 text-white opacity-0 group-hover:opacity-100
+                      transition-opacity
+                    "
+                    aria-hidden="true"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </span>
+
+                  <span
+                    className="
+                      md:hidden
+                      absolute -bottom-1 -right-1 inline-flex items-center justify-center
+                      h-6 w-6 rounded-full bg-black/70 text-white
+                    "
+                    aria-hidden="true"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </span>
+                </>
+              )}
+            </label>
+
+            <input
+              id={inputId}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) onPhotoChange(professional.id, file);
+                e.currentTarget.value = '';
+              }}
             />
-            <button
-              onClick={handlePhotoClick}
-              className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Alterar foto"
-            >
-              <Camera className="w-5 h-5 text-white" />
-            </button>
           </div>
+
           <div>
             <h3 className="font-semibold text-gray-900">{professional.name}</h3>
             <p className="text-gray-600 text-sm">{professional.specialty}</p>
@@ -59,6 +87,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             </div>
           </div>
         </div>
+
         <div className="flex flex-col items-end space-y-3">
           <label className="relative inline-flex items-center cursor-pointer">
             <input
@@ -67,18 +96,23 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               onChange={() => onToggle(professional.id)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+            <div className="w-11 h-6 bg-gray-200 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 peer-checked:bg-red-500 relative">
+              <span className="absolute top-[2px] left-[2px] h-5 w-5 bg-white rounded-full transition-all peer-checked:translate-x-5" />
+            </div>
           </label>
+
           <div className="flex space-x-2">
             <button
               onClick={() => onEdit(professional.id)}
               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              aria-label="Editar profissional"
             >
               <Edit2 className="w-4 h-4" />
             </button>
             <button
               onClick={() => onDelete(professional.id)}
               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              aria-label="Excluir profissional"
             >
               <Trash2 className="w-4 h-4" />
             </button>
