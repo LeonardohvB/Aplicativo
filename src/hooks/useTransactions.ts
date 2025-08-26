@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Transaction } from '../types';
 import { transactions as mockTransactions } from '../data/mockData';
 
@@ -124,15 +124,43 @@ export const useTransactions = () => {
     }
   };
 
-  useEffect(() => {
-    fetchTransactions();
-  }, []);
 
-  return {
+        const editTransaction = async (id: string, updates: {
+          type?: 'income' | 'expense';
+          description?: string;
+          amount?: number;
+          category?: string;
+          date?: string;
+        }) => {
+          try {
+            setError(null);
+            // optimistic update
+            setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+            // try Supabase update if configured
+            try {
+              const { isSupabaseConfigured, supabase } = await import('../lib/supabase');
+              if ((isSupabaseConfigured as unknown as boolean)) {
+                // @ts-ignore dynamic import typing
+                await supabase.from('transactions').update(updates).eq('id', id);
+              }
+            } catch (_) {
+              // ignore if not configured
+            }
+          } catch (e: any) {
+            setError(e?.message ?? 'Erro ao editar transação');
+          }
+        };
+
+useEffect(() => {
+  fetchTransactions();
+}, []);
+
+return {
     transactions,
     loading,
     error,
     addTransaction,
     deleteTransaction,
+    editTransaction,
   };
 };
