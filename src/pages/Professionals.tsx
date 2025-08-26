@@ -5,6 +5,7 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
+import { supabase } from '../lib/supabase'; 
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,40 +42,51 @@ const Professionals: React.FC = () => {
   };
 
   const handlePhotoChange = async (id: string, photoFile: File) => {
-    try {
-      setUploadingPhoto(id);
-      
-      // Criar URL temporária para preview imediato
-      const tempUrl = URL.createObjectURL(photoFile);
-      
-      // Simular upload (em produção, você faria upload para Supabase Storage)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Em produção, você substituiria por:
-      // const { data, error } = await supabase.storage
-      //   .from('avatars')
-      //   .upload(`${id}/${Date.now()}.jpg`, photoFile);
-      
-      const currentProfessional = professionals.find(p => p.id === id);
-      if (!currentProfessional) {
-        throw new Error('Profissional não encontrado');
-      }
-      
-      // Por enquanto, mantemos a URL temporária
-      await updateProfessional(id, {
-        name: currentProfessional.name,
-        specialty: currentProfessional.specialty,
-        value: currentProfessional.value,
-        avatar: tempUrl,
+  try {
+    setUploadingPhoto(id);
+
+    // caminho único por profissional
+    const ext = photoFile.name.split('.').pop() || 'jpg';
+    const path = `professionals/${id}/${Date.now()}.${ext}`;
+
+    // upload no bucket "avatars" (usa upsert para substituir se já existir)
+    const { error: upErr } = await supabase
+      .storage
+      .from('avatars')
+      .upload(path, photoFile, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: photoFile.type || 'image/jpeg',
       });
-      
-    } catch (error) {
-      console.error('Erro ao fazer upload da foto:', error);
-      alert('Erro ao alterar foto. Tente novamente.');
-    } finally {
-      setUploadingPhoto(null);
-    }
-  };
+
+    if (upErr) throw upErr;
+
+    // URL pública (para bucket público)
+    const { data: pub } = supabase
+      .storage
+      .from('avatars')
+      .getPublicUrl(path);
+
+    const publicUrl = pub.publicUrl;
+
+    // atualiza o registro na tabela "professionals"
+    const current = professionals.find(p => p.id === id);
+    if (!current) return;
+
+    await updateProfessional(id, {
+      name: current.name,
+      specialty: current.specialty,
+      value: current.value,
+      avatar: publicUrl,     // <— agora fica persistido
+    });
+
+  } catch (error) {
+    console.error('Erro ao fazer upload da foto:', error);
+    alert('Erro ao enviar a foto. Confira as permissões do bucket.');
+  } finally {
+    setUploadingPhoto(null);
+  }
+};
 
   if (loading) {
     return (
