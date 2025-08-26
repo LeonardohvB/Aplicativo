@@ -104,21 +104,26 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
         <div className="flex flex-col items-end space-y-3">
           <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={professional.isActive}
-              onChange={() => onToggle(professional.id)}
-              className="sr-only peer"
-            />
-            <div
-              className="
-                w-11 h-6 bg-gray-200 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400
-                peer-checked:bg-blue-500 relative
-              "
-            >
-              <span className="absolute top-[2px] left-[2px] h-5 w-5 bg-white rounded-full transition-all peer-checked:translate-x-5" />
-            </div>
-          </label>
+  <input
+    type="checkbox"
+    checked={professional.isActive}
+    onChange={() => onToggle(professional.id)}
+    className="sr-only peer"
+  />
+  <div
+    className="
+      w-11 h-6 rounded-full bg-gray-200
+      peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400
+      peer-checked:bg-blue-500
+      relative transition-colors
+
+      after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+      after:h-5 after:w-5 after:bg-white after:rounded-full after:transition-all
+      peer-checked:after:translate-x-5
+    "
+  />
+</label>
+
 
           <div className="flex space-x-2">
             <button
