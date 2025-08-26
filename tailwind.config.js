@@ -4,5 +4,10 @@ export default {
   theme: {
     extend: {},
   },
+  safelist: [
+    'bg-blue-500',
+    'peer-checked:bg-blue-500',
+    'bg-red-500'
+  ],
   plugins: [],
 };
