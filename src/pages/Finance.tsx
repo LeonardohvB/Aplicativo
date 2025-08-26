@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Plus, TrendingUp, TrendingDown, Eye, EyeOff, Wallet, CreditCard } from 'lucide-react';
 import TransactionCard from '../components/Finance/TransactionCard';
 import AddTransactionModal from '../components/Finance/AddTransactionModal';
+import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import { useTransactions } from '../hooks/useTransactions';
 
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editing, setEditing] = useState<import('../types').Transaction | null>(null);
   const [showBalance, setShowBalance] = useState(true);
-  const { transactions, loading, addTransaction, deleteTransaction } = useTransactions();
+  const { transactions, loading, addTransaction, deleteTransaction, editTransaction } = useTransactions();
 
   const totalRevenue = transactions
     .filter(t => t.type === 'income')
@@ -20,10 +22,24 @@ const Finance: React.FC = () => {
   const balance = totalRevenue - totalExpenses;
 
   const handleEdit = (id: string) => {
-    console.log('Edit transaction:', id);
+    const t = transactions.find((x) => x.id === id) || null;
+    setEditing(t);
   };
 
-  const handleAdd = async (newTransaction: {
+  
+const handleSaveEdit = async (updates: {
+  type: 'income' | 'expense';
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+}) => {
+  if (!editing) return;
+  await editTransaction(editing.id, updates);
+  setEditing(null);
+};
+
+const handleAdd = async (newTransaction: {
     type: 'income' | 'expense';
     description: string;
     amount: number;
@@ -178,6 +194,13 @@ const Finance: React.FC = () => {
           </div>
         )}
       </div>
+
+      <EditTransactionModal
+        isOpen={!!editing}
+        transaction={editing}
+        onClose={() => setEditing(null)}
+        onSave={handleSaveEdit}
+      />
 
       <AddTransactionModal
         isOpen={isModalOpen}
