@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      workbox: { clientsClaim: true, skipWaiting: true, globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'] },
+      devOptions: { enabled: true },
       registerType: 'autoUpdate',
       manifest: {
         name: 'Aplicativo',
