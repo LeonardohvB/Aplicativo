@@ -2,9 +2,10 @@ export interface Professional {
   id: string;
   name: string;
   specialty: string;
-  avatar: string;
+  avatar: string | null;          // URL público (pode ser null)
+  avatarUpdatedAt?: string | null; // <-- adicione isto
   value: number;
-  commissionRate: number; // Porcentagem da comissão (ex: 20 para 20%)
+  commissionRate: number;
   patients: number;
   isActive: boolean;
 }

@@ -1,3 +1,4 @@
+// src/components/Professionals/ProfessionalCard.tsx
 import React from "react";
 import { Edit2, Trash2, Camera } from "lucide-react";
 import { Professional } from "../../types";
@@ -10,7 +11,16 @@ interface ProfessionalCardProps {
   onPhotoChange: (id: string, photoFile: File) => void;
 }
 
-const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
+// Helpers locais (se preferir, mova para src/lib/images.ts)
+const withAvatarSize = (url: string, size = 96) =>
+  `${url}${url.includes("?") ? "&" : "?"}w=${size}&h=${size}&fit=cover&quality=70`;
+
+const withCacheBust = (url: string, v?: string | null) =>
+  v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
+
+const placeholder = "https://placehold.co/96x96?text=Foto";
+
+const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
   onEdit,
@@ -18,8 +28,10 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   onPhotoChange,
 }) => {
   const inputId = `avatar-file-${professional.id}`;
-  const placeholder = "https://placehold.co/96x96?text=Foto";
-  const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
+  const hasAvatar =
+    !!professional.avatar &&
+    professional.avatar !== placeholder &&
+    professional.avatar.trim().length > 0;
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -28,13 +40,21 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     e.currentTarget.value = ""; // permite reenviar o mesmo arquivo
   };
 
-  // preço no formato anterior (azul e sem casas)
   const preco =
     "R$ " +
     Number(professional.value).toLocaleString("pt-BR", {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });
+
+  // monta SRC otimizando (thumb + cache-bust)
+  const optimizedSrc = hasAvatar
+  ? withCacheBust(
+      withAvatarSize(professional.avatar as string, 96),
+      professional.avatarUpdatedAt ?? undefined
+    )
+  : placeholder;
+
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
@@ -44,10 +64,17 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
           {/* Avatar com overlay clicável */}
           <div className="relative inline-block group">
             <img
-              src={hasAvatar ? (professional.avatar as string) : placeholder}
+              src={optimizedSrc}
               alt={professional.name}
               className="w-16 h-16 rounded-full object-cover border"
               referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
+              width={64}
+              height={64}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = placeholder;
+              }}
             />
             <label
               htmlFor={inputId}
@@ -127,4 +154,5 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   );
 };
 
-export default ProfessionalCard;
+// Evita re-render desnecessário quando nada mudou
+export default React.memo(ProfessionalCardComponent);
