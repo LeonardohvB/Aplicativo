@@ -118,21 +118,9 @@ const Professionals: React.FC = () => {
       const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
       const publicUrl = pub.publicUrl;
 
-      // Atualiza o registro com a nova URL
-      const current = professionals.find((p) => p.id === id);
-      if (!current) return;
+      // Atualiza o registro com a nova URL (apenas avatar)
+      await updateProfessional(id, { avatar: publicUrl });
 
-      await updateProfessional(id, {
-        name: current.name,
-        specialty: current.specialty,
-        value: current.value,
-        avatar: publicUrl,
-        // Se seu schema tiver esses campos, pode habilitar:
-        // @ts-ignore
-        // avatar_path: path,
-        // @ts-ignore
-        // avatar_updated_at: new Date().toISOString(),
-      });
     } catch (error) {
       console.error('Erro ao fazer upload da foto:', error);
       alert('Erro ao enviar a foto. Confira as permissões do bucket/policies.');

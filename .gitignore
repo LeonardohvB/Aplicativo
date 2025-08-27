@@ -94,3 +94,9 @@ temp/
 .temp
 supabase/.temp
 .vercel
+
+dev-dist/
+
+sw.js
+
+workbox-*.js
