@@ -28,6 +28,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     e.currentTarget.value = ""; // permite reenviar o mesmo arquivo
   };
 
+  // preço no formato anterior (azul e sem casas)
   const preco =
     "R$ " +
     Number(professional.value).toLocaleString("pt-BR", {
@@ -101,7 +102,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             />
           </label>
 
-          {/* Linha de ações (EDITAR + DELETAR) — abaixo do switch */}
+          {/* Ações (EDITAR + DELETAR) — abaixo do switch */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => onEdit(professional.id)}
