@@ -111,7 +111,7 @@ const handleAdd = async (newTransaction: {
       </div>
 
       {/* Cards de Receitas e Despesas */}
-      <div className="px-6 -mt-8 mb-6">
+      <div className="px-6 mt-10 md:mt-20 lg:mt-24 mb-6 relative z-10">
         <div className="grid grid-cols-2 gap-4">
           {/* Card Receitas */}
           <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all duration-300">
