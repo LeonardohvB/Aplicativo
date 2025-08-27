@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Percent, Users, Calendar, DollarSign, Clock, CheckCircle, Download } from 'lucide-react';
+import {
+  TrendingUp, TrendingDown, Percent, Users, Calendar, DollarSign, Clock, CheckCircle, Download
+} from 'lucide-react';
 import StatCard from '../components/Dashboard/StatCard';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAppointmentHistory } from '../hooks/useAppointmentHistory';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 
-// 👇 PDF
+// PDF
 import { pdf } from '@react-pdf/renderer';
 import ReportDocument, { Row as PdfRow } from '../ReportDocument';
 
@@ -16,6 +18,37 @@ const todayLocalISO = () => {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
 };
+
+/** ──────────────────────────────────────────────────────────────
+ *  Input de data com ícone (usa Calendar do lucide-react)
+ *  ─ Alinhado para mobile e impressão (PDF)
+ *  ────────────────────────────────────────────────────────────── */
+const DateInput: React.FC<{
+  label: string;
+  value: string;                // yyyy-mm-dd
+  onChange: (v: string) => void;
+}> = ({ label, value, onChange }) => (
+  <div className="flex flex-col min-w-[180px] print:min-w-[200px]">
+    <span className="text-xs text-gray-500 mb-1">{label}</span>
+    <div className="relative">
+      <Calendar
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none"
+        aria-hidden
+      />
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="
+          w-full pr-3 pl-9 py-2 rounded-xl border border-gray-200 bg-white
+          text-sm text-gray-900
+          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+          print:rounded-md print:py-1.5 print:text-base print:border-gray-300
+        "
+      />
+    </div>
+  </div>
+);
 
 const Reports: React.FC = () => {
   const { professionals } = useProfessionals();
@@ -105,11 +138,8 @@ const Reports: React.FC = () => {
   //       GERAR PDF (NOVO)
   // ============================
   const handleExportPdf = async () => {
-    // 1) Coletar registros do intervalo [from..to] a partir do seu "history"
-    // history: assumindo { date: 'YYYY-MM-DD', startTime?, endTime?, professionalId?, patientName?, status, price, clinicPercentage }
     const range = history.filter(h => h.date >= from && h.date <= to);
 
-    // 2) Agregar status e receita (estimada): comissão da clínica
     const byStatus: Record<string, number> = {};
     let revenue = 0;
     for (const h of range) {
@@ -119,7 +149,6 @@ const Reports: React.FC = () => {
       }
     }
 
-    // 3) Montar as linhas do PDF
     const rows: PdfRow[] = range
       .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')))
       .map(h => ({
@@ -131,7 +160,6 @@ const Reports: React.FC = () => {
         price: h.price ?? null,
       }));
 
-    // 4) Construir documento e baixar
     const blob = await pdf(
       <ReportDocument
         title="Relatório de Atendimentos"
@@ -155,31 +183,32 @@ const Reports: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
+      {/* Cabeçalho alinhado (mobile, desktop e impressão) */}
+      <div
+        className="
+          flex flex-col gap-3 mb-6
+          md:flex-row md:items-end md:justify-between
+          print:flex-row print:items-center print:justify-between print:mb-3
+        "
+      >
+        <h1 className="text-2xl font-bold text-gray-900 print:text-[20pt] print:font-extrabold">
+          Relatórios
+        </h1>
 
-        {/* Filtros + Botão PDF (NOVO) */}
-        <div className="flex items-end gap-2">
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Data inicial</label>
-            <input type="date" value={from} onChange={(e)=>setFrom(e.target.value)}
-                   className="border rounded-lg px-3 py-2" />
-          </div>
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Data final</label>
-            <input type="date" value={to} onChange={(e)=>setTo(e.target.value)}
-                   className="border rounded-lg px-3 py-2" />
-          </div>
+        <div className="flex flex-wrap items-end gap-3 print:gap-2">
+          <DateInput label="Data inicial" value={from} onChange={setFrom} />
+          <DateInput label="Data final" value={to} onChange={setTo} />
           <button
             onClick={handleExportPdf}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 print:px-3 print:py-1.5"
             title="Gerar PDF"
           >
-            <Download size={18}/> Gerar PDF
+            <Download size={18} /> Gerar PDF
           </button>
         </div>
       </div>
 
+      {/* Cards principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         <StatCard
           title="Atendimentos Hoje"
@@ -232,7 +261,8 @@ const Reports: React.FC = () => {
       </div>
 
       {/* Resumo do Dia */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6
+                      print:shadow-none print:border-gray-300 print:rounded-md print:break-inside-avoid">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Resumo do Dia</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center">
@@ -264,7 +294,9 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+      {/* Resumo por Profissional */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100
+                      print:shadow-none print:border-gray-300 print:rounded-md print:break-inside-avoid">
         <h2 className="text-lg font-semibold text-gray-900 mb-6">Resumo por Profissional</h2>
         <div className="space-y-6">
           {professionalReports.map((prof, index) => (
