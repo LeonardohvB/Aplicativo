@@ -48,6 +48,14 @@ export const useAppointmentJourneys = () => {
     }
   };
 
+  
+const todayLocalISO = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
+
   const fetchSlots = async () => {
     try {
       const { data, error } = await supabase
@@ -133,16 +141,19 @@ export const useAppointmentJourneys = () => {
     clinicPercentage: number;
   }) => {
     try {
-      // Validar se é hoje e o horário não é anterior ao atual
-      const today = new Date().toISOString().split('T')[0];
-      if (journey.date === today) {
-        const now = new Date();
-        const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-        
-        if (journey.startTime < currentTime) {
-          throw new Error('Não é possível agendar para um horário que já passou hoje');
-        }
-      }
+     // depois
+    const today = todayLocalISO();
+    if (journey.date === today) {
+    const now = new Date();
+    const currentTime =
+    `${now.getHours().toString().padStart(2, '0')}:` +
+    `${now.getMinutes().toString().padStart(2, '0')}`;
+
+  if (journey.startTime < currentTime) {
+    throw new Error('Não é possível agendar para um horário que já passou hoje');
+  }
+}
+
 
       // Criar apenas um slot para todo o período
       const startMinutes = timeToMinutes(journey.startTime);
