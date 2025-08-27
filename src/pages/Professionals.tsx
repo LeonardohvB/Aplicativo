@@ -5,16 +5,56 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
+import { supabase } from '../lib/supabase';
+
+/**
+ * Converte qualquer imagem (incluindo HEIC/sem type do iOS PWA) para JPEG.
+ * Se não conseguir converter, devolve o arquivo original.
+ */
+async function fileToJpegBlob(file: File): Promise<Blob> {
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = (e) => reject(e);
+      i.src = url;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b as Blob), 'image/jpeg', 0.9)
+    );
+
+    URL.revokeObjectURL(url);
+    return blob;
+  } catch {
+    return file;
+  }
+}
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
-  const { professionals, loading, addProfessional, updateProfessional, toggleProfessional, deleteProfessional } = useProfessionals();
+
+  const {
+    professionals,
+    loading,
+    addProfessional,
+    updateProfessional,
+    toggleProfessional,
+    deleteProfessional,
+  } = useProfessionals();
 
   const handleEdit = (id: string) => {
-    const professional = professionals.find(p => p.id === id);
+    const professional = professionals.find((p) => p.id === id);
     if (professional) {
       setEditingProfessional(professional);
       setIsEditModalOpen(true);
@@ -40,37 +80,50 @@ const Professionals: React.FC = () => {
     setEditingProfessional(null);
   };
 
+  /**
+   * Upload de avatar que funciona no PWA (galeria/câmera iOS/Android):
+   * - Converte para JPEG quando necessário (HEIC/sem type)
+   * - Faz upload no bucket "avatars" (upsert)
+   * - Salva URL pública no campo `avatar` da tabela professionals
+   */
   const handlePhotoChange = async (id: string, photoFile: File) => {
     try {
       setUploadingPhoto(id);
-      
-      // Criar URL temporária para preview imediato
-      const tempUrl = URL.createObjectURL(photoFile);
-      
-      // Simular upload (em produção, você faria upload para Supabase Storage)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Em produção, você substituiria por:
-      // const { data, error } = await supabase.storage
-      //   .from('avatars')
-      //   .upload(`${id}/${Date.now()}.jpg`, photoFile);
-      
-      const currentProfessional = professionals.find(p => p.id === id);
-      if (!currentProfessional) {
-        throw new Error('Profissional não encontrado');
+
+      // iOS PWA pode vir com type vazio ou HEIC → normaliza para JPEG
+      const needsConvert =
+        !photoFile.type ||
+        photoFile.type === 'image/heic' ||
+        photoFile.type === 'image/heif';
+      const blob = needsConvert ? await fileToJpegBlob(photoFile) : photoFile;
+
+      // sempre usa .jpg para evitar problemas de extensão
+      const filename = `${Date.now()}.jpg`;
+      const path = `professionals/${id}/${filename}`;
+
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, blob, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: 'image/jpeg',
+        });
+
+      if (upErr) {
+        alert(`Falha no upload: ${upErr.message}`);
+        return;
       }
-      
-      // Por enquanto, mantemos a URL temporária
-      await updateProfessional(id, {
-        name: currentProfessional.name,
-        specialty: currentProfessional.specialty,
-        value: currentProfessional.value,
-        avatar: tempUrl,
-      });
-      
+
+      // URL pública (bucket deve ter policy de SELECT liberada)
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = pub.publicUrl;
+
+      // Atualiza o registro com a nova URL (apenas avatar)
+      await updateProfessional(id, { avatar: publicUrl });
+
     } catch (error) {
       console.error('Erro ao fazer upload da foto:', error);
-      alert('Erro ao alterar foto. Tente novamente.');
+      alert('Erro ao enviar a foto. Confira as permissões do bucket/policies.');
     } finally {
       setUploadingPhoto(null);
     }
@@ -88,7 +141,7 @@ const Professionals: React.FC = () => {
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Profissionais</h1>
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
         >
@@ -107,11 +160,11 @@ const Professionals: React.FC = () => {
             onPhotoChange={handlePhotoChange}
           />
         ))}
-        
+
         {uploadingPhoto && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
               <p className="text-gray-700">Alterando foto...</p>
             </div>
           </div>

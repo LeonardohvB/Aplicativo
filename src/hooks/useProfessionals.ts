@@ -8,12 +8,15 @@ type NewProfessionalInput = {
   value: number;
 };
 
-type UpdatePayload = {
+type UpdatePayload = Partial<{
   name: string;
   specialty: string;
   value: number;
-  avatar?: string;
-};
+  avatar: string;            // URL pública
+  avatar_path: string;       // (opcional) caminho no Storage
+  avatar_updated_at: string; // (opcional) quando trocou
+  isActive: boolean;         // mapeia para is_active no DB
+}>;
 
 export const useProfessionals = () => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -79,17 +82,14 @@ export const useProfessionals = () => {
         specialty: data.specialty,
         avatar: data.avatar,
         value: Number(data.value),
-        commissionRate: 20, // default 20%
+        commissionRate: 20,
         patients: data.patients,
         isActive: data.is_active,
       };
 
       setProfessionals((prev) => [newProfessional, ...prev]);
     } catch (err) {
-      console.warn(
-        '⚠️ Supabase not configured - adding professional locally:',
-        err
-      );
+      console.warn('⚠️ Supabase not configured - adding professional locally:', err);
 
       // fallback local
       const newProfessional: Professional = {
@@ -110,32 +110,34 @@ export const useProfessionals = () => {
 
   const updateProfessional = async (id: string, updates: UpdatePayload) => {
     try {
-      // tipagem explícita (sem any)
-      const updateData: UpdatePayload = {
-        name: updates.name,
-        specialty: updates.specialty,
-        value: updates.value,
-        ...(updates.avatar ? { avatar: updates.avatar } : {}),
-      };
+      // monta payload apenas com os campos presentes
+      const toDb: Record<string, any> = {};
+      if (updates.name !== undefined)        toDb.name = updates.name;
+      if (updates.specialty !== undefined)   toDb.specialty = updates.specialty;
+      if (updates.value !== undefined)       toDb.value = updates.value;
+      if (updates.avatar !== undefined)      toDb.avatar = updates.avatar;
+      if (updates.avatar_path !== undefined) toDb.avatar_path = updates.avatar_path;
+      if (updates.avatar_updated_at !== undefined) toDb.avatar_updated_at = updates.avatar_updated_at;
+      if (updates.isActive !== undefined)    toDb.is_active = updates.isActive;
+
+      if (Object.keys(toDb).length === 0) return;
 
       const { error } = await supabase
         .from('professionals')
-        .update(updateData)
+        .update(toDb)
         .eq('id', id);
 
       if (error) throw error;
 
+      // atualiza estado local
       setProfessionals((prev) =>
-        prev.map((prof) => (prof.id === id ? { ...prof, ...updates } : prof))
+        prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
       );
     } catch (error) {
-      console.warn(
-        'Error updating professional, updating locally:',
-        error
-      );
+      console.warn('Error updating professional, updating locally:', error);
       // fallback local
       setProfessionals((prev) =>
-        prev.map((prof) => (prof.id === id ? { ...prof, ...updates } : prof))
+        prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
       );
     }
   };
@@ -153,8 +155,8 @@ export const useProfessionals = () => {
       if (error) throw error;
 
       setProfessionals((prev) =>
-        prev.map((prof) =>
-          prof.id === id ? { ...prof, isActive: !prof.isActive } : prof
+        prev.map((p) =>
+          p.id === id ? { ...p, isActive: !p.isActive } : p
         )
       );
     } catch (error) {
@@ -171,7 +173,7 @@ export const useProfessionals = () => {
 
       if (error) throw error;
 
-      setProfessionals((prev) => prev.filter((prof) => prof.id !== id));
+      setProfessionals((prev) => prev.filter((p) => p.id !== id));
     } catch (error) {
       console.error('Error deleting professional:', error);
     }
