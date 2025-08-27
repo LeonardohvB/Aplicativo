@@ -18,8 +18,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   onPhotoChange,
 }) => {
   const inputId = `avatar-file-${professional.id}`;
-
-  // placeholder padrão quando não há avatar real
   const placeholder = "https://placehold.co/96x96?text=Foto";
   const hasAvatar = !!professional.avatar && professional.avatar !== placeholder;
 
@@ -27,15 +25,22 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     const f = e.target.files?.[0];
     if (!f) return;
     onPhotoChange(professional.id, f);
-    // permite selecionar o mesmo arquivo novamente se necessário
-    e.currentTarget.value = "";
+    e.currentTarget.value = ""; // permite reenviar o mesmo arquivo
   };
+
+  const preco =
+    "R$ " +
+    Number(professional.value).toLocaleString("pt-BR", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
+        {/* ESQUERDA: avatar + infos */}
         <div className="flex items-center gap-x-4">
-          {/* Avatar + overlay clicável (mobile-friendly) */}
+          {/* Avatar com overlay clicável */}
           <div className="relative inline-block group">
             <img
               src={hasAvatar ? (professional.avatar as string) : placeholder}
@@ -43,8 +48,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               className="w-16 h-16 rounded-full object-cover border"
               referrerPolicy="no-referrer"
             />
-
-            {/* Rótulo cobre a imagem inteira: toca/abre o seletor */}
             <label
               htmlFor={inputId}
               className="absolute inset-0 rounded-full cursor-pointer bg-black/0 group-hover:bg-black/15 flex items-center justify-center transition-colors"
@@ -52,7 +55,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             >
               <Camera className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </label>
-
             <input
               id={inputId}
               type="file"
@@ -67,17 +69,17 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               {professional.name}
             </h3>
             <p className="text-sm text-gray-500">{professional.specialty}</p>
-            <div className="mt-2 text-sm">
-              <span className="text-blue-600 block leading-5">Valor</span>
-              <span className="text-gray-800">
-                R$ {Number(professional.value).toFixed(2)}
-              </span>
+
+            {/* Valor em AZUL (como antes) */}
+            <div className="mt-2 text-sm leading-5">
+              <span className="text-blue-600 block">Valor</span>
+              <span className="text-blue-600 font-medium">{preco}</span>
             </div>
           </div>
         </div>
 
-        {/* Ações: switch + editar + deletar */}
-        <div className="flex items-center gap-3">
+        {/* DIREITA: coluna com switch em cima e ícones embaixo */}
+        <div className="flex flex-col items-end gap-3">
           {/* Switch com deslizamento */}
           <label className="relative inline-flex items-center cursor-pointer">
             <input
@@ -99,23 +101,25 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             />
           </label>
 
-          <button
-            onClick={() => onEdit(professional.id)}
-            className="p-2 rounded-full hover:bg-blue-50"
-            aria-label="Editar profissional"
-            title="Editar"
-          >
-            <Edit2 className="w-4 h-4 text-blue-600" />
-          </button>
-
-          <button
-            onClick={() => onDelete(professional.id)}
-            className="p-2 rounded-full hover:bg-red-50"
-            aria-label="Excluir profissional"
-            title="Excluir"
-          >
-            <Trash2 className="w-4 h-4 text-red-600" />
-          </button>
+          {/* Linha de ações (EDITAR + DELETAR) — abaixo do switch */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onEdit(professional.id)}
+              className="p-2 rounded-full hover:bg-blue-50"
+              aria-label="Editar profissional"
+              title="Editar"
+            >
+              <Edit2 className="w-4 h-4 text-blue-600" />
+            </button>
+            <button
+              onClick={() => onDelete(professional.id)}
+              className="p-2 rounded-full hover:bg-red-50"
+              aria-label="Excluir profissional"
+              title="Excluir"
+            >
+              <Trash2 className="w-4 h-4 text-red-600" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
