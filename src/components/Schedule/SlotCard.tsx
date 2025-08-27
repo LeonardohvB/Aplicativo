@@ -52,23 +52,29 @@ const SlotCard: React.FC<SlotCardProps> = ({
     };
   }, [slot.status, slot.startedAt]);
 
-  // Verificar se é a data atual
-  const isToday = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return slot.date === today;
-  };
+// YYYY-MM-DD no fuso local (não UTC)
+const todayLocalISO = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
 
-  // Verificar se é uma data futura
-  const isFutureDate = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return slot.date > today;
-  };
+  
+// depois (usa data local)
+const isToday = () => {
+  const today = todayLocalISO();
+  return slot.date === today;
+};
 
-  // Verificar se é uma data passada
-  const isPastDate = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return slot.date < today;
-  };
+const isFutureDate = () => {
+  const today = todayLocalISO();
+  return slot.date > today;
+};
+
+const isPastDate = () => {
+  const today = todayLocalISO();
+  return slot.date < today;
+};
 
   // Verificar se o horário já passou (apenas para o dia atual)
   const isTimeExpired = () => {
