@@ -1,3 +1,36 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ───────────────────────────────────────────────────────────
+   iOS safe-area (PWA em modo stand-alone)
+   Use as classes: pt-safe / pb-safe
+   ─────────────────────────────────────────────────────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  @layer utilities {
+    .pt-safe { padding-top: calc(env(safe-area-inset-top) + 8px); }
+    /* ajuste o 88px conforme a altura da sua bottom-nav */
+    .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 88px); }
+  }
+}
+
+/* ───────────────────────────────────────────────────────────
+   Safari iOS estilização de <input type="date">
+   ─────────────────────────────────────────────────────────── */
+@layer base {
+  input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    /* a altura final vem da classe Tailwind (ex.: h-11) no componente */
+  }
+  /* Em alguns iOS o valor fica centralizado: força alinhamento à esquerda */
+  input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+}
+
+/* (opcional) utilitários de impressão para deixar o PDF mais limpo */
+@layer utilities {
+  .print\:shadow-none { @apply shadow-none !important; }
+  .print\:border-gray-300 { @apply border-gray-300 !important; }
+  .print\:rounded-md { @apply rounded-md !important; }
+  .print\:break-inside-avoid { break-inside: avoid; }
+}
