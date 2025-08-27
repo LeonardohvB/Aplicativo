@@ -6,7 +6,17 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      workbox: { clientsClaim: true, skipWaiting: true, globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'] },
+      workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        // ✅ evita warnings e garante que o próprio SW não entre no cache
+        globIgnores: [
+          '**/node_modules/**/*',
+          '**/sw.js',
+          '**/workbox-*.js'
+        ]
+      },
       devOptions: { enabled: true },
       registerType: 'autoUpdate',
       manifest: {
