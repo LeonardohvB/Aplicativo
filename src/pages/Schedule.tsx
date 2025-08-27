@@ -10,6 +10,49 @@ import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
 
+// ==== helpers de data/hora (fuso LOCAL) ====
+
+/** cria um Date no fuso local a partir de "YYYY-MM-DD" e "HH:MM" */
+const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
+  const [hh, mm] = timeHHMM.split(':').map(Number);
+  const d = new Date(`${dateISO}T00:00:00`);
+  d.setHours(hh, mm, 0, 0); // usa fuso local
+  return d;
+};
+
+type SlotLite = {
+  id: string;
+  date: string;      // "YYYY-MM-DD"
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
+};
+
+/** slots: futuros no topo; passados descem; entre iguais, ordem cronológica */
+const sortSlotsByTime = (a: SlotLite, b: SlotLite) => {
+  const now = new Date();
+  const ta = toLocalDateTime(a.date, a.startTime);
+  const tb = toLocalDateTime(b.date, b.startTime);
+
+  const aPast = ta < now;
+  const bPast = tb < now;
+  if (aPast !== bPast) return aPast ? 1 : -1;   // passado vai pro fim
+  return ta.getTime() - tb.getTime();           // cronológico
+};
+
+/** jornadas: mesmas regras dos slots (considerando o startTime da jornada) */
+const sortJourneysByDateTime = (a: AppointmentJourney, b: AppointmentJourney) => {
+  const now = new Date();
+  const ta = toLocalDateTime(a.date, a.startTime);
+  const tb = toLocalDateTime(b.date, b.startTime);
+
+  const aPast = ta < now;
+  const bPast = tb < now;
+  if (aPast !== bPast) return aPast ? 1 : -1;
+  return ta.getTime() - tb.getTime();
+};
+
+// ===============================================================
+
 const Schedule: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -18,12 +61,24 @@ const Schedule: React.FC = () => {
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedJourney, setSelectedJourney] = useState<AppointmentJourney | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  
-  const { journeys, slots, patients, loading, createJourney, updateJourney, deleteJourney, schedulePatient, updatePatient, updateSlotStatus } = useAppointmentJourneys();
+
+  const {
+    journeys,
+    slots,
+    patients,
+    loading,
+    createJourney,
+    updateJourney,
+    deleteJourney,
+    schedulePatient,
+    updatePatient,
+    updateSlotStatus,
+  } = useAppointmentJourneys();
+
   const { professionals } = useProfessionals();
 
   const handleEditJourney = (journeyId: string) => {
-    const journey = journeys.find(j => j.id === journeyId);
+    const journey = journeys.find((j) => j.id === journeyId);
     if (journey) {
       setSelectedJourney(journey);
       setIsEditModalOpen(true);
@@ -37,7 +92,7 @@ const Schedule: React.FC = () => {
   };
 
   const handleSchedulePatient = (slotId: string) => {
-    const slot = slots.find(s => s.id === slotId);
+    const slot = slots.find((s) => s.id === slotId);
     if (slot) {
       setSelectedSlot(slot);
       setIsScheduleModalOpen(true);
@@ -45,7 +100,7 @@ const Schedule: React.FC = () => {
   };
 
   const handleEditPatient = (slotId: string) => {
-    const slot = slots.find(s => s.id === slotId);
+    const slot = slots.find((s) => s.id === slotId);
     if (slot) {
       setSelectedSlot(slot);
       setIsEditPatientModalOpen(true);
@@ -91,24 +146,6 @@ const Schedule: React.FC = () => {
     }
   };
 
-  // Agrupar slots por data
-  const groupedSlots = slots.reduce((acc, slot) => {
-    if (!acc[slot.date]) {
-      acc[slot.date] = [];
-    }
-    acc[slot.date].push(slot);
-    return acc;
-  }, {} as Record<string, AppointmentSlot[]>);
-
-  // Agrupar jornadas por data para mostrar informações da jornada
-  const journeysByDate = journeys.reduce((acc, journey) => {
-    if (!acc[journey.date]) {
-      acc[journey.date] = [];
-    }
-    acc[journey.date].push(journey);
-    return acc;
-  }, {} as Record<string, AppointmentJourney[]>);
-
   if (loading) {
     return (
       <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
@@ -122,14 +159,14 @@ const Schedule: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
         <div className="flex space-x-3">
-          <button 
+          <button
             onClick={() => setIsHistoryModalOpen(true)}
             className="p-3 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors shadow-lg"
             title="Ver histórico de atendimentos"
           >
             <History className="w-6 h-6" />
           </button>
-          <button 
+          <button
             onClick={() => setIsCreateModalOpen(true)}
             className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
           >
@@ -139,9 +176,11 @@ const Schedule: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        {journeys.map((journey) => {
-          const journeySlots = slots.filter(slot => slot.journeyId === journey.id);
-          
+        {[...journeys].sort(sortJourneysByDateTime).map((journey) => {
+          const journeySlots = slots.filter((slot) => slot.journeyId === journey.id);
+          const orderedSlots = [...journeySlots].sort(sortSlotsByTime);
+
+          // usar 12:00 para evitar “voltar/avançar” por UTC
           const formattedDate = new Date(journey.date + 'T12:00:00').toLocaleDateString('pt-BR', {
             weekday: 'long',
             day: 'numeric',
@@ -174,8 +213,9 @@ const Schedule: React.FC = () => {
                   </button>
                 </div>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {journeySlots.map((slot) => (
+                {orderedSlots.map((slot) => (
                   <SlotCard
                     key={slot.id}
                     slot={slot}
@@ -191,7 +231,7 @@ const Schedule: React.FC = () => {
             </div>
           );
         })}
-        
+
         {journeys.length === 0 && (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-4">Nenhuma jornada de atendimento criada ainda.</p>
