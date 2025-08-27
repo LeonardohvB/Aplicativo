@@ -1,21 +1,50 @@
 import React, { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Percent, Users, Calendar, DollarSign, Clock, CheckCircle, Download } from 'lucide-react';
+import {
+  TrendingUp, TrendingDown, Percent, Users, Calendar, DollarSign, Clock, CheckCircle, Download
+} from 'lucide-react';
 import StatCard from '../components/Dashboard/StatCard';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAppointmentHistory } from '../hooks/useAppointmentHistory';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 
-// 👇 PDF
 import { pdf } from '@react-pdf/renderer';
 import ReportDocument, { Row as PdfRow } from '../ReportDocument';
 
-// helper local para data "YYYY-MM-DD" em fuso local
+// Data local em "YYYY-MM-DD"
 const todayLocalISO = () => {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
 };
+
+/** Input de data com ícone de calendário (responsivo e print-friendly) */
+const DateInput: React.FC<{
+  label: string;
+  value: string;                // yyyy-mm-dd
+  onChange: (v: string) => void;
+}> = ({ label, value, onChange }) => (
+  <div className="flex flex-col min-w-[180px] print:min-w-[200px] w-full">
+    <span className="text-xs text-gray-500 mb-1">{label}</span>
+    <div className="relative">
+      <Calendar
+        className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none"
+        aria-hidden
+      />
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="
+          w-full h-11 pr-3 pl-9 rounded-xl border border-gray-200 bg-white
+          text-sm text-gray-900
+          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+          print:h-auto print:py-1.5 print:rounded-md print:border-gray-300
+        "
+      />
+    </div>
+  </div>
+);
 
 const Reports: React.FC = () => {
   const { professionals } = useProfessionals();
@@ -23,14 +52,13 @@ const Reports: React.FC = () => {
   const { history, getHistoryStats, getHistoryByDateRange } = useAppointmentHistory();
   const { slots } = useAppointmentJourneys();
 
-  // 🔄 Filtros do PDF
+  // Filtros
   const [from, setFrom] = useState(todayLocalISO());
   const [to, setTo] = useState(todayLocalISO());
 
-  // ⚠️ NÃO usar toISOString().split('T')[0] p/ "hoje" (UTC). Use helper acima:
   const today = todayLocalISO();
 
-  // Semana atual (local)
+  // Semana atual
   const startOfWeek = new Date();
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
   const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
@@ -39,45 +67,33 @@ const Reports: React.FC = () => {
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   const endOfWeekStr = endOfWeek.toISOString().slice(0, 10);
 
-  // Estatísticas do histórico
   const historyStats = getHistoryStats();
 
-  // Atendimentos de hoje (do histórico)
+  // Hoje
   const todayHistory = history.filter(h => h.date === today);
   const todayCompletedAppointments = todayHistory.filter(h => h.status === 'concluido').length;
   const todayTotalAppointments = todayHistory.length;
 
-  // Atendimentos da semana (do histórico)
+  // Semana
   const weekHistory = getHistoryByDateRange(startOfWeekStr, endOfWeekStr);
   const weekCompletedAppointments = weekHistory.filter(h => h.status === 'concluido').length;
   const weekTotalAppointments = weekHistory.length;
 
-  // Atendimentos agendados para hoje (dos slots)
+  // Slots agendados hoje
   const todayScheduledSlots = slots.filter(slot =>
-    slot.date === today &&
-    ['agendado', 'em_andamento'].includes(slot.status)
+    slot.date === today && ['agendado', 'em_andamento'].includes(slot.status)
   );
 
-  // Receita do histórico (apenas atendimentos concluídos)
+  // Financeiro
   const completedHistory = history.filter(h => h.status === 'concluido');
   const clinicRevenue = completedHistory.reduce((sum, h) => sum + (h.price * (h.clinicPercentage / 100)), 0);
 
-  const totalExpenses = transactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  // Receita total da clínica (todas as transações de receita)
-  const totalRevenue = transactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  // Margem de lucro baseada em toda a receita da clínica
+  const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalRevenue = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue * 100).toFixed(1) : '0.0';
 
-  // Total de pacientes únicos do histórico
   const uniquePatients = new Set(history.map(h => h.patientName.toLowerCase())).size;
 
-  // Relatório por profissional baseado no histórico
   const professionalReports = professionals.map(prof => {
     const profHistory = history.filter(h => h.professionalId === prof.id && h.status === 'concluido');
     const uniqueProfPatients = new Set(profHistory.map(h => h.patientName.toLowerCase())).size;
@@ -94,32 +110,23 @@ const Reports: React.FC = () => {
     };
   });
 
-  // 🔽 nome do profissional por id (para o PDF)
   const nameById = useMemo(() => {
     const map: Record<string, string> = {};
     for (const p of professionals) map[p.id] = p.name;
     return map;
   }, [professionals]);
 
-  // ============================
-  //       GERAR PDF (NOVO)
-  // ============================
+  // GERAR PDF
   const handleExportPdf = async () => {
-    // 1) Coletar registros do intervalo [from..to] a partir do seu "history"
-    // history: assumindo { date: 'YYYY-MM-DD', startTime?, endTime?, professionalId?, patientName?, status, price, clinicPercentage }
     const range = history.filter(h => h.date >= from && h.date <= to);
 
-    // 2) Agregar status e receita (estimada): comissão da clínica
     const byStatus: Record<string, number> = {};
     let revenue = 0;
     for (const h of range) {
       byStatus[h.status] = (byStatus[h.status] || 0) + 1;
-      if (h.status === 'concluido') {
-        revenue += (h.price * (h.clinicPercentage / 100));
-      }
+      if (h.status === 'concluido') revenue += (h.price * (h.clinicPercentage / 100));
     }
 
-    // 3) Montar as linhas do PDF
     const rows: PdfRow[] = range
       .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')))
       .map(h => ({
@@ -131,55 +138,63 @@ const Reports: React.FC = () => {
         price: h.price ?? null,
       }));
 
-    // 4) Construir documento e baixar
     const blob = await pdf(
       <ReportDocument
         title="Relatório de Atendimentos"
         generatedAt={new Date().toLocaleString()}
-        summary={{
-          periodLabel: `${from} a ${to}`,
-          total: rows.length,
-          byStatus,
-          revenue,
-        }}
+        summary={{ periodLabel: `${from} a ${to}`, total: rows.length, byStatus, revenue }}
         rows={rows}
       />
     ).toBlob();
 
+    // Fallback iOS PWA: share sheet → abrir em nova aba
+    const filename = `relatorio_${from}_a_${to}.pdf`;
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    const canShareFiles = (navigator as any).canShare?.({ files: [file] });
+
+    if ((navigator as any).share && canShareFiles) {
+      try {
+        await (navigator as any).share({ files: [file], title: 'Relatório', text: `Período ${from} a ${to}` });
+        return;
+      } catch { /* usuário cancelou; segue fallback */ }
+    }
+
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `relatorio_${from}_a_${to}.pdf`;
+    a.href = url;
+    a.download = filename;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   return (
-    <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Relatórios</h1>
+    <div className="p-6 pb-safe bg-gray-50 min-h-screen">
+      {/* Cabeçalho */}
+      <div
+        className="
+          flex flex-col gap-3 mb-6
+          md:flex-row md:items-end md:justify-between
+          print:flex-row print:items-center print:justify-between print:mb-3
+        "
+      >
+        <h1 className="text-2xl font-bold text-gray-900 print:text-[20pt] print:font-extrabold">
+          Relatórios
+        </h1>
 
-        {/* Filtros + Botão PDF (NOVO) */}
-        <div className="flex items-end gap-2">
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Data inicial</label>
-            <input type="date" value={from} onChange={(e)=>setFrom(e.target.value)}
-                   className="border rounded-lg px-3 py-2" />
-          </div>
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">Data final</label>
-            <input type="date" value={to} onChange={(e)=>setTo(e.target.value)}
-                   className="border rounded-lg px-3 py-2" />
-          </div>
+        <div className="flex flex-wrap items-end gap-3 print:gap-2 w-full md:w-auto">
+          <DateInput label="Data inicial" value={from} onChange={setFrom} />
+          <DateInput label="Data final" value={to} onChange={setTo} />
           <button
             onClick={handleExportPdf}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+            className="inline-flex items-center justify-center gap-2 h-11 w-full md:w-auto px-4 rounded-xl bg-blue-600 text-white hover:bg-blue-700 print:px-3 print:py-1.5"
             title="Gerar PDF"
           >
-            <Download size={18}/> Gerar PDF
+            <Download size={18} /> Gerar PDF
           </button>
         </div>
       </div>
 
+      {/* Cards principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         <StatCard
           title="Atendimentos Hoje"
@@ -193,46 +208,17 @@ const Reports: React.FC = () => {
           icon={Calendar}
           color="blue"
         />
-        <StatCard
-          title="Receita Total"
-          value={`R$ ${totalRevenue.toFixed(2)}`}
-          icon={TrendingUp}
-          color="green"
-        />
-        <StatCard
-          title="Despesas Totais"
-          value={`R$ ${totalExpenses.toFixed(2)}`}
-          icon={TrendingDown}
-          color="orange"
-        />
-        <StatCard
-          title="Margem de Lucro"
-          value={`${profitMargin}%`}
-          icon={Percent}
-          color="blue"
-        />
-        <StatCard
-          title="Total de Pacientes"
-          value={uniquePatients}
-          icon={Users}
-          color="orange"
-        />
-        <StatCard
-          title="Comissões Totais"
-          value={`R$ ${clinicRevenue.toFixed(2)}`}
-          icon={DollarSign}
-          color="purple"
-        />
-        <StatCard
-          title="Taxa de Conclusão"
-          value={`${historyStats.completionRate.toFixed(1)}%`}
-          icon={CheckCircle}
-          color="green"
-        />
+        <StatCard title="Receita Total" value={`R$ ${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="green" />
+        <StatCard title="Despesas Totais" value={`R$ ${totalExpenses.toFixed(2)}`} icon={TrendingDown} color="orange" />
+        <StatCard title="Margem de Lucro" value={`${profitMargin}%`} icon={Percent} color="blue" />
+        <StatCard title="Total de Pacientes" value={uniquePatients} icon={Users} color="orange" />
+        <StatCard title="Comissões Totais" value={`R$ ${clinicRevenue.toFixed(2)}`} icon={DollarSign} color="purple" />
+        <StatCard title="Taxa de Conclusão" value={`${historyStats.completionRate.toFixed(1)}%`} icon={CheckCircle} color="green" />
       </div>
 
       {/* Resumo do Dia */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6
+                      print:shadow-none print:border-gray-300 print:rounded-md print:break-inside-avoid">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Resumo do Dia</h2>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center">
@@ -264,7 +250,9 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+      {/* Resumo por Profissional */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100
+                      print:shadow-none print:border-gray-300 print:rounded-md print:break-inside-avoid">
         <h2 className="text-lg font-semibold text-gray-900 mb-6">Resumo por Profissional</h2>
         <div className="space-y-6">
           {professionalReports.map((prof, index) => (
