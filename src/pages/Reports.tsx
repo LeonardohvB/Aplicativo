@@ -8,27 +8,23 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useAppointmentHistory } from '../hooks/useAppointmentHistory';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 
-// PDF
 import { pdf } from '@react-pdf/renderer';
 import ReportDocument, { Row as PdfRow } from '../ReportDocument';
 
-// helper local para data "YYYY-MM-DD" em fuso local
+// Data local em "YYYY-MM-DD"
 const todayLocalISO = () => {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 10);
 };
 
-/** ──────────────────────────────────────────────────────────────
- *  Input de data com ícone (usa Calendar do lucide-react)
- *  ─ Alinhado para mobile e impressão (PDF)
- *  ────────────────────────────────────────────────────────────── */
+/** Input de data com ícone de calendário (responsivo e print-friendly) */
 const DateInput: React.FC<{
   label: string;
   value: string;                // yyyy-mm-dd
   onChange: (v: string) => void;
 }> = ({ label, value, onChange }) => (
-  <div className="flex flex-col min-w-[180px] print:min-w-[200px]">
+  <div className="flex flex-col min-w-[180px] print:min-w-[200px] w-full">
     <span className="text-xs text-gray-500 mb-1">{label}</span>
     <div className="relative">
       <Calendar
@@ -40,10 +36,10 @@ const DateInput: React.FC<{
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="
-          w-full pr-3 pl-9 py-2 rounded-xl border border-gray-200 bg-white
+          w-full h-11 pr-3 pl-9 rounded-xl border border-gray-200 bg-white
           text-sm text-gray-900
           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-          print:rounded-md print:py-1.5 print:text-base print:border-gray-300
+          print:h-auto print:py-1.5 print:rounded-md print:border-gray-300
         "
       />
     </div>
@@ -56,14 +52,13 @@ const Reports: React.FC = () => {
   const { history, getHistoryStats, getHistoryByDateRange } = useAppointmentHistory();
   const { slots } = useAppointmentJourneys();
 
-  // 🔄 Filtros do PDF
+  // Filtros
   const [from, setFrom] = useState(todayLocalISO());
   const [to, setTo] = useState(todayLocalISO());
 
-  // ⚠️ NÃO usar toISOString().split('T')[0] p/ "hoje" (UTC). Use helper acima:
   const today = todayLocalISO();
 
-  // Semana atual (local)
+  // Semana atual
   const startOfWeek = new Date();
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
   const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
@@ -72,45 +67,33 @@ const Reports: React.FC = () => {
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   const endOfWeekStr = endOfWeek.toISOString().slice(0, 10);
 
-  // Estatísticas do histórico
   const historyStats = getHistoryStats();
 
-  // Atendimentos de hoje (do histórico)
+  // Hoje
   const todayHistory = history.filter(h => h.date === today);
   const todayCompletedAppointments = todayHistory.filter(h => h.status === 'concluido').length;
   const todayTotalAppointments = todayHistory.length;
 
-  // Atendimentos da semana (do histórico)
+  // Semana
   const weekHistory = getHistoryByDateRange(startOfWeekStr, endOfWeekStr);
   const weekCompletedAppointments = weekHistory.filter(h => h.status === 'concluido').length;
   const weekTotalAppointments = weekHistory.length;
 
-  // Atendimentos agendados para hoje (dos slots)
+  // Slots agendados hoje
   const todayScheduledSlots = slots.filter(slot =>
-    slot.date === today &&
-    ['agendado', 'em_andamento'].includes(slot.status)
+    slot.date === today && ['agendado', 'em_andamento'].includes(slot.status)
   );
 
-  // Receita do histórico (apenas atendimentos concluídos)
+  // Financeiro
   const completedHistory = history.filter(h => h.status === 'concluido');
   const clinicRevenue = completedHistory.reduce((sum, h) => sum + (h.price * (h.clinicPercentage / 100)), 0);
 
-  const totalExpenses = transactions
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  // Receita total da clínica (todas as transações de receita)
-  const totalRevenue = transactions
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  // Margem de lucro baseada em toda a receita da clínica
+  const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalRevenue = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue * 100).toFixed(1) : '0.0';
 
-  // Total de pacientes únicos do histórico
   const uniquePatients = new Set(history.map(h => h.patientName.toLowerCase())).size;
 
-  // Relatório por profissional baseado no histórico
   const professionalReports = professionals.map(prof => {
     const profHistory = history.filter(h => h.professionalId === prof.id && h.status === 'concluido');
     const uniqueProfPatients = new Set(profHistory.map(h => h.patientName.toLowerCase())).size;
@@ -127,16 +110,13 @@ const Reports: React.FC = () => {
     };
   });
 
-  // 🔽 nome do profissional por id (para o PDF)
   const nameById = useMemo(() => {
     const map: Record<string, string> = {};
     for (const p of professionals) map[p.id] = p.name;
     return map;
   }, [professionals]);
 
-  // ============================
-  //       GERAR PDF (NOVO)
-  // ============================
+  // GERAR PDF
   const handleExportPdf = async () => {
     const range = history.filter(h => h.date >= from && h.date <= to);
 
@@ -144,9 +124,7 @@ const Reports: React.FC = () => {
     let revenue = 0;
     for (const h of range) {
       byStatus[h.status] = (byStatus[h.status] || 0) + 1;
-      if (h.status === 'concluido') {
-        revenue += (h.price * (h.clinicPercentage / 100));
-      }
+      if (h.status === 'concluido') revenue += (h.price * (h.clinicPercentage / 100));
     }
 
     const rows: PdfRow[] = range
@@ -164,26 +142,34 @@ const Reports: React.FC = () => {
       <ReportDocument
         title="Relatório de Atendimentos"
         generatedAt={new Date().toLocaleString()}
-        summary={{
-          periodLabel: `${from} a ${to}`,
-          total: rows.length,
-          byStatus,
-          revenue,
-        }}
+        summary={{ periodLabel: `${from} a ${to}`, total: rows.length, byStatus, revenue }}
         rows={rows}
       />
     ).toBlob();
 
+    // Fallback iOS PWA: share sheet → abrir em nova aba
+    const filename = `relatorio_${from}_a_${to}.pdf`;
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    const canShareFiles = (navigator as any).canShare?.({ files: [file] });
+
+    if ((navigator as any).share && canShareFiles) {
+      try {
+        await (navigator as any).share({ files: [file], title: 'Relatório', text: `Período ${from} a ${to}` });
+        return;
+      } catch { /* usuário cancelou; segue fallback */ }
+    }
+
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `relatorio_${from}_a_${to}.pdf`;
+    a.href = url;
+    a.download = filename;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   return (
-    <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* Cabeçalho alinhado (mobile, desktop e impressão) */}
+    <div className="p-6 pb-safe bg-gray-50 min-h-screen">
+      {/* Cabeçalho */}
       <div
         className="
           flex flex-col gap-3 mb-6
@@ -195,12 +181,12 @@ const Reports: React.FC = () => {
           Relatórios
         </h1>
 
-        <div className="flex flex-wrap items-end gap-3 print:gap-2">
+        <div className="flex flex-wrap items-end gap-3 print:gap-2 w-full md:w-auto">
           <DateInput label="Data inicial" value={from} onChange={setFrom} />
           <DateInput label="Data final" value={to} onChange={setTo} />
           <button
             onClick={handleExportPdf}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 print:px-3 print:py-1.5"
+            className="inline-flex items-center justify-center gap-2 h-11 w-full md:w-auto px-4 rounded-xl bg-blue-600 text-white hover:bg-blue-700 print:px-3 print:py-1.5"
             title="Gerar PDF"
           >
             <Download size={18} /> Gerar PDF
@@ -222,42 +208,12 @@ const Reports: React.FC = () => {
           icon={Calendar}
           color="blue"
         />
-        <StatCard
-          title="Receita Total"
-          value={`R$ ${totalRevenue.toFixed(2)}`}
-          icon={TrendingUp}
-          color="green"
-        />
-        <StatCard
-          title="Despesas Totais"
-          value={`R$ ${totalExpenses.toFixed(2)}`}
-          icon={TrendingDown}
-          color="orange"
-        />
-        <StatCard
-          title="Margem de Lucro"
-          value={`${profitMargin}%`}
-          icon={Percent}
-          color="blue"
-        />
-        <StatCard
-          title="Total de Pacientes"
-          value={uniquePatients}
-          icon={Users}
-          color="orange"
-        />
-        <StatCard
-          title="Comissões Totais"
-          value={`R$ ${clinicRevenue.toFixed(2)}`}
-          icon={DollarSign}
-          color="purple"
-        />
-        <StatCard
-          title="Taxa de Conclusão"
-          value={`${historyStats.completionRate.toFixed(1)}%`}
-          icon={CheckCircle}
-          color="green"
-        />
+        <StatCard title="Receita Total" value={`R$ ${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="green" />
+        <StatCard title="Despesas Totais" value={`R$ ${totalExpenses.toFixed(2)}`} icon={TrendingDown} color="orange" />
+        <StatCard title="Margem de Lucro" value={`${profitMargin}%`} icon={Percent} color="blue" />
+        <StatCard title="Total de Pacientes" value={uniquePatients} icon={Users} color="orange" />
+        <StatCard title="Comissões Totais" value={`R$ ${clinicRevenue.toFixed(2)}`} icon={DollarSign} color="purple" />
+        <StatCard title="Taxa de Conclusão" value={`${historyStats.completionRate.toFixed(1)}%`} icon={CheckCircle} color="green" />
       </div>
 
       {/* Resumo do Dia */}
