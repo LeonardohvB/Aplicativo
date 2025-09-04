@@ -101,6 +101,11 @@ const Professionals: React.FC = () => {
       const filename = `${Date.now()}.jpg`;
       const path = `professionals/${id}/${filename}`;
 
+      if (!supabase) {
+        alert('Serviço de armazenamento indisponível.');
+        return;
+      }
+
       const { error: upErr } = await supabase.storage
         .from('avatars')
         .upload(path, blob, {

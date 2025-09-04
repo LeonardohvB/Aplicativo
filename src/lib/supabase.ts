@@ -1,38 +1,44 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-// Lidas SOMENTE do Vite (frontend). process.env não existe no browser.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? ''
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 
-// Validação simples de URL
-const isValidUrl = (url: string): boolean => {
-  try { new URL(url); return true; } catch { return false; }
-};
+const isValidUrl = (url: string) => { try { new URL(url); return true } catch { return false } }
 
-// Indicador para você usar na UI/logs se quiser
 export const isSupabaseConfigured =
-  Boolean(SUPABASE_URL) && Boolean(SUPABASE_ANON_KEY) && isValidUrl(SUPABASE_URL);
+  !!SUPABASE_URL && !!SUPABASE_ANON_KEY && isValidUrl(SUPABASE_URL)
 
-let supabase: SupabaseClient;
+/** Quando as ENVs estão corretas temos o client; caso contrário, `null` (e a UI segue sem travar) */
+export const supabase: SupabaseClient | null = isSupabaseConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null
+// --- ADIÇÕES --- //
+export async function ensureProfile() {
+  if (!supabase) return; // suas ENVs podem não estar configuradas em dev
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
 
-if (isSupabaseConfigured) {
-  // Cliente real
-  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-} else {
-  // Proxy que lança um erro claro se alguém tentar usar o cliente sem configurar as envs
-  const msg =
-    'Supabase não configurado: defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (ex.: em .env.local no DEV ou em Environment Variables na Vercel).';
-
-  if (import.meta.env.DEV) {
-    // Ajuda visual durante o desenvolvimento
-    // eslint-disable-next-line no-console
-    console.warn('⚠️', msg);
-  }
-
-  supabase = new Proxy({}, {
-    get() { throw new Error(msg); },
-    apply() { throw new Error(msg); }
-  }) as unknown as SupabaseClient;
+  await supabase.from('profiles').upsert({
+    id: user.id,
+    email: user.email ?? null,
+    full_name: (user as any)?.user_metadata?.full_name ?? null,
+  });
 }
 
-export { supabase };
+/** Inicia um listener global para manter profiles em dia quando o usuário logar */
+let authSyncStarted = false;
+export function startAuthProfileSync() {
+  if (!supabase || authSyncStarted) return;
+  authSyncStarted = true;
+
+  // roda no login/refresh de sessão
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) ensureProfile();
+  });
+}
+
+/** Sincroniza o profile imediatamente (ex.: no boot do app) */
+export async function syncProfileNow() {
+  if (!supabase) return;
+  await ensureProfile();
+}

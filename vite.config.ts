@@ -1,11 +1,15 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import path from 'node:path'
 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       workbox: {
         clientsClaim: true,
         skipWaiting: true,
@@ -17,7 +21,7 @@ export default defineConfig({
           '**/workbox-*.js'
         ]
       },
-      devOptions: { enabled: true },
+      devOptions: { enabled: false },
       registerType: 'autoUpdate',
       manifest: {
         name: 'Aplicativo',
@@ -41,6 +45,12 @@ export default defineConfig({
       }
     })
   ],
+resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
