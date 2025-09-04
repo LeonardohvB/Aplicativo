@@ -10,6 +10,10 @@ import { getCurrentSession, onAuthChange, signOut } from './lib/auth'
 import Login from './pages/Login'
 import { enableWebPush, disableWebPush } from './lib/push'
 import { getOrCreateOwnProfile } from './lib/profiles'
+import { startAuthProfileSync, syncProfileNow } from './lib/supabase';
+
+startAuthProfileSync();
+syncProfileNow(); // sincroniza se já existir sessão ao abrir o app
 
 function App() {
   const [sessionUser, setSessionUser] = useState<{ id: string } | null>(null)
@@ -57,7 +61,7 @@ function App() {
       const { data: sub } = onAuthChange(async () => {
         try {
           const s = await getCurrentSession()
-          setSessionUser(s.user ? { id: s.user.id } : null)
+        setSessionUser(s.user ? { id: s.user.id } : null)
         } catch (e) {
           console.error('onAuthChange', e)
         }
@@ -82,13 +86,12 @@ function App() {
     })()
   }, [sessionUser])
 
-  // 3) Registrar Web Push (opcional / depois do login)
+  // 3) Registrar Web Push (depois do login) — sem DEFAULT_TENANT
   useEffect(() => {
     if (!sessionUser) return
     ;(async () => {
       try {
-        const DEFAULT_TENANT = import.meta.env.VITE_DEFAULT_TENANT_ID
-        const profile = await getOrCreateOwnProfile(DEFAULT_TENANT)
+        const profile = await getOrCreateOwnProfile() // <- tenant_id gerado pelo banco
         await enableWebPush({ userId: sessionUser.id, tenantId: profile.tenant_id })
       } catch (e) {
         console.warn('enableWebPush falhou', e)
