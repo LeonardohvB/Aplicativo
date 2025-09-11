@@ -7,14 +7,50 @@ export const useAppointmentHistory = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchHistory = async () => {
+    setLoading(true);
     try {
+      // 🔐 garante usuário
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) {
+        setHistory([]);
+        return;
+      }
+
+      // 🔎 seleciona colunas explicitamente (inclui owner_id) e filtra por dono no servidor
       const { data, error } = await supabase
         .from('appointment_history')
-        .select('*')
-        .order('completed_at', { ascending: false });
+        .select(`
+          id,
+          professional_id,
+          professional_name,
+          patient_id,
+          patient_name,
+          patient_phone,
+          service,
+          price,
+          date,
+          start_time,
+          end_time,
+          status,
+          billing_mode,
+          clinic_percentage,
+          notes,
+          completed_at,
+          actual_duration,
+          started_at,
+          finished_at,
+          owner_id,
+          created_at
+        `)
+        .eq('owner_id', uid)
+        // ordenação estável: por data, depois hora de início; se não existir, usa completed_at desc
+        .order('date', { ascending: false })
+        .order('start_time', { ascending: false });
 
       if (error) {
-        if (error.message === 'Supabase not configured') {
+        // modo DEV sem supabase
+        if (error.message?.includes('Supabase not configured')) {
           console.warn('Using mock data for appointment history - Supabase not configured');
           setHistory([]);
           return;
@@ -22,7 +58,7 @@ export const useAppointmentHistory = () => {
         throw error;
       }
 
-      const formattedData = data?.map(item => ({
+      const formattedData: AppointmentHistory[] = (data ?? []).map((item: any) => ({
         id: item.id,
         professionalId: item.professional_id,
         professionalName: item.professional_name,
@@ -30,23 +66,27 @@ export const useAppointmentHistory = () => {
         patientName: item.patient_name,
         patientPhone: item.patient_phone,
         service: item.service,
-        price: Number(item.price),
+        price: Number(item.price) || 0,
         date: item.date,
         startTime: item.start_time,
         endTime: item.end_time,
-        status: item.status as AppointmentHistory['status'],
-        billingMode: item.billing_mode as 'clinica' | 'profissional',
-        clinicPercentage: Number(item.clinic_percentage),
-        notes: item.notes,
+        status: (item.status as AppointmentHistory['status']) ?? 'concluido',
+        billingMode: (item.billing_mode as 'clinica' | 'profissional') ?? 'clinica',
+        clinicPercentage: Number(item.clinic_percentage) || 0,
+        notes: item.notes ?? null,
         completedAt: item.completed_at,
         actualDuration: item.actual_duration,
         startedAt: item.started_at,
         finishedAt: item.finished_at,
-      })) || [];
+        // opcional no seu tipo; mantém se existir
+        owner_id: item.owner_id,
+        created_at: item.created_at,
+      }));
 
       setHistory(formattedData);
     } catch (error) {
       console.error('Error fetching appointment history:', error);
+      setHistory([]);
     } finally {
       setLoading(false);
     }
@@ -73,6 +113,11 @@ export const useAppointmentHistory = () => {
     finishedAt?: string;
   }) => {
     try {
+      // 🔐 uid para setar owner_id no insert (além do trigger)
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) throw new Error('No authenticated user');
+
       // Buscar nome do profissional se não fornecido
       let professionalName = slot.professionalName;
       if (!professionalName) {
@@ -81,33 +126,33 @@ export const useAppointmentHistory = () => {
           .select('name')
           .eq('id', slot.professionalId)
           .single();
-        
+
         professionalName = professional?.name || 'Profissional não encontrado';
       }
 
-      const { error } = await supabase
-        .from('appointment_history')
-        .insert([{
-          professional_id: slot.professionalId,
-          professional_name: professionalName,
-          patient_id: slot.patientId,
-          patient_name: slot.patientName,
-          patient_phone: slot.patientPhone,
-          service: slot.service,
-          price: slot.price,
-          date: slot.date,
-          start_time: slot.startTime,
-          end_time: slot.endTime,
-          status: slot.status,
-          billing_mode: slot.billingMode,
-          clinic_percentage: slot.clinicPercentage || 20,
-          notes: slot.notes,
-          completed_at: new Date().toISOString(),
-          actual_duration: slot.actualDuration,
-          started_at: slot.startedAt,
-          finished_at: slot.finishedAt,
-        }]);
+      const payload = {
+        professional_id: slot.professionalId,
+        professional_name: professionalName,
+        patient_id: slot.patientId ?? null,
+        patient_name: slot.patientName,
+        patient_phone: slot.patientPhone ?? null,
+        service: slot.service,
+        price: Number(slot.price) || 0,
+        date: slot.date,
+        start_time: slot.startTime,
+        end_time: slot.endTime,
+        status: (slot.status ?? 'concluido').toLowerCase(),
+        billing_mode: slot.billingMode,
+        clinic_percentage: Number(slot.clinicPercentage ?? 20),
+        notes: slot.notes ?? null,
+        completed_at: new Date().toISOString(),
+        actual_duration: slot.actualDuration ?? null,
+        started_at: slot.startedAt ?? null,
+        finished_at: slot.finishedAt ?? null,
+        owner_id: uid, // 👈 explícito (a trigger também preencheria)
+      };
 
+      const { error } = await supabase.from('appointment_history').insert([payload]);
       if (error) throw error;
 
       await fetchHistory();
@@ -121,25 +166,26 @@ export const useAppointmentHistory = () => {
   };
 
   const getHistoryByPatient = (patientName: string) => {
-    return history.filter(item => 
-      item.patientName.toLowerCase().includes(patientName.toLowerCase())
+    return history.filter(item =>
+      (item.patientName ?? '').toLowerCase().includes(patientName.toLowerCase())
     );
   };
 
   const getHistoryByDateRange = (startDate: string, endDate: string) => {
-    return history.filter(item => 
+    return history.filter(item =>
       item.date >= startDate && item.date <= endDate
     );
   };
 
   const getHistoryStats = () => {
     const totalAppointments = history.length;
-    const completedAppointments = history.filter(h => h.status === 'concluido').length;
-    const cancelledAppointments = history.filter(h => h.status === 'cancelado').length;
-    const noShowAppointments = history.filter(h => h.status === 'no_show').length;
+    const completedAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'concluido').length;
+    const cancelledAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'cancelado').length;
+    const noShowAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'no_show').length;
+
     const totalRevenue = history
-      .filter(h => h.status === 'concluido')
-      .reduce((sum, h) => sum + (h.price * (h.clinicPercentage / 100)), 0);
+      .filter(h => (h.status ?? '').toLowerCase() === 'concluido')
+      .reduce((sum, h) => sum + (Number(h.price) || 0) * ((Number(h.clinicPercentage) || 0) / 100), 0);
 
     return {
       totalAppointments,

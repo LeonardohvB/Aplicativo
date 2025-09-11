@@ -88,6 +88,7 @@ export interface Transaction {
 }
 
 export interface AppointmentHistory {
+  owner_id: string | null;
   id: string;
   professionalId?: string;
   professionalName: string;
