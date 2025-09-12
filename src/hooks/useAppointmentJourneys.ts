@@ -580,7 +580,8 @@ const todayLocalISO = () => {
         type: 'income',
         description: `Atendimento - ${slot.patientName} (${slot.service})\n${professionalName}`,
         amount: clinicAmount, // Apenas a porcentagem da clínica
-        date: new Date(slot.date).toLocaleDateString('pt-BR'),
+        date: new Date(slot.date + 'T00:00:00').toLocaleDateString('pt-BR'),
+
         category: 'Consultas',
       };
 

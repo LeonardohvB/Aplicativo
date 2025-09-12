@@ -10,7 +10,14 @@ import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
 
-// ==== helpers de data/hora (fuso LOCAL) ====
+// ================= helpers de data/hora (fuso LOCAL) =================
+
+/** data local YYYY-MM-DD (evita voltar 1 dia por causa do UTC) */
+const localISODate = (d = new Date()) => {
+  const dd = new Date(d);
+  dd.setMinutes(dd.getMinutes() - dd.getTimezoneOffset());
+  return dd.toISOString().slice(0, 10);
+};
 
 /** cria um Date no fuso local a partir de "YYYY-MM-DD" e "HH:MM" */
 const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
@@ -51,7 +58,7 @@ const sortJourneysByDateTime = (a: AppointmentJourney, b: AppointmentJourney) =>
   return ta.getTime() - tb.getTime();
 };
 
-// ===============================================================
+// ====================================================================
 
 const Schedule: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -61,6 +68,9 @@ const Schedule: React.FC = () => {
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedJourney, setSelectedJourney] = useState<AppointmentJourney | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  // 🔒 controla o slot que está concluindo (para bloquear cliques repetidos)
+  const [finishingSlot, setFinishingSlot] = useState<string | null>(null);
 
   const {
     journeys,
@@ -130,8 +140,22 @@ const Schedule: React.FC = () => {
     await updateSlotStatus(slotId, 'em_andamento');
   };
 
+  // 🔒 blindado contra cliques repetidos + pronto para usar data local na criação da transação
   const handleFinishAppointment = async (slotId: string) => {
-    await updateSlotStatus(slotId, 'concluido');
+    // se já está finalizando este slot, ignora novos cliques
+    if (finishingSlot === slotId) return;
+
+    setFinishingSlot(slotId);
+    try {
+      // se em algum lugar daqui você cria uma transação,
+      // use localISODate() para a data do financeiro (anti-UTC)
+      await updateSlotStatus(slotId, 'concluido');
+    } catch (err) {
+      console.error('Erro ao concluir atendimento:', err);
+      alert('Não foi possível concluir. Tente novamente.');
+    } finally {
+      setFinishingSlot(null);
+    }
   };
 
   const handleCancelAppointment = async (slotId: string) => {
@@ -225,6 +249,8 @@ const Schedule: React.FC = () => {
                     onFinishAppointment={handleFinishAppointment}
                     onCancelAppointment={handleCancelAppointment}
                     onMarkNoShow={handleMarkNoShow}
+                    // 👇 opcional: ajuda a desabilitar o botão "Concluir" no Card
+                    finishing={finishingSlot === slot.id}
                   />
                 ))}
               </div>
