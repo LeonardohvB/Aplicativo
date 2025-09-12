@@ -8,6 +8,7 @@ import {
   Mail,
   CreditCard,
   Save,
+  LogOut,
 } from "lucide-react";
 
 type ProfileProps = {
@@ -31,6 +32,7 @@ export default function Profile({ onBack }: ProfileProps) {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   // carrega o perfil do usuário logado
   useEffect(() => {
@@ -87,18 +89,14 @@ export default function Profile({ onBack }: ProfileProps) {
       setForm((f) => ({ ...f, [field]: e.target.value }));
     };
 
- const handleSave = async () => {
-  setSaving(true);
-  try {
-    // 1) obter o uid
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id;
-    if (!uid) throw new Error('Usuário não autenticado.');
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) throw new Error("Usuário não autenticado.");
 
-    // 2) gravar/atualizar na tabela profiles
-    const { error } = await supabase
-      .from('profiles')
-      .upsert(
+      const { error } = await supabase.from("profiles").upsert(
         {
           id: uid,
           name: form.name?.trim() || null,
@@ -106,24 +104,41 @@ export default function Profile({ onBack }: ProfileProps) {
           phone: form.phone?.trim() || null,
           email: form.email?.trim() || null,
         },
-        { onConflict: 'id' } // usa o id como chave de upsert
+        { onConflict: "id" }
       );
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // 3) avisa o app para atualizar o “Seja bem-vindo”
-    window.dispatchEvent(
-      new CustomEvent('profile:saved', { detail: { name: form.name || '' } })
-    );
+      // avisa o app para atualizar o “Seja bem-vindo”
+      window.dispatchEvent(
+        new CustomEvent("profile:saved", {
+          detail: { name: form.name || "" },
+        })
+      );
 
-    alert('Perfil atualizado com sucesso!');
-  } catch (e: any) {
-    console.error('save profile error:', e);
-    alert(e.message ?? 'Erro ao salvar perfil');
-  } finally {
-    setSaving(false);
-  }
-};
+      alert("Perfil atualizado com sucesso!");
+    } catch (e: any) {
+      console.error("save profile error:", e);
+      alert(e.message ?? "Erro ao salvar perfil");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (!confirm("Deseja realmente encerrar a sessão?")) return;
+    try {
+      setSigningOut(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // App.tsx já cuida de mandar para Login quando o usuário for null
+    } catch (e: any) {
+      console.error("signOut error:", e);
+      alert(e.message ?? "Erro ao sair");
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
@@ -212,6 +227,17 @@ export default function Profile({ onBack }: ProfileProps) {
         >
           <Save className="w-4 h-4" />
           {saving ? "Salvando..." : "Salvar"}
+        </button>
+
+        {/* Botão Encerrar sessão */}
+        <button
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+          title="Encerrar sessão"
+        >
+          <LogOut className="w-4 h-4" />
+          {signingOut ? "Saindo..." : "Encerrar sessão"}
         </button>
       </div>
     </div>
