@@ -34,3 +34,12 @@
   .print\:rounded-md { @apply rounded-md !important; }
   .print\:break-inside-avoid { break-inside: avoid; }
 }
+
+/* ========= Safe Area iOS ========= */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe {
+  padding-bottom: var(--safe-bottom);
+}

@@ -23,7 +23,8 @@ const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
 
 const BottomNavigation: React.FC<BottomNavigationProps> = ({ activeTab, onTabChange }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200
+                    pb-safe md:pb-0">
       <div className="flex justify-around">
         {tabs.map(({ id, label, icon: Icon }) => {
           const isActive = activeTab === id
