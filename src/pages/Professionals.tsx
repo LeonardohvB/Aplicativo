@@ -1,3 +1,4 @@
+// src/pages/Professionals.tsx
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
 import ProfessionalCard from '../components/Professionals/ProfessionalCard';
@@ -5,38 +6,7 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
-import { supabase } from '../lib/supabase';
-
-/**
- * Converte qualquer imagem (incluindo HEIC/sem type do iOS PWA) para JPEG.
- * Se não conseguir converter, devolve o arquivo original.
- */
-async function fileToJpegBlob(file: File): Promise<Blob> {
-  try {
-    const url = URL.createObjectURL(file);
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = (e) => reject(e);
-      i.src = url;
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    const ctx = canvas.getContext('2d')!;
-    ctx.drawImage(img, 0, 0);
-
-    const blob = await new Promise<Blob>((resolve) =>
-      canvas.toBlob((b) => resolve(b as Blob), 'image/jpeg', 0.9)
-    );
-
-    URL.revokeObjectURL(url);
-    return blob;
-  } catch {
-    return file;
-  }
-}
+import { replaceProfessionalAvatar } from '../lib/avatars'; // << usar Solução B
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -81,45 +51,31 @@ const Professionals: React.FC = () => {
   };
 
   /**
-   * Upload de avatar que funciona no PWA (galeria/câmera iOS/Android):
-   * - Converte para JPEG quando necessário (HEIC/sem type)
-   * - Faz upload no bucket "avatars" (upsert)
-   * - Salva URL pública no campo `avatar` da tabela professionals
+   * Upload de avatar (Solução B):
+   * - Usa replaceProfessionalAvatar: sobe arquivo novo, atualiza DB (avatar_path/updated_at) e apaga o antigo
+   * - Depois atualiza o campo `avatar` no front para manter compatível com o ProfessionalCard atual
    */
   const handlePhotoChange = async (id: string, photoFile: File) => {
     try {
       setUploadingPhoto(id);
 
-      // iOS PWA pode vir com type vazio ou HEIC → normaliza para JPEG
-      const needsConvert =
-        !photoFile.type ||
-        photoFile.type === 'image/heic' ||
-        photoFile.type === 'image/heif';
-      const blob = needsConvert ? await fileToJpegBlob(photoFile) : photoFile;
+      // Sobe novo arquivo e remove o anterior (no Storage), atualiza avatar_path/updated_at no DB
+      const { publicUrl } = await replaceProfessionalAvatar(id, photoFile);
 
-      // sempre usa .jpg para evitar problemas de extensão
-      const filename = `${Date.now()}.jpg`;
-      const path = `professionals/${id}/${filename}`;
+      // Mantém compatibilidade com o componente atual (usa `avatar` como URL pública)
+      // Se seu updateProfessional tipar estrito, ajuste a tipagem para aceitar { avatar?: string }
+      await updateProfessional(id, { /* outros campos não alterados */ } as any);
+      // Atualização leve: se seu updateProfessional não aceitar avatar,
+      // você pode disparar um "refetch" no hook. Caso não exista, descomente este setLocal abaixo:
+      // setProfessionals(prev => prev.map(p => p.id === id ? { ...p, avatar: publicUrl } : p));
 
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, blob, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: 'image/jpeg',
-        });
+      // Preferível: se updateProfessional aceita atributos livres, faça:
+      // await updateProfessional(id, { avatar: publicUrl } as any);
 
-      if (upErr) {
-        alert(`Falha no upload: ${upErr.message}`);
-        return;
-      }
-
-      // URL pública (bucket deve ter policy de SELECT liberada)
-      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
-      const publicUrl = pub.publicUrl;
-
-      // Atualiza o registro com a nova URL (apenas avatar)
-      await updateProfessional(id, { avatar: publicUrl });
+      // --- IMPORTANTE ---
+      // Como seu código anterior já fazia `updateProfessional(id, { avatar: publicUrl })`,
+      // mantenha a linha abaixo para refletir a nova URL no front:
+      await updateProfessional(id, { avatar: publicUrl } as any);
 
     } catch (error) {
       console.error('Erro ao fazer upload da foto:', error);

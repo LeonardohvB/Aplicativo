@@ -2,6 +2,7 @@
 import React from "react";
 import { Edit2, Trash2, Camera } from "lucide-react";
 import { Professional } from "../../types";
+import { publicUrlFromPath } from "../../lib/avatars"; // << usa URL pública do Storage
 
 interface ProfessionalCardProps {
   professional: Professional;
@@ -20,6 +21,26 @@ const withCacheBust = (url: string, v?: string | null) =>
 
 const placeholder = "https://placehold.co/96x96?text=Foto";
 
+// Resolve a URL base do avatar priorizando o caminho no Storage (avatar_path).
+// Fallback para o campo legado `avatar` (URL direta), e por fim o placeholder.
+function resolveAvatarBaseUrl(p: Professional): string {
+  const path: string | undefined = (p as any).avatar_path;
+  if (path && path.trim().length > 0) {
+    return publicUrlFromPath(path);
+  }
+  const url = (p as any).avatar as string | undefined;
+  if (url && url.trim().length > 0) {
+    return url;
+  }
+  return placeholder;
+}
+
+// Pega o "version token" para cache-bust (tenta snake_case e camelCase)
+function resolveAvatarVersion(p: Professional): string | undefined {
+  
+  return (p as any).avatar_updated_at ?? (p as any).avatarUpdatedAt ?? undefined;
+}
+
 const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
@@ -28,10 +49,6 @@ const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
   onPhotoChange,
 }) => {
   const inputId = `avatar-file-${professional.id}`;
-  const hasAvatar =
-    !!professional.avatar &&
-    professional.avatar !== placeholder &&
-    professional.avatar.trim().length > 0;
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -47,14 +64,10 @@ const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
       maximumFractionDigits: 0,
     });
 
-  // monta SRC otimizando (thumb + cache-bust)
-  const optimizedSrc = hasAvatar
-  ? withCacheBust(
-      withAvatarSize(professional.avatar as string, 96),
-      professional.avatarUpdatedAt ?? undefined
-    )
-  : placeholder;
-
+  // monta SRC priorizando Storage + cache-bust
+  const base = resolveAvatarBaseUrl(professional);
+  const v = resolveAvatarVersion(professional);
+  const optimizedSrc = withCacheBust(withAvatarSize(base, 96), v);
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
