@@ -1,8 +1,8 @@
 // src/components/Professionals/ProfessionalCard.tsx
 import React from "react";
-import { Edit2, Trash2, Camera } from "lucide-react";
+import { Edit2, Trash2, Camera, Phone, BadgeCheck } from "lucide-react";
 import { Professional } from "../../types";
-import { publicUrlFromPath } from "../../lib/avatars"; // << usa URL pública do Storage
+import { publicUrlFromPath } from "../../lib/avatars";
 
 interface ProfessionalCardProps {
   professional: Professional;
@@ -12,36 +12,21 @@ interface ProfessionalCardProps {
   onPhotoChange: (id: string, photoFile: File) => void;
 }
 
-// Helpers locais (se preferir, mova para src/lib/images.ts)
-const withAvatarSize = (url: string, size = 96) =>
-  `${url}${url.includes("?") ? "&" : "?"}w=${size}&h=${size}&fit=cover&quality=70`;
-
+const placeholder = "https://placehold.co/96x96?text=Foto";
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
 
-const placeholder = "https://placehold.co/96x96?text=Foto";
-
-// Resolve a URL base do avatar priorizando o caminho no Storage (avatar_path).
-// Fallback para o campo legado `avatar` (URL direta), e por fim o placeholder.
 function resolveAvatarBaseUrl(p: Professional): string {
   const path: string | undefined = (p as any).avatar_path;
-  if (path && path.trim().length > 0) {
-    return publicUrlFromPath(path);
-  }
+  if (path && path.trim()) return publicUrlFromPath(path);
   const url = (p as any).avatar as string | undefined;
-  if (url && url.trim().length > 0) {
-    return url;
-  }
-  return placeholder;
+  return url?.trim() || placeholder;
 }
-
-// Pega o "version token" para cache-bust (tenta snake_case e camelCase)
 function resolveAvatarVersion(p: Professional): string | undefined {
-  
   return (p as any).avatar_updated_at ?? (p as any).avatarUpdatedAt ?? undefined;
 }
 
-const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
+const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
   onEdit,
@@ -49,116 +34,119 @@ const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
   onPhotoChange,
 }) => {
   const inputId = `avatar-file-${professional.id}`;
-
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    onPhotoChange(professional.id, f);
-    e.currentTarget.value = ""; // permite reenviar o mesmo arquivo
-  };
-
-  const preco =
-    "R$ " +
-    Number(professional.value).toLocaleString("pt-BR", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-
-  // monta SRC priorizando Storage + cache-bust
   const base = resolveAvatarBaseUrl(professional);
   const v = resolveAvatarVersion(professional);
-  const optimizedSrc = withCacheBust(withAvatarSize(base, 96), v);
+  const avatarSrc = withCacheBust(base, v);
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        {/* ESQUERDA: avatar + infos */}
-        <div className="flex items-center gap-x-4">
-          {/* Avatar com overlay clicável */}
-          <div className="relative inline-block group">
-            <img
-              src={optimizedSrc}
-              alt={professional.name}
-              className="w-16 h-16 rounded-full object-cover border"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              decoding="async"
-              width={64}
-              height={64}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = placeholder;
-              }}
-            />
-            <label
-              htmlFor={inputId}
-              className="absolute inset-0 rounded-full cursor-pointer bg-black/0 group-hover:bg-black/15 flex items-center justify-center transition-colors"
-              title="Alterar foto"
-            >
-              <Camera className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-            </label>
-            <input
-              id={inputId}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFile}
-            />
-          </div>
-
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {professional.name}
-            </h3>
-            <p className="text-sm text-gray-500">{professional.specialty}</p>
-
-            {/* Valor em AZUL (como antes) */}
-            <div className="mt-2 text-sm leading-5">
-              <span className="text-blue-600 block">Valor</span>
-              <span className="text-blue-600 font-medium">{preco}</span>
-            </div>
-          </div>
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-start gap-4">
+        {/* Avatar com ring + overlay + status dot */}
+        <div className="relative">
+          <img
+            src={avatarSrc}
+            alt={professional.name}
+            className="h-16 w-16 rounded-full object-cover ring-2 ring-gray-100"
+            onError={(e) => ((e.currentTarget as HTMLImageElement).src = placeholder)}
+            loading="lazy"
+            decoding="async"
+          />
+          <span
+            className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ring-2 ring-white ${
+              professional.isActive ? "bg-emerald-500" : "bg-gray-300"
+            }`}
+            title={professional.isActive ? "Ativo" : "Inativo"}
+          />
+          <label
+            htmlFor={inputId}
+            className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/0 transition hover:bg-black/15"
+            title="Alterar foto"
+          >
+            <Camera className="h-4 w-4 text-white opacity-0 transition group-hover:opacity-100" />
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onPhotoChange(professional.id, f);
+              e.currentTarget.value = "";
+            }}
+          />
         </div>
 
-        {/* DIREITA: coluna com switch em cima e ícones embaixo */}
-        <div className="flex flex-col items-end gap-3">
-          {/* Switch com deslizamento */}
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={professional.isActive}
-              onChange={() => onToggle(professional.id)}
-              className="sr-only peer"
-            />
-            <div
-              className="
-                w-11 h-6 rounded-full bg-gray-200
-                peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400
-                peer-checked:bg-blue-500
-                relative transition-colors
-                after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                after:h-5 after:w-5 after:bg-white after:rounded-full after:transition-all
-                peer-checked:after:translate-x-5
-              "
-            />
-          </label>
+        {/* Conteúdo */}
+        <div className="min-w-0 flex-1">
+          {/* Header: nome + pill + switch */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold text-gray-900">
+                {professional.name}
+              </div>
+              {/* Pill de especialidade (hierarquia: logo após o nome) */}
+              <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-100">
+                {professional.specialty}
+              </div>
+            </div>
 
-          {/* Ações (EDITAR + DELETAR) — abaixo do switch */}
-          <div className="flex items-center gap-3">
+            {/* Switch */}
+            <button
+              onClick={() => onToggle(professional.id)}
+              className={`relative h-6 w-11 rounded-full transition ${
+                professional.isActive ? "bg-blue-600" : "bg-gray-300"
+              }`}
+              aria-label={professional.isActive ? "Desativar" : "Ativar"}
+              title={professional.isActive ? "Desativar" : "Ativar"}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                  professional.isActive ? "left-5" : "left-0.5"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Separador sutil */}
+          <div className="my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
+
+          {/* Metadados com ícones sutis */}
+          <div className="space-y-1.5 text-sm">
+            {professional.phone && (
+              <div className="flex items-center gap-2 text-gray-700">
+                <Phone className="h-4 w-4 text-gray-400" />
+                <a href={`tel:${professional.phone}`} className="hover:underline">
+                  {professional.phone}
+                </a>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-gray-700">
+              <BadgeCheck className="h-4 w-4 text-gray-400" />
+              <span className="font-medium">Registro:</span>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
+                {professional.registrationCode}
+              </span>
+            </div>
+          </div>
+
+          {/* Ações ghost */}
+          <div className="mt-3 flex items-center gap-2">
             <button
               onClick={() => onEdit(professional.id)}
-              className="p-2 rounded-full hover:bg-blue-50"
-              aria-label="Editar profissional"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-blue-700 hover:bg-blue-50"
               title="Editar"
             >
-              <Edit2 className="w-4 h-4 text-blue-600" />
+              <Edit2 className="h-4 w-4" />
+              <span className="text-sm">Editar</span>
             </button>
             <button
               onClick={() => onDelete(professional.id)}
-              className="p-2 rounded-full hover:bg-red-50"
-              aria-label="Excluir profissional"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-red-700 hover:bg-red-50"
               title="Excluir"
             >
-              <Trash2 className="w-4 h-4 text-red-600" />
+              <Trash2 className="h-4 w-4" />
+              <span className="text-sm">Excluir</span>
             </button>
           </div>
         </div>
@@ -167,5 +155,4 @@ const ProfessionalCardComponent: React.FC<ProfessionalCardProps> = ({
   );
 };
 
-// Evita re-render desnecessário quando nada mudou
-export default React.memo(ProfessionalCardComponent);
+export default React.memo(ProfessionalCard);

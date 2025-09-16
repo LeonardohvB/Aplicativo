@@ -3,11 +3,12 @@ export interface Professional {
   name: string;
   specialty: string;
   avatar: string | null;          // URL público (pode ser null)
-  avatarUpdatedAt?: string | null; // <-- adicione isto
-  value: number;
+  avatarUpdatedAt?: string | null;
   commissionRate: number;
   patients: number;
   isActive: boolean;
+  phone: string;              // telefone do profissional (formato livre)
+  registrationCode: string;   
 }
 
 export interface Patient {

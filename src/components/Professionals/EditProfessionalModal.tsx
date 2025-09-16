@@ -1,139 +1,152 @@
-import React, { useState, useEffect } from 'react';
+// src/components/Professionals/EditProfessionalModal.tsx
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Professional } from '../../types';
+import { formatBRCell } from '../../lib/phone-br'; // 👈
 
 interface EditProfessionalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpdate: (id: string, professional: {
-    name: string;
-    specialty: string;
-    value: number;
-    commissionRate?: number; // agora é opcional
-  }) => void;
+  onUpdate: (
+    id: string,
+    professional: {
+      name?: string;
+      specialty?: string;
+      phone?: string;
+      registrationCode?: string; // obrigatório (na prática, não deixamos vazio)
+      commissionRate?: number;
+      isActive?: boolean;
+    }
+  ) => void;
   professional: Professional | null;
 }
 
-const EditProfessionalModal: React.FC<EditProfessionalModalProps> = ({
+export default function EditProfessionalModal({
   isOpen,
   onClose,
   onUpdate,
   professional,
-}) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    specialty: '',
-    value: '',
-  });
+}: EditProfessionalModalProps) {
+  const [name, setName] = useState('');
+  const [specialty, setSpecialty] = useState('');
+  const [phone, setPhone] = useState('');
+  const [registrationCode, setRegistrationCode] = useState('');
+  const [commissionRate, setCommissionRate] = useState<number | ''>('');
 
   useEffect(() => {
-    if (professional) {
-      setFormData({
-        name: professional.name,
-        specialty: professional.specialty,
-        value: professional.value.toString(),
-      });
+    if (professional && isOpen) {
+      setName(professional.name ?? '');
+      setSpecialty(professional.specialty ?? '');
+      setPhone(formatBRCell(professional.phone ?? ''));            // 👈 formata ao carregar
+      setRegistrationCode(professional.registrationCode ?? '');
+      setCommissionRate(
+        typeof professional.commissionRate === 'number'
+          ? professional.commissionRate
+          : ''
+      );
     }
-  }, [professional]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.name || !formData.specialty || !formData.value) {
-      alert('Por favor, preencha todos os campos');
-      return;
-    }
-
-    if (!professional) return;
-
-    onUpdate(professional.id, {
-      name: formData.name,
-      specialty: formData.specialty,
-      value: parseFloat(formData.value),
-      // commissionRate fica opcional
-    });
-
-    onClose();
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
+  }, [professional, isOpen]);
 
   if (!isOpen || !professional) return null;
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return alert('Nome é obrigatório.');
+    if (!specialty.trim()) return alert('Profissão/Especialidade é obrigatória.');
+    if (!registrationCode.trim()) return alert('Registro profissional é obrigatório.');
+
+    onUpdate(professional.id, {
+      name,
+      specialty,
+      phone,
+      registrationCode,
+      commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
+    });
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Editar Profissional</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Editar profissional</h2>
+          <button onClick={onClose} className="rounded p-1 hover:bg-gray-100">
+            <X />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Nome
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Nome</label>
             <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Digite o nome do profissional"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full rounded-lg border px-3 py-2"
+              required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Profissão
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
-              type="text"
-              name="specialty"
-              value={formData.specialty}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Ex: Nutricionista, Fonoaudióloga"
+              value={specialty}
+              onChange={(e) => setSpecialty(e.target.value)}
+              className="mt-1 w-full rounded-lg border px-3 py-2"
+              required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Valor (R$)
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Telefone</label>
             <input
-              type="number"
-              name="value"
-              value={formData.value}
-              onChange={handleChange}
-              step="0.01"
-              min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="130.00"
+              value={phone}
+              onChange={(e) => setPhone(formatBRCell(e.target.value))}
+              type="tel"
+              className="mt-1 w-full rounded-lg border px-3 py-2"
             />
           </div>
 
-          <div className="flex space-x-3 pt-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Registro Profissional (obrigatório)
+            </label>
+            <input
+              value={registrationCode}
+              onChange={(e) => setRegistrationCode(e.target.value)}
+              className="mt-1 w-full rounded-lg border px-3 py-2"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Comissão (%) <span className="text-gray-400">(opcional)</span>
+            </label>
+            <input
+              value={commissionRate}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '') return setCommissionRate('');
+                const n = Number(v);
+                if (!Number.isNaN(n)) setCommissionRate(n);
+              }}
+              className="mt-1 w-full rounded-lg border px-3 py-2"
+              placeholder="20"
+              inputMode="numeric"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
             >
               Salvar
             </button>
@@ -142,6 +155,4 @@ const EditProfessionalModal: React.FC<EditProfessionalModalProps> = ({
       </div>
     </div>
   );
-};
-
-export default EditProfessionalModal;
+}

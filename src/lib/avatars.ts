@@ -98,3 +98,27 @@ export async function replaceProfessionalAvatar(
     updatedAt,
   }
 }
+
+export async function deleteAllAvatarsForProfessional(professionalId: string) {
+  const BUCKET = 'avatars'; // ajuste se necessário
+  const prefix = `professionals/${professionalId}/`;
+
+  // lista os arquivos no prefixo
+  const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
+    limit: 100,
+    offset: 0,
+    search: '',
+  });
+  if (error) {
+    console.warn('Erro ao listar arquivos do prefixo:', error);
+    return;
+  }
+  if (!data || data.length === 0) return;
+
+  // remove todos os arquivos listados
+  const paths = data.map((o) => `${prefix}${o.name}`);
+  const { error: removeErr } = await supabase.storage.from(BUCKET).remove(paths);
+  if (removeErr) {
+    console.warn('Erro ao remover arquivos do prefixo:', removeErr);
+  }
+}
