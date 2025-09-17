@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Professional } from '../../types';
-import { formatBRCell } from '../../lib/phone-br'; // 👈
+import { formatBRCell } from '../../lib/phone-br';
 
 interface EditProfessionalModalProps {
   isOpen: boolean;
@@ -13,11 +13,12 @@ interface EditProfessionalModalProps {
       name?: string;
       specialty?: string;
       phone?: string;
-      registrationCode?: string; // obrigatório (na prática, não deixamos vazio)
+      registrationCode?: string; // obrigatório
       commissionRate?: number;
       isActive?: boolean;
     }
   ) => void;
+  onDelete: (id: string) => Promise<void> | void; // 👈 novo: callback de exclusão
   professional: Professional | null;
 }
 
@@ -25,6 +26,7 @@ export default function EditProfessionalModal({
   isOpen,
   onClose,
   onUpdate,
+  onDelete,           // 👈 novo
   professional,
 }: EditProfessionalModalProps) {
   const [name, setName] = useState('');
@@ -32,18 +34,20 @@ export default function EditProfessionalModal({
   const [phone, setPhone] = useState('');
   const [registrationCode, setRegistrationCode] = useState('');
   const [commissionRate, setCommissionRate] = useState<number | ''>('');
+  const [deleting, setDeleting] = useState(false); // estado de exclusão
 
   useEffect(() => {
     if (professional && isOpen) {
       setName(professional.name ?? '');
       setSpecialty(professional.specialty ?? '');
-      setPhone(formatBRCell(professional.phone ?? ''));            // 👈 formata ao carregar
+      setPhone(formatBRCell(professional.phone ?? ''));
       setRegistrationCode(professional.registrationCode ?? '');
       setCommissionRate(
         typeof professional.commissionRate === 'number'
           ? professional.commissionRate
           : ''
       );
+      setDeleting(false);
     }
   }, [professional, isOpen]);
 
@@ -65,12 +69,31 @@ export default function EditProfessionalModal({
     onClose();
   };
 
+  const handleDelete = async () => {
+    const ok = confirm(
+      'Tem certeza que deseja excluir este profissional? Esta ação não poderá ser desfeita.'
+    );
+    if (!ok) return;
+    try {
+      setDeleting(true);
+      await onDelete(professional.id);
+      onClose();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-prof-title"
+      >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Editar profissional</h2>
-          <button onClick={onClose} className="rounded p-1 hover:bg-gray-100">
+          <h2 id="edit-prof-title" className="text-lg font-semibold">Editar profissional</h2>
+          <button onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Fechar">
             <X />
           </button>
         </div>
@@ -136,7 +159,8 @@ export default function EditProfessionalModal({
             />
           </div>
 
-          <div className="flex gap-2 pt-2">
+          {/* Rodapé com Cancelar, Excluir e Salvar */}
+          <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={onClose}
@@ -144,6 +168,16 @@ export default function EditProfessionalModal({
             >
               Cancelar
             </button>
+
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-1 rounded-lg  bg-red-400 px-4 py-2 text-black hover:bg-red-50 disabled:opacity-60"
+            >
+              {deleting ? 'Excluindo…' : 'Excluir'}
+            </button>
+
             <button
               type="submit"
               className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"

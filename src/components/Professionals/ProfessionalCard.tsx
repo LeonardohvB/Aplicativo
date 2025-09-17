@@ -1,14 +1,14 @@
 // src/components/Professionals/ProfessionalCard.tsx
 import React from "react";
-import { Edit2, Trash2, Camera, Phone, BadgeCheck } from "lucide-react";
+import { Camera, Phone, BadgeCheck } from "lucide-react";
 import { Professional } from "../../types";
 import { publicUrlFromPath } from "../../lib/avatars";
 
 interface ProfessionalCardProps {
   professional: Professional;
   onToggle: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  onEdit: (id: string) => void;          // abre o modal de edição
+  onDelete: (id: string) => void;        // continua na interface p/ o modal (não usado aqui)
   onPhotoChange: (id: string, photoFile: File) => void;
 }
 
@@ -30,7 +30,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
   onEdit,
-  onDelete,
+  // onDelete  <-- não desestruturar para evitar ts(6133)
   onPhotoChange,
 }) => {
   const inputId = `avatar-file-${professional.id}`;
@@ -38,11 +38,27 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   const v = resolveAvatarVersion(professional);
   const avatarSrc = withCacheBust(base, v);
 
+  // evita que elementos internos disparem o clique do card
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onEdit(professional.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onEdit(professional.id);
+        }
+      }}
+      className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+      aria-label={`Editar ${professional.name ?? "profissional"}`}
+      title="Abrir edição"
+    >
       <div className="flex items-start gap-4">
         {/* Avatar com ring + overlay + status dot */}
-        <div className="relative">
+        <div className="relative" onClick={stop}>
           <img
             src={avatarSrc}
             alt={professional.name}
@@ -61,6 +77,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             htmlFor={inputId}
             className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/0 transition hover:bg-black/15"
             title="Alterar foto"
+            onClick={stop}
           >
             <Camera className="h-4 w-4 text-white opacity-0 transition group-hover:opacity-100" />
           </label>
@@ -69,6 +86,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             type="file"
             accept="image/*"
             className="hidden"
+            onClick={stop}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onPhotoChange(professional.id, f);
@@ -79,76 +97,86 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
         {/* Conteúdo */}
         <div className="min-w-0 flex-1">
-          {/* Header: nome + pill + switch */}
-          <div className="flex items-start justify-between gap-3">
+          {/* === LAYOUT EM GRID ===
+              col-esquerda: 1fr (conteúdo)
+              col-direita: auto (switch em cima, "Ligar" embaixo, centralizado) */}
+          <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 sm:gap-y-3">
+            {/* Linha 1 — Nome + especialidade (esquerda) */}
             <div className="min-w-0">
               <div className="truncate text-base font-semibold text-gray-900">
                 {professional.name}
               </div>
-              {/* Pill de especialidade (hierarquia: logo após o nome) */}
-              <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-100">
-                {professional.specialty}
-              </div>
+              {professional.specialty && (
+                <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-100">
+                  {professional.specialty}
+                </div>
+              )}
             </div>
 
-            {/* Switch */}
-            <button
-              onClick={() => onToggle(professional.id)}
-              className={`relative h-6 w-11 rounded-full transition ${
-                professional.isActive ? "bg-blue-600" : "bg-gray-300"
-              }`}
-              aria-label={professional.isActive ? "Desativar" : "Ativar"}
-              title={professional.isActive ? "Desativar" : "Ativar"}
-            >
-              <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
-                  professional.isActive ? "left-5" : "left-0.5"
+            {/* Linha 1 — Switch (direita) */}
+            <div className="flex items-start justify-center" onClick={stop}>
+              <button
+                onClick={() => onToggle(professional.id)}
+                className={`relative h-6 w-11 rounded-full transition ${
+                  professional.isActive ? "bg-blue-600" : "bg-gray-300"
                 }`}
-              />
-            </button>
-          </div>
-
-          {/* Separador sutil */}
-          <div className="my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
-
-          {/* Metadados com ícones sutis */}
-          <div className="space-y-1.5 text-sm">
-            {professional.phone && (
-              <div className="flex items-center gap-2 text-gray-700">
-                <Phone className="h-4 w-4 text-gray-400" />
-                <a href={`tel:${professional.phone}`} className="hover:underline">
-                  {professional.phone}
-                </a>
-              </div>
-            )}
-            <div className="flex items-center gap-2 text-gray-700">
-              <BadgeCheck className="h-4 w-4 text-gray-400" />
-              <span className="font-medium">Registro:</span>
-              <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
-                {professional.registrationCode}
-              </span>
+                aria-label={professional.isActive ? "Desativar" : "Ativar"}
+                title={professional.isActive ? "Desativar" : "Ativar"}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                    professional.isActive ? "left-5" : "left-0.5"
+                  }`}
+                />
+              </button>
             </div>
-          </div>
 
-          {/* Ações ghost */}
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              onClick={() => onEdit(professional.id)}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-blue-700 hover:bg-blue-50"
-              title="Editar"
-            >
-              <Edit2 className="h-4 w-4" />
-              <span className="text-sm">Editar</span>
-            </button>
-            <button
-              onClick={() => onDelete(professional.id)}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-red-700 hover:bg-red-50"
-              title="Excluir"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span className="text-sm">Excluir</span>
-            </button>
+            {/* Separador ocupando as 2 colunas */}
+            <div className="col-span-2 my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
+
+            {/* Linha 2 — Telefone (esquerda) */}
+            <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
+              {professional.phone && (
+                <div className="flex items-center gap-2 text-gray-700" onClick={stop}>
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <span className="select-text">{professional.phone}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Linha 2 — Botão "Ligar" (direita), centralizado e abaixo do switch */}
+            <div className="flex items-center justify-center" onClick={stop}>
+              {professional.phone && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.location.href = `tel:${professional.phone}`;
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border border-blue-300 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  title="Ligar"
+                  aria-label={`Ligar para ${professional.phone}`}
+                >
+                  Ligar
+                </button>
+              )}
+            </div>
+
+            {/* Linha 3 — Registro (esquerda) */}
+            <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
+              <div className="flex items-center gap-2 text-gray-700">
+                <BadgeCheck className="h-4 w-4 text-gray-400" />
+                <span className="font-medium">Registro:</span>
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
+                  {professional.registrationCode}
+                </span>
+              </div>
+            </div>
+
+            {/* Linha 3 — coluna direita vazia (apenas para alinhamento) */}
+            <div />
           </div>
+          {/* === /GRID === */}
         </div>
       </div>
     </div>

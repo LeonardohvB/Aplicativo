@@ -6,7 +6,7 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
-import { replaceProfessionalAvatar } from '../lib/avatars'; // << usar Solução B
+import { replaceProfessionalAvatar } from '../lib/avatars'; // Solução B
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,21 +31,39 @@ const Professionals: React.FC = () => {
     }
   };
 
+  // ✅ Ajustado para aceitar os campos que o AddProfessionalModal envia
   const handleAdd = async (newProfessional: {
     name: string;
     specialty: string;
-    value: number;
+    value?: number;
+    phone?: string;
+    registrationCode: string;
+    commissionRate?: number;
   }) => {
-    await addProfessional(newProfessional);
+    // Se o hook aceitar só alguns campos, o cast mantém compatibilidade.
+    await addProfessional(newProfessional as any);
     setIsModalOpen(false);
   };
 
-  const handleUpdate = async (id: string, updates: {
-    name: string;
-    specialty: string;
-    value: number;
-  }) => {
-    await updateProfessional(id, updates);
+  // ✅ Já aceita os campos enviados pelo EditProfessionalModal
+  const handleUpdate = async (
+    id: string,
+    updates: {
+      name?: string;
+      specialty?: string;
+      phone?: string;
+      registrationCode?: string;
+      commissionRate?: number;
+      isActive?: boolean;
+    }
+  ) => {
+    await updateProfessional(id, updates as any);
+    setIsEditModalOpen(false);
+    setEditingProfessional(null);
+  };
+
+  const handleDelete = async (id: string) => {
+    await deleteProfessional(id);
     setIsEditModalOpen(false);
     setEditingProfessional(null);
   };
@@ -53,30 +71,13 @@ const Professionals: React.FC = () => {
   /**
    * Upload de avatar (Solução B):
    * - Usa replaceProfessionalAvatar: sobe arquivo novo, atualiza DB (avatar_path/updated_at) e apaga o antigo
-   * - Depois atualiza o campo `avatar` no front para manter compatível com o ProfessionalCard atual
+   * - Depois persiste a URL pública no front (campo avatar) para o card refletir
    */
   const handlePhotoChange = async (id: string, photoFile: File) => {
     try {
       setUploadingPhoto(id);
-
-      // Sobe novo arquivo e remove o anterior (no Storage), atualiza avatar_path/updated_at no DB
       const { publicUrl } = await replaceProfessionalAvatar(id, photoFile);
-
-      // Mantém compatibilidade com o componente atual (usa `avatar` como URL pública)
-      // Se seu updateProfessional tipar estrito, ajuste a tipagem para aceitar { avatar?: string }
-      await updateProfessional(id, { /* outros campos não alterados */ } as any);
-      // Atualização leve: se seu updateProfessional não aceitar avatar,
-      // você pode disparar um "refetch" no hook. Caso não exista, descomente este setLocal abaixo:
-      // setProfessionals(prev => prev.map(p => p.id === id ? { ...p, avatar: publicUrl } : p));
-
-      // Preferível: se updateProfessional aceita atributos livres, faça:
-      // await updateProfessional(id, { avatar: publicUrl } as any);
-
-      // --- IMPORTANTE ---
-      // Como seu código anterior já fazia `updateProfessional(id, { avatar: publicUrl })`,
-      // mantenha a linha abaixo para refletir a nova URL no front:
       await updateProfessional(id, { avatar: publicUrl } as any);
-
     } catch (error) {
       console.error('Erro ao fazer upload da foto:', error);
       alert('Erro ao enviar a foto. Confira as permissões do bucket/policies.');
@@ -112,7 +113,7 @@ const Professionals: React.FC = () => {
             professional={professional}
             onToggle={toggleProfessional}
             onEdit={handleEdit}
-            onDelete={deleteProfessional}
+            onDelete={handleDelete}              // card não usa, mas mantemos a prop
             onPhotoChange={handlePhotoChange}
           />
         ))}
@@ -130,7 +131,7 @@ const Professionals: React.FC = () => {
       <AddProfessionalModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onAdd={handleAdd}
+        onAdd={handleAdd}                        // ✅ agora compatível
       />
 
       <EditProfessionalModal
@@ -140,6 +141,7 @@ const Professionals: React.FC = () => {
           setEditingProfessional(null);
         }}
         onUpdate={handleUpdate}
+        onDelete={handleDelete}                  // ✅ exclusão dentro do modal
         professional={editingProfessional}
       />
     </div>
