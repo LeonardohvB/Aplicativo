@@ -107,7 +107,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 {professional.name}
               </div>
               {professional.specialty && (
-                <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-100">
+                <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600">
                   {professional.specialty}
                 </div>
               )}
@@ -138,7 +138,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               {professional.phone && (
                 <div className="flex items-center gap-2 text-gray-700" onClick={stop}>
-                  <Phone className="h-4 w-4 text-gray-400" />
+                  <Phone className="h-4 w-4 text-blue-600" />
                   <span className="select-text">{professional.phone}</span>
                 </div>
               )}
@@ -153,7 +153,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                     e.stopPropagation();
                     window.location.href = `tel:${professional.phone}`;
                   }}
-                  className="inline-flex items-center gap-1 rounded-full border border-blue-300 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="inline-flex items-center gap-1 rounded-full border border-blue-600 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   title="Ligar"
                   aria-label={`Ligar para ${professional.phone}`}
                 >
@@ -165,7 +165,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             {/* Linha 3 — Registro (esquerda) */}
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               <div className="flex items-center gap-2 text-gray-700">
-                <BadgeCheck className="h-4 w-4 text-gray-400" />
+                <BadgeCheck className="h-4 w-4 text-blue-600" />
                 <span className="font-medium">Registro:</span>
                 <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
                   {professional.registrationCode}
