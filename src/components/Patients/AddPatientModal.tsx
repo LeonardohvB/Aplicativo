@@ -109,6 +109,50 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     }
   };
 
+ // ---- Title Case PT-BR (preserva espaço ao digitar, mas NÃO trava ao apagar) ----
+const LOWERCASE_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+function capPart(part: string, forceCap: boolean) {
+  const ap = part.match(/^([a-z])'([a-z].*)$/i); // d'ávila -> D'Ávila
+  if (ap) return ap[1].toUpperCase() + "'" + (ap[2][0]?.toUpperCase() + ap[2].slice(1));
+  if (!forceCap && LOWERCASE_WORDS.has(part)) return part;
+  return part.charAt(0).toUpperCase() + part.slice(1);
+}
+
+/** “Ao digitar”: remove múltiplos espaços, ignora espaços à esquerda,
+ *  preserva apenas o espaço final se houver conteúdo. */
+function titleCaseNameBRLive(input: string) {
+  if (!input) return '';
+  if (/^\s+$/.test(input)) return ''; // só espaços -> vira vazio
+
+  const hadTrailingSpace = /\s$/.test(input);
+
+  // normaliza, mas não faz trim direito-esquerda; remove espaços à esquerda
+  const core = input
+    .toLowerCase()
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^\s+/, '');
+
+  // separa palavras válidas
+  const words = core
+    .split(' ')
+    .filter(Boolean)
+    .map((w, idx) =>
+      w.includes('-')
+        ? w.split('-').map((p) => (p ? capPart(p, idx === 0) : '')).join('-')
+        : capPart(w, idx === 0)
+    )
+    .join(' ');
+
+  if (words === '') return ''; // se esvaziou, não mantém espaço
+  return hadTrailingSpace ? words + ' ' : words;
+}
+
+/** Polimento final (ao sair do campo) */
+function titleCaseNameBRFinal(input: string) {
+  return titleCaseNameBRLive(input).trim();
+}
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className={`w-full max-w-md rounded-xl bg-white p-5 shadow-xl ${shake ? 'animate-[shake_0.26s]' : ''}`}>
@@ -122,12 +166,16 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
         <form onSubmit={onSubmit} className="space-y-4" autoComplete="off">
           <div>
             <label className="block text-sm font-medium text-gray-700">Nome *</label>
-            <input
-              value={name}
-              onChange={(e) => { setName(e.target.value); if (errors.name) setErrors(s => ({...s, name: ''})); }}
-              className={inputClass(!!errors.name)}
-              placeholder="Nome completo"
-            />
+           <input
+
+            value={name}
+            onChange={(e) => setName(titleCaseNameBRLive(e.target.value))}
+            onBlur={() => setName((v) => titleCaseNameBRFinal(v))}
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            placeholder="Nome completo"
+            required
+           />
+
             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
           </div>
 
