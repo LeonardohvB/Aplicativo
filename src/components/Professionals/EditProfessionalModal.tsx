@@ -13,40 +13,68 @@ interface EditProfessionalModalProps {
       name?: string;
       specialty?: string;
       phone?: string;
-      registrationCode?: string; // obrigatório
+      registrationCode?: string; // montado como "SIGLA - número"
       commissionRate?: number;
       isActive?: boolean;
     }
   ) => void;
-  onDelete: (id: string) => Promise<void> | void; // 👈 novo: callback de exclusão
+  onDelete: (id: string) => Promise<void> | void;
   professional: Professional | null;
+}
+
+// opções de conselhos mais comuns (adicione/retire à vontade)
+const COUNCILS = [
+  'CRM', 'CREA', 'CREFITO', 'CRP', 'CRO', 'COREN', 'CRF', 'CRFa', 'CRN', 'CRESS', 'CREF',
+];
+
+// helper: separa "SIGLA - número" em { council, number }
+function splitRegistration(s: string | undefined | null) {
+  const raw = (s ?? '').trim();
+  const m = raw.match(/^\s*([A-Za-zÀ-ÿ]{2,10})\s*-\s*(.+)$/);
+  if (m) return { council: m[1], number: m[2] };
+  // se vier só o número, assume CRM por padrão
+  return { council: 'CRM', number: raw };
 }
 
 export default function EditProfessionalModal({
   isOpen,
   onClose,
   onUpdate,
-  onDelete,           // 👈 novo
+  onDelete,
   professional,
 }: EditProfessionalModalProps) {
   const [name, setName] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
-  const [registrationCode, setRegistrationCode] = useState('');
   const [commissionRate, setCommissionRate] = useState<number | ''>('');
-  const [deleting, setDeleting] = useState(false); // estado de exclusão
+
+  // novo: estados para o registro
+  const [council, setCouncil] = useState<string>('CRM');  // sigla escolhida
+  const [customCouncil, setCustomCouncil] = useState(''); // quando "Outro"
+  const [regNumber, setRegNumber] = useState('');         // número/sufixo
+
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (professional && isOpen) {
       setName(professional.name ?? '');
       setSpecialty(professional.specialty ?? '');
       setPhone(formatBRCell(professional.phone ?? ''));
-      setRegistrationCode(professional.registrationCode ?? '');
       setCommissionRate(
-        typeof professional.commissionRate === 'number'
-          ? professional.commissionRate
-          : ''
+        typeof professional.commissionRate === 'number' ? professional.commissionRate : ''
       );
+
+      // preencher conselho + número a partir do campo atual
+      const { council: c, number: n } = splitRegistration(professional.registrationCode);
+      // se a sigla não está na lista, marcamos como "Outro"
+      if (COUNCILS.includes(c.toUpperCase())) {
+        setCouncil(c.toUpperCase());
+        setCustomCouncil('');
+      } else {
+        setCouncil('OUTRO');
+        setCustomCouncil(c.toUpperCase());
+      }
+      setRegNumber(n ?? '');
       setDeleting(false);
     }
   }, [professional, isOpen]);
@@ -57,7 +85,14 @@ export default function EditProfessionalModal({
     e.preventDefault();
     if (!name.trim()) return alert('Nome é obrigatório.');
     if (!specialty.trim()) return alert('Profissão/Especialidade é obrigatória.');
-    if (!registrationCode.trim()) return alert('Registro profissional é obrigatório.');
+    const chosenCouncil =
+      council === 'OUTRO'
+        ? (customCouncil || '').trim().toUpperCase()
+        : council.toUpperCase();
+    if (!chosenCouncil) return alert('Informe a sigla do conselho (ex.: CRM, CREA, CREFITO).');
+    if (!regNumber.trim()) return alert('Informe o número do registro.');
+
+    const registrationCode = `${chosenCouncil} - ${regNumber.trim()}`;
 
     onUpdate(professional.id, {
       name,
@@ -70,9 +105,7 @@ export default function EditProfessionalModal({
   };
 
   const handleDelete = async () => {
-    const ok = confirm(
-      'Tem certeza que deseja excluir este profissional? Esta ação não poderá ser desfeita.'
-    );
+    const ok = confirm('Tem certeza que deseja excluir este profissional? Esta ação não poderá ser desfeita.');
     if (!ok) return;
     try {
       setDeleting(true);
@@ -129,17 +162,50 @@ export default function EditProfessionalModal({
             />
           </div>
 
+          {/* --- Registro Profissional (com sigla pronta) --- */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Registro Profissional (obrigatório)
             </label>
-            <input
-              value={registrationCode}
-              onChange={(e) => setRegistrationCode(e.target.value)}
-              className="mt-1 w-full rounded-lg border px-3 py-2"
-              required
-            />
+
+            <div className="mt-1 flex gap-2">
+              <select
+                value={council}
+                onChange={(e) => setCouncil(e.target.value)}
+                className="w-[44%] rounded-lg border px-3 py-2"
+              >
+                {COUNCILS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+                <option value="OUTRO">Outro…</option>
+              </select>
+
+              {council === 'OUTRO' && (
+                <input
+                  value={customCouncil}
+                  onChange={(e) => setCustomCouncil(e.target.value.toUpperCase())}
+                  placeholder="Sigla (ex.: CRM)"
+                  className="w-[30%] rounded-lg border px-3 py-2"
+                />
+              )}
+
+              <input
+                value={regNumber}
+                onChange={(e) => setRegNumber(e.target.value)}
+                placeholder="número (ex.: 26465 / SP)"
+                className="flex-1 rounded-lg border px-3 py-2"
+              />
+            </div>
+
+            <div className="mt-1 text-xs text-gray-500">
+              Pré-visualização:{' '}
+              <span className="font-medium text-gray-700">
+                {(council === 'OUTRO' ? (customCouncil || '').toUpperCase() : council.toUpperCase()) || '—'}{' '}
+                - {regNumber || '—'}
+              </span>
+            </div>
           </div>
+          {/* --- /Registro --- */}
 
           <div>
             <label className="block text-sm font-medium text-gray-700">
@@ -159,7 +225,7 @@ export default function EditProfessionalModal({
             />
           </div>
 
-          {/* Rodapé com Cancelar, Excluir e Salvar */}
+          {/* Rodapé */}
           <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
             <button
               type="button"
@@ -173,7 +239,7 @@ export default function EditProfessionalModal({
               type="button"
               onClick={handleDelete}
               disabled={deleting}
-              className="flex-1 rounded-lg  bg-red-400 px-4 py-2 text-black hover:bg-red-50 disabled:opacity-60"
+              className="flex-1 rounded-lg border border-red-300 px-4 py-2 text-red-700 hover:bg-red-50 disabled:opacity-60"
             >
               {deleting ? 'Excluindo…' : 'Excluir'}
             </button>

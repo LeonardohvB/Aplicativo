@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Plus, Edit2, Trash2, History } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 import CreateJourneyModal from '../components/Schedule/CreateJourneyModal';
 import EditJourneyModal from '../components/Schedule/EditJourneyModal';
 import SlotCard from '../components/Schedule/SlotCard';
 import SchedulePatientModal from '../components/Schedule/SchedulePatientModal';
 import EditPatientModal from '../components/Schedule/EditPatientModal';
 import AppointmentHistoryModal from '../components/Schedule/AppointmentHistoryModal';
+import AddPatientModal from '../components/Patients/AddPatientModal';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
@@ -65,9 +67,11 @@ const Schedule: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isEditPatientModalOpen, setIsEditPatientModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
+
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedJourney, setSelectedJourney] = useState<AppointmentJourney | null>(null);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   // 🔒 controla o slot que está concluindo (para bloquear cliques repetidos)
   const [finishingSlot, setFinishingSlot] = useState<string | null>(null);
@@ -96,7 +100,7 @@ const Schedule: React.FC = () => {
   };
 
   const handleDeleteJourney = async (journeyId: string) => {
-    if (confirm('Tem certeza que deseja excluir esta jornada? Todos os agendamentos serão perdidos.')) {
+    if (confirm('Tem certeza que deseja excluir esse agendamento?')) {
       await deleteJourney(journeyId);
     }
   };
@@ -142,8 +146,7 @@ const Schedule: React.FC = () => {
 
   // 🔒 blindado contra cliques repetidos + pronto para usar data local na criação da transação
   const handleFinishAppointment = async (slotId: string) => {
-    // se já está finalizando este slot, ignora novos cliques
-    if (finishingSlot === slotId) return;
+    if (finishingSlot === slotId) return; // já está finalizando este slot
 
     setFinishingSlot(slotId);
     try {
@@ -180,9 +183,11 @@ const Schedule: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
+      {/* Cabeçalho ÚNICO com botões no topo direito */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
         <div className="flex space-x-3">
+          {/* Histórico */}
           <button
             onClick={() => setIsHistoryModalOpen(true)}
             className="p-3 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors shadow-lg"
@@ -190,15 +195,28 @@ const Schedule: React.FC = () => {
           >
             <History className="w-6 h-6" />
           </button>
+
+          {/* Cadastrar paciente */}
+          <button
+            onClick={() => setIsAddPatientOpen(true)}
+            className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 transition-colors shadow-lg"
+            title="Cadastrar paciente"
+          >
+            <UserPlus className="w-6 h-6" />
+          </button>
+
+          {/* Criar jornada */}
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+            title="Criar jornada"
           >
             <Plus className="w-6 h-6" />
           </button>
         </div>
       </div>
 
+      {/* Listagem */}
       <div className="space-y-6">
         {[...journeys].sort(sortJourneysByDateTime).map((journey) => {
           const journeySlots = slots.filter((slot) => slot.journeyId === journey.id);
@@ -249,8 +267,7 @@ const Schedule: React.FC = () => {
                     onFinishAppointment={handleFinishAppointment}
                     onCancelAppointment={handleCancelAppointment}
                     onMarkNoShow={handleMarkNoShow}
-                    // 👇 opcional: ajuda a desabilitar o botão "Concluir" no Card
-                    finishing={finishingSlot === slot.id}
+                    // Se seu SlotCard suportar, dá pra passar `finishing={finishingSlot === slot.id}`
                   />
                 ))}
               </div>
@@ -271,6 +288,7 @@ const Schedule: React.FC = () => {
         )}
       </div>
 
+      {/* Modais */}
       <CreateJourneyModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -314,6 +332,15 @@ const Schedule: React.FC = () => {
       <AppointmentHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
+      />
+
+      <AddPatientModal
+        isOpen={isAddPatientOpen}
+        onClose={() => setIsAddPatientOpen(false)}
+        onCreated={() => {
+          // opcional: toast
+          setIsAddPatientOpen(false);
+        }}
       />
     </div>
   );

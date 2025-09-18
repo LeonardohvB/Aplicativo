@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/components/Schedule/CreateJourneyModal.tsx
+import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Professional } from '../../types';
 
@@ -8,17 +9,29 @@ interface CreateJourneyModalProps {
   onCreate: (journey: {
     professionalId: string;
     professionalName: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    consultationDuration: number;
-    bufferDuration: number;
+    date: string;          // yyyy-mm-dd
+    startTime: string;     // HH:mm
+    endTime: string;       // HH:mm
+    consultationDuration: number; // Fixo: 40 (não exibido)
+    bufferDuration: number;       // Fixo: 10 (não exibido)
     defaultPrice: number;
     defaultService: string;
     clinicPercentage: number;
   }) => void;
   professionals: Professional[];
 }
+
+/* Helpers */
+const isTime = (t: string) => /^\d{2}:\d{2}$/.test(t);
+const toMinutes = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+};
+const todayISO = () => new Date().toISOString().split('T')[0];
+const nowHHmm = () => {
+  const n = new Date();
+  return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+};
 
 const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
   isOpen,
@@ -31,6 +44,7 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
     date: '',
     startTime: '',
     endTime: '',
+    // estes ficam “escondidos” (não renderizamos inputs)
     consultationDuration: '40',
     bufferDuration: '10',
     defaultPrice: '',
@@ -38,35 +52,65 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
     clinicPercentage: '20',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.professionalId || !formData.date || !formData.startTime || !formData.endTime || !formData.defaultPrice || !formData.clinicPercentage) {
-      alert('Por favor, preencha todos os campos obrigatórios');
-      return;
-    }
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [shake, setShake] = useState(false);
 
-    // Validar se hora final é posterior à hora inicial
-    if (formData.startTime >= formData.endTime) {
-      alert('A hora final deve ser posterior à hora inicial');
-      return;
-    }
+  const selectedProfessional = useMemo(
+    () => professionals.find(p => p.id === formData.professionalId),
+    [professionals, formData.professionalId]
+  );
 
-    // Validar se é hoje e o horário não é anterior ao atual
-    const today = new Date().toISOString().split('T')[0];
-    if (formData.date === today) {
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      
-      if (formData.startTime < currentTime) {
-        alert('Não é possível agendar para um horário que já passou hoje');
-        return;
+  if (!isOpen) return null;
+
+  const setField =
+    (name: keyof typeof formData) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData(s => ({ ...s, [name]: e.target.value }));
+      if (errors[name]) setErrors(er => ({ ...er, [name]: '' }));
+    };
+
+  function validate() {
+    const e: Record<string, string> = {};
+
+    if (!formData.professionalId) e.professionalId = 'Selecione um profissional.';
+    if (!formData.date) e.date = 'Informe a data.';
+
+    if (!isTime(formData.startTime)) e.startTime = 'Hora inválida.';
+    if (!isTime(formData.endTime)) e.endTime = 'Hora inválida.';
+    if (isTime(formData.startTime) && isTime(formData.endTime)) {
+      if (toMinutes(formData.endTime) <= toMinutes(formData.startTime)) {
+        e.endTime = 'Hora final deve ser maior que a inicial.';
       }
     }
 
-    const selectedProfessional = professionals.find(p => p.id === formData.professionalId);
+    // se a data é hoje, a hora inicial não pode estar no passado
+    if (formData.date === todayISO() && isTime(formData.startTime)) {
+      if (formData.startTime < nowHHmm()) e.startTime = 'Não é possível iniciar no passado (hoje).';
+    }
+
+    const price = Number(formData.defaultPrice.replace(',', '.'));
+    if (!(price > 0)) e.defaultPrice = 'Preço deve ser maior que zero.';
+
+    const cp = Number(formData.clinicPercentage);
+    if (Number.isNaN(cp) || cp < 0 || cp > 100) e.clinicPercentage = 'Use um valor entre 0 e 100.';
+
+    return e;
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const eMap = validate();
+    if (Object.keys(eMap).length) {
+      setErrors(eMap);
+      setShake(true);
+      setTimeout(() => setShake(false), 260);
+      return;
+    }
+
     if (!selectedProfessional) {
-      alert('Profissional não encontrado');
+      setErrors(er => ({ ...er, professionalId: 'Profissional não encontrado.' }));
+      setShake(true);
+      setTimeout(() => setShake(false), 260);
       return;
     }
 
@@ -76,11 +120,11 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       date: formData.date,
       startTime: formData.startTime,
       endTime: formData.endTime,
-      consultationDuration: parseInt(formData.consultationDuration),
-      bufferDuration: parseInt(formData.bufferDuration),
-      defaultPrice: parseFloat(formData.defaultPrice),
+      consultationDuration: parseInt(formData.consultationDuration, 10), // 40
+      bufferDuration: parseInt(formData.bufferDuration, 10),             // 10
+      defaultPrice: Number(formData.defaultPrice.replace(',', '.')),
       defaultService: formData.defaultService,
-      clinicPercentage: parseFloat(formData.clinicPercentage),
+      clinicPercentage: Number(formData.clinicPercentage),
     });
 
     setFormData({
@@ -94,145 +138,149 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       defaultService: 'Consulta',
       clinicPercentage: '20',
     });
+    setErrors({});
     onClose();
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
+  const err = (k: keyof typeof errors) => !!errors[k];
+  const msg = (k: keyof typeof errors) => errors[k];
 
-  if (!isOpen) return null;
+  const inputClass = (hasError: boolean) =>
+    `w-full px-3 py-2 rounded-lg border focus:ring-2 focus:outline-none ${
+      hasError
+        ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'
+    }`;
 
-  return (
+   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className={`bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto ${shake ? 'animate-shake' : ''}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">Criar Jornada de Atendimento</h2>
           <button
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Profissional */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Profissional *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Profissional *</label>
             <select
               name="professionalId"
               value={formData.professionalId}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
+              onChange={setField('professionalId')}
+              className={inputClass(err('professionalId'))}
+              aria-invalid={err('professionalId')}
             >
               <option value="">Selecione um profissional</option>
-              {professionals.filter(p => p.isActive).map(professional => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.name} - {professional.specialty}
+              {professionals.filter(p => p.isActive).map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} - {p.specialty}
                 </option>
               ))}
             </select>
+            {msg('professionalId') && <p className="mt-1 text-xs text-red-600">{msg('professionalId')}</p>}
           </div>
 
+          {/* Data */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Data *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Data *</label>
             <input
               type="date"
               name="date"
               value={formData.date}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
+              onChange={setField('date')}
+              className={inputClass(err('date'))}
+              aria-invalid={err('date')}
             />
+            {msg('date') && <p className="mt-1 text-xs text-red-600">{msg('date')}</p>}
           </div>
 
+          {/* Horários */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Hora Inicial *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Hora Inicial *</label>
               <input
                 type="time"
                 name="startTime"
                 value={formData.startTime}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
+                onChange={setField('startTime')}
+                className={inputClass(err('startTime'))}
+                aria-invalid={err('startTime')}
               />
+              {msg('startTime') && <p className="mt-1 text-xs text-red-600">{msg('startTime')}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Hora Final *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Hora Final *</label>
               <input
                 type="time"
                 name="endTime"
                 value={formData.endTime}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
+                onChange={setField('endTime')}
+                className={inputClass(err('endTime'))}
+                aria-invalid={err('endTime')}
               />
+              {msg('endTime') && <p className="mt-1 text-xs text-red-600">{msg('endTime')}</p>}
             </div>
           </div>
 
+          {/* Preço */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Preço da Consulta (R$) *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Preço da Consulta (R$) *</label>
             <input
               type="number"
               name="defaultPrice"
               value={formData.defaultPrice}
-              onChange={handleChange}
+              onChange={setField('defaultPrice')}
               step="0.01"
               min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="130.00"
-              required
+              className={inputClass(err('defaultPrice'))}
+              aria-invalid={err('defaultPrice')}
             />
+            {msg('defaultPrice') && <p className="mt-1 text-xs text-red-600">{msg('defaultPrice')}</p>}
           </div>
 
+          {/* Serviço */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Serviço Padrão
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Serviço Padrão</label>
             <input
               type="text"
               name="defaultService"
               value={formData.defaultService}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onChange={setField('defaultService')}
               placeholder="Consulta"
+              className={inputClass(false)}
             />
           </div>
 
+          {/* Percentual da Clínica */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Porcentagem da Clínica (%) *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Porcentagem da Clínica (%) *</label>
             <input
               type="number"
               name="clinicPercentage"
               value={formData.clinicPercentage}
-              onChange={handleChange}
+              onChange={setField('clinicPercentage')}
               min="0"
               max="100"
               step="0.1"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="20"
-              required
+              className={inputClass(err('clinicPercentage'))}
+              aria-invalid={err('clinicPercentage')}
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Clínica: {formData.clinicPercentage}% | Profissional: {100 - parseFloat(formData.clinicPercentage || '0')}%
-            </p>
+            {msg('clinicPercentage') ? (
+              <p className="mt-1 text-xs text-red-600">{msg('clinicPercentage')}</p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Clínica: {formData.clinicPercentage}% | Profissional: {Math.max(0, 100 - (Number(formData.clinicPercentage) || 0))}%
+              </p>
+            )}
           </div>
 
           <div className="flex space-x-3 pt-4">

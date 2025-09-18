@@ -1,19 +1,55 @@
-import React, { useState, useEffect } from 'react';
+// src/components/Schedule/EditPatientModal.tsx
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { AppointmentSlot, Patient } from '../../types';
+import { supabase } from '../../lib/supabase';
 
 interface EditPatientModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpdate: (slotId: string, patientData: {
-    patientName: string;
-    patientPhone: string;
-    service: string;
-    notes?: string;
-  }) => void;
+  onUpdate: (
+    slotId: string,
+    patientData: {
+      patientName: string;
+      patientPhone: string; // só dígitos
+      service: string;
+      notes?: string;
+    }
+  ) => void;
   slot: AppointmentSlot | null;
   patients: Patient[];
 }
+
+/* helpers cpf/phone */
+const onlyDigits = (v: string) => (v || '').replace(/\D+/g, '');
+const formatCPF = (v: string) => {
+  const d = onlyDigits(v).slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+};
+const isValidCPF = (cpfMasked: string) => {
+  const str = onlyDigits(cpfMasked);
+  if (!str || str.length !== 11 || /^(\d)\1+$/.test(str)) return false;
+  let s = 0;
+  for (let i=0;i<9;i++) s += parseInt(str[i])*(10-i);
+  let d1 = 11 - (s%11); if (d1>=10) d1=0;
+  s = 0;
+  for (let i=0;i<10;i++) s += parseInt(str[i])*(11-i);
+  let d2 = 11 - (s%11); if (d2>=10) d2=0;
+  return d1===parseInt(str[9]) && d2===parseInt(str[10]);
+};
+const formatCell = (v: string) => {
+  const d = onlyDigits(v).slice(0,11);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  if (d.length <= 3) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if (d.length <= 7) return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3,7)}-${d.slice(7)}`;
+};
+const isValidCell = (v: string) => onlyDigits(v).length === 11;
 
 const EditPatientModal: React.FC<EditPatientModalProps> = ({
   isOpen,
@@ -22,88 +58,104 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
   slot,
   patients,
 }) => {
-  const [formData, setFormData] = useState({
-    patientName: '',
-    patientPhone: '',
-    service: '',
-    notes: '',
-    selectedPatientId: '',
-  });
+  const [cpf, setCPF] = useState('');
+  const [patientName, setPatientName] = useState('');
+  const [patientPhone, setPatientPhone] = useState('');
+  const [service, setService] = useState('');
+  const [notes, setNotes] = useState('');
+  const [found, setFound] = useState<null | { name: string; phone?: string }>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [shake, setShake] = useState(false);
 
   useEffect(() => {
     if (slot && isOpen) {
-      setFormData({
-        patientName: slot.patientName || '',
-        patientPhone: slot.patientPhone || '',
-        service: slot.service,
-        notes: slot.notes || '',
-        selectedPatientId: slot.patientId || '',
-      });
+      // se o slot já tiver cpf salvo no banco, preencha aqui (slot.patientCpf?) — senão deixa vazio
+      setPatientName(slot.patientName || '');
+      setPatientPhone(formatCell(slot.patientPhone || ''));
+      setService(slot.service || '');
+      setNotes(slot.notes || '');
+      setErrors({});
+      setShake(false);
     }
   }, [slot, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.patientName || !formData.service) {
-      alert('Por favor, preencha todos os campos obrigatórios');
+  async function lookupByCPF(v: string) {
+    const digits = onlyDigits(v);
+    if (digits.length !== 11 || !isValidCPF(v)) {
+      setFound(null);
       return;
     }
-
-    if (!slot) return;
-
-    onUpdate(slot.id, {
-      patientName: formData.patientName,
-      patientPhone: formData.patientPhone,
-      service: formData.service,
-      notes: formData.notes,
-    });
-
-    onClose();
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const handlePatientSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const patientId = e.target.value;
-    setFormData(prev => ({ ...prev, selectedPatientId: patientId }));
-    
-    if (patientId && patientId !== (slot?.patientId || '')) {
-      // Só altera os dados se selecionou um paciente diferente do atual
-      const patient = patients.find(p => p.id === patientId);
-      if (patient) {
-        setFormData(prev => ({
-          ...prev,
-          patientName: patient.name,
-          patientPhone: patient.phone || '',
-        }));
-      }
-    } else if (!patientId) {
-      // Se selecionou "Selecionar paciente existente", limpa os campos
-      setFormData(prev => ({
-        ...prev,
-        patientName: '',
-        patientPhone: '',
-      }));
+    const local = patients.find((p) => onlyDigits((p as any).cpf || '') === digits);
+    if (local) {
+      setFound({ name: local.name, phone: local.phone });
+      setPatientName(local.name || '');
+      setPatientPhone(formatCell(local.phone || ''));
+      return;
     }
-  };
+    try {
+      const { data } = await supabase
+        .from('patients')
+        .select('name, phone, cpf')
+        .eq('cpf', digits)
+        .maybeSingle();
+      if (data) {
+        setFound({ name: data.name, phone: data.phone });
+        setPatientName(data.name || '');
+        setPatientPhone(formatCell(data.phone || ''));
+      } else setFound(null);
+    } catch {
+      setFound(null);
+    }
+  }
 
   if (!isOpen || !slot) return null;
 
+  const inputClass = (bad: boolean) =>
+    `w-full px-3 py-2 rounded-lg border focus:ring-2 focus:outline-none ${
+      bad
+        ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+        : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'
+    }`;
+
+  function validate() {
+    const e: Record<string, string> = {};
+    if (cpf && !isValidCPF(cpf)) e.cpf = 'CPF inválido.'; // permitir edição sem CPF, mas válido se informado
+    if (!patientName.trim()) e.patientName = 'Informe o nome do paciente.';
+    if (!isValidCell(patientPhone)) e.patientPhone = 'Telefone deve ter 11 dígitos.';
+    if (!service.trim()) e.service = 'Informe o serviço.';
+    return e;
+  }
+
+  function submit(e: React.FormEvent) {
+  e.preventDefault();
+
+  const eMap = validate();
+  if (Object.keys(eMap).length) {
+    setErrors(eMap);
+    setShake(true);
+    setTimeout(() => setShake(false), 260);
+    return;
+  }
+
+  // ✅ Narrowing explícito
+  if (!slot) return;
+
+  onUpdate(slot.id, {
+    patientName: patientName.trim(),
+    patientPhone: onlyDigits(patientPhone),
+    service: service.trim(),
+    notes: notes.trim() || undefined,
+  });
+
+  onClose();
+}
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className={`bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto ${shake ? 'animate-shake' : ''}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">Editar Agendamento</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
-          >
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -114,116 +166,89 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={submit} className="space-y-4">
+          {/* CPF (opcional na edição, mas válido se preenchido) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Paciente Existente
-            </label>
-            <select
-              value={formData.selectedPatientId}
-              onChange={handlePatientSelect}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Selecionar paciente existente</option>
-              {patients.map(patient => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.name} {patient.phone && `- ${patient.phone}`}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">CPF do Paciente</label>
+            <input
+              value={cpf}
+              onChange={(e) => { setCPF(formatCPF(e.target.value)); if (errors.cpf) setErrors(s => ({...s, cpf: ''})); }}
+              onBlur={() => lookupByCPF(cpf)}
+              className={inputClass(!!errors.cpf)}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+              aria-invalid={!!errors.cpf}
+            />
+            <div className="mt-1 text-xs">
+              {errors.cpf ? (
+                <p className="text-red-600">{errors.cpf}</p>
+              ) : found ? (
+                <p className="text-green-600">Paciente encontrado: <b>{found.name}</b></p>
+              ) : (
+                <p className="text-gray-400">Informe para localizar e preencher automaticamente.</p>
+              )}
+            </div>
           </div>
 
+          {/* Nome */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Nome do Paciente *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Paciente *</label>
             <input
-              type="text"
-              name="patientName"
-              value={formData.patientName}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={patientName}
+              onChange={(e) => { setPatientName(e.target.value); if (errors.patientName) setErrors(s => ({...s, patientName: ''})); }}
+              className={inputClass(!!errors.patientName)}
               placeholder="Nome completo"
-              required
+              aria-invalid={!!errors.patientName}
             />
+            {errors.patientName && <p className="mt-1 text-xs text-red-600">{errors.patientName}</p>}
           </div>
 
+          {/* Telefone */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Telefone
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Telefone *</label>
             <input
-              type="tel"
-              name="patientPhone"
-              value={formData.patientPhone}
-             onChange={(e) => {
-               const inputValue = e.target.value;
-               
-               // Se o campo está sendo limpo, permite
-               if (inputValue === '') {
-                 setFormData(prev => ({ ...prev, patientPhone: '' }));
-                 return;
-               }
-               
-               const value = inputValue.replace(/\D/g, ''); // Remove tudo que não é dígito
-               if (value.length <= 11) { // Limita a 11 dígitos (DDD + 9 dígitos)
-                 let formatted = value;
-                 if (value.length >= 3) {
-                   formatted = `(${value.slice(0, 2)}) ${value.slice(2)}`;
-                 }
-                 if (value.length >= 7) {
-                   formatted = `(${value.slice(0, 2)}) ${value.slice(2, 7)}-${value.slice(7)}`;
-                 }
-                 setFormData(prev => ({ ...prev, patientPhone: formatted }));
-               }
-             }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="(11) 99999-9999"
-             maxLength={15}
+              value={patientPhone}
+              onChange={(e) => { setPatientPhone(formatCell(e.target.value)); if (errors.patientPhone) setErrors(s=>({...s, patientPhone:''})); }}
+              className={inputClass(!!errors.patientPhone || (!!patientPhone && !isValidCell(patientPhone)))}
+              placeholder="(11) 9 9999-9999"
+              inputMode="numeric"
+              aria-invalid={!!errors.patientPhone || (!!patientPhone && !isValidCell(patientPhone))}
             />
+            <p className={`mt-1 text-xs ${errors.patientPhone || (!!patientPhone && !isValidCell(patientPhone)) ? 'text-red-600' : 'text-transparent'}`}>
+              Informe 11 dígitos (DDD + 9).
+            </p>
           </div>
 
+          {/* Serviço */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Serviço *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Serviço *</label>
             <input
-              type="text"
-              name="service"
-              value={formData.service}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={service}
+              onChange={(e) => { setService(e.target.value); if (errors.service) setErrors(s => ({...s, service: ''})); }}
+              className={inputClass(!!errors.service)}
               placeholder="Consulta"
-              required
+              aria-invalid={!!errors.service}
             />
+            {errors.service && <p className="mt-1 text-xs text-red-600">{errors.service}</p>}
           </div>
 
+          {/* Observações */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Observações
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Observações</label>
             <textarea
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none"
               placeholder="Observações sobre o atendimento..."
             />
           </div>
 
-          <div className="flex space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-            >
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
               Cancelar
             </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
+            <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               Salvar Alterações
             </button>
           </div>
