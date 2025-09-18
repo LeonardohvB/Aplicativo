@@ -6,13 +6,11 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
-import { replaceProfessionalAvatar } from '../lib/avatars'; // Solução B
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
-  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
 
   const {
     professionals,
@@ -31,7 +29,7 @@ const Professionals: React.FC = () => {
     }
   };
 
-  // ✅ Ajustado para aceitar os campos que o AddProfessionalModal envia
+  // ✅ Aceita os campos enviados pelo AddProfessionalModal
   const handleAdd = async (newProfessional: {
     name: string;
     specialty: string;
@@ -40,12 +38,11 @@ const Professionals: React.FC = () => {
     registrationCode: string;
     commissionRate?: number;
   }) => {
-    // Se o hook aceitar só alguns campos, o cast mantém compatibilidade.
     await addProfessional(newProfessional as any);
     setIsModalOpen(false);
   };
 
-  // ✅ Já aceita os campos enviados pelo EditProfessionalModal
+  // ✅ Aceita os campos enviados pelo EditProfessionalModal
   const handleUpdate = async (
     id: string,
     updates: {
@@ -69,21 +66,13 @@ const Professionals: React.FC = () => {
   };
 
   /**
-   * Upload de avatar (Solução B):
-   * - Usa replaceProfessionalAvatar: sobe arquivo novo, atualiza DB (avatar_path/updated_at) e apaga o antigo
-   * - Depois persiste a URL pública no front (campo avatar) para o card refletir
+   * Callback chamado pelo ProfessionalCard DEPOIS do upload/limpeza ter sido feito por ele.
+   * Não precisamos re-enviar a foto aqui. Mantemos apenas para compatibilidade.
+   * Se quiser forçar revalidação da lista, pode chamar updateProfessional(id, {}).
    */
-  const handlePhotoChange = async (id: string, photoFile: File) => {
-    try {
-      setUploadingPhoto(id);
-      const { publicUrl } = await replaceProfessionalAvatar(id, photoFile);
-      await updateProfessional(id, { avatar: publicUrl } as any);
-    } catch (error) {
-      console.error('Erro ao fazer upload da foto:', error);
-      alert('Erro ao enviar a foto. Confira as permissões do bucket/policies.');
-    } finally {
-      setUploadingPhoto(null);
-    }
+  const handlePhotoChange = async (_id: string, _photoFile: File) => {
+    // noop: o card já atualiza o DB e a imagem (cache-busting local)
+    // Opcional: await updateProfessional(_id, {} as any);
   };
 
   if (loading) {
@@ -114,24 +103,15 @@ const Professionals: React.FC = () => {
             onToggle={toggleProfessional}
             onEdit={handleEdit}
             onDelete={handleDelete}              // card não usa, mas mantemos a prop
-            onPhotoChange={handlePhotoChange}
+            onPhotoChange={handlePhotoChange}    // agora é só um ack (sem re-upload)
           />
         ))}
-
-        {uploadingPhoto && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
-              <p className="text-gray-700">Alterando foto...</p>
-            </div>
-          </div>
-        )}
       </div>
 
       <AddProfessionalModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onAdd={handleAdd}                        // ✅ agora compatível
+        onAdd={handleAdd}
       />
 
       <EditProfessionalModal
@@ -141,7 +121,7 @@ const Professionals: React.FC = () => {
           setEditingProfessional(null);
         }}
         onUpdate={handleUpdate}
-        onDelete={handleDelete}                  // ✅ exclusão dentro do modal
+        onDelete={handleDelete}
         professional={editingProfessional}
       />
     </div>

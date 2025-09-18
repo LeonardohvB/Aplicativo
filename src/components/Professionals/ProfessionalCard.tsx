@@ -1,45 +1,115 @@
 // src/components/Professionals/ProfessionalCard.tsx
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Camera, Phone, BadgeCheck } from "lucide-react";
 import { Professional } from "../../types";
-import { publicUrlFromPath } from "../../lib/avatars";
+import {
+  publicUrlFromPath,
+  uploadAvatarAndCleanup,
+  removeAvatarAndCleanup,
+} from "../../lib/avatars";
+import AvatarPreviewModal from "./AvatarPreviewModal";
 
 interface ProfessionalCardProps {
   professional: Professional;
   onToggle: (id: string) => void;
-  onEdit: (id: string) => void;          // abre o modal de edição
-  onDelete: (id: string) => void;        // continua na interface p/ o modal (não usado aqui)
-  onPhotoChange: (id: string, photoFile: File) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void; // não usado aqui
+  onPhotoChange: (id: string, photoFile: File) => void; // compatibilidade
 }
 
 const placeholder = "https://placehold.co/96x96?text=Foto";
+
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
 
+/** Retorna uma URL exibível a partir de (path ou URL) + fallback */
+function toDisplayUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // se já é http(s), usa direto; senão é path de storage
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return publicUrlFromPath(trimmed) || null;
+}
+
 function resolveAvatarBaseUrl(p: Professional): string {
-  const path: string | undefined = (p as any).avatar_path;
-  if (path && path.trim()) return publicUrlFromPath(path);
-  const url = (p as any).avatar as string | undefined;
-  return url?.trim() || placeholder;
+  // principais no app (camelCase)
+  const camelPathOrUrl = (p as any).avatar as string | undefined;
+  const camel = toDisplayUrl(camelPathOrUrl);
+
+  // compat: se vier snake_case junto
+  const snakePath = (p as any).avatar_path as string | undefined;
+  const snake = toDisplayUrl(snakePath);
+
+  return camel || snake || placeholder;
 }
 function resolveAvatarVersion(p: Professional): string | undefined {
-  return (p as any).avatar_updated_at ?? (p as any).avatarUpdatedAt ?? undefined;
+  return (p as any).avatarUpdatedAt ?? (p as any).avatar_updated_at ?? undefined;
 }
 
 const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
   onEdit,
-  // onDelete  <-- não desestruturar para evitar ts(6133)
+  // onDelete
   onPhotoChange,
 }) => {
-  const inputId = `avatar-file-${professional.id}`;
-  const base = resolveAvatarBaseUrl(professional);
-  const v = resolveAvatarVersion(professional);
-  const avatarSrc = withCacheBust(base, v);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  // evita que elementos internos disparem o clique do card
+  // Estado local para refletir imediatamente as mudanças de avatar
+  const [avatarVersion, setAvatarVersion] = useState<string | null>(
+    resolveAvatarVersion(professional) || null
+  );
+  const [avatarPathOrUrl, setAvatarPathOrUrl] = useState<string | null>(
+    // preferir camelCase, senão snake_case
+    ((professional as any).avatar as string | undefined) ??
+      ((professional as any).avatar_path as string | undefined) ??
+      null
+  );
+
+  // Quando as props mudarem (troca de aba/refetch), sincroniza o state local
+  useEffect(() => {
+    setAvatarVersion(resolveAvatarVersion(professional) || null);
+    const next =
+      ((professional as any).avatar as string | undefined) ??
+      ((professional as any).avatar_path as string | undefined) ??
+      null;
+    setAvatarPathOrUrl(next);
+  }, [professional]);
+
+  const avatarSrc = useMemo(() => {
+    const base =
+      toDisplayUrl(avatarPathOrUrl) ?? resolveAvatarBaseUrl(professional);
+    return withCacheBust(base, avatarVersion);
+  }, [avatarPathOrUrl, avatarVersion, professional]);
+
   const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  // ===== Handlers passados para o modal =====
+  const handleReplaceFromModal = async (id: string, file: File) => {
+    try {
+      const { path, updatedAt } = await uploadAvatarAndCleanup(id, file);
+      // atualiza localmente com o path novo
+      setAvatarPathOrUrl(path);
+      setAvatarVersion(updatedAt);
+      onPhotoChange(id, file);
+    } catch (err) {
+      console.error("Erro ao substituir avatar:", err);
+      alert("Não foi possível atualizar a foto. Tente novamente.");
+    }
+  };
+
+  const handleRemoveFromModal = async (id: string) => {
+    try {
+      await removeAvatarAndCleanup(id);
+      setAvatarPathOrUrl(null);
+      setAvatarVersion(String(Date.now())); // força cache-busting do placeholder
+    } catch (err) {
+      console.error("Erro ao remover avatar:", err);
+      alert("Não foi possível remover a foto. Tente novamente.");
+    }
+  };
+  // =========================================
 
   return (
     <div
@@ -58,50 +128,45 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     >
       <div className="flex items-start gap-4">
         {/* Avatar com ring + overlay + status dot */}
-        <div className="relative" onClick={stop}>
-          <img
-            src={avatarSrc}
-            alt={professional.name}
-            className="h-16 w-16 rounded-full object-cover ring-2 ring-gray-100"
-            onError={(e) => ((e.currentTarget as HTMLImageElement).src = placeholder)}
-            loading="lazy"
-            decoding="async"
-          />
+        <div
+          className="relative"
+          onClick={stop}
+          onMouseDown={stop}
+        >
+          <button
+            type="button"
+            className="relative h-16 w-16 rounded-full overflow-hidden ring-2 ring-gray-100 hover:scale-[1.02] transition"
+            onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
+            onMouseDown={stop}
+            title="Visualizar foto"
+          >
+            <img
+              src={avatarSrc}
+              alt={professional.name}
+              className="h-full w-full object-cover"
+              onError={(e) => ((e.currentTarget as HTMLImageElement).src = placeholder)}
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+            />
+            {!avatarPathOrUrl && (
+              <span className="absolute inset-0 grid place-items-center text-xs text-gray-400">
+                <Camera className="w-4 h-4" />
+              </span>
+            )}
+          </button>
+
           <span
             className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ring-2 ring-white ${
               professional.isActive ? "bg-emerald-500" : "bg-gray-300"
             }`}
             title={professional.isActive ? "Ativo" : "Inativo"}
           />
-          <label
-            htmlFor={inputId}
-            className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/0 transition hover:bg-black/15"
-            title="Alterar foto"
-            onClick={stop}
-          >
-            <Camera className="h-4 w-4 text-white opacity-0 transition group-hover:opacity-100" />
-          </label>
-          <input
-            id={inputId}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onClick={stop}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onPhotoChange(professional.id, f);
-              e.currentTarget.value = "";
-            }}
-          />
         </div>
 
         {/* Conteúdo */}
         <div className="min-w-0 flex-1">
-          {/* === LAYOUT EM GRID ===
-              col-esquerda: 1fr (conteúdo)
-              col-direita: auto (switch em cima, "Ligar" embaixo, centralizado) */}
           <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 sm:gap-y-3">
-            {/* Linha 1 — Nome + especialidade (esquerda) */}
             <div className="min-w-0">
               <div className="truncate text-base font-semibold text-gray-900">
                 {professional.name}
@@ -113,8 +178,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </div>
 
-            {/* Linha 1 — Switch (direita) */}
-            <div className="flex items-start justify-center" onClick={stop}>
+            <div className="flex items-start justify-center" onClick={stop} onMouseDown={stop}>
               <button
                 onClick={() => onToggle(professional.id)}
                 className={`relative h-6 w-11 rounded-full transition ${
@@ -131,21 +195,18 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               </button>
             </div>
 
-            {/* Separador ocupando as 2 colunas */}
             <div className="col-span-2 my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
 
-            {/* Linha 2 — Telefone (esquerda) */}
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               {professional.phone && (
-                <div className="flex items-center gap-2 text-gray-700" onClick={stop}>
+                <div className="flex items-center gap-2 text-gray-700" onClick={stop} onMouseDown={stop}>
                   <Phone className="h-4 w-4 text-blue-600" />
                   <span className="select-text">{professional.phone}</span>
                 </div>
               )}
             </div>
 
-            {/* Linha 2 — Botão "Ligar" (direita), centralizado e abaixo do switch */}
-            <div className="flex items-center justify-center" onClick={stop}>
+            <div className="flex items-center justify-center" onClick={stop} onMouseDown={stop}>
               {professional.phone && (
                 <button
                   type="button"
@@ -162,7 +223,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </div>
 
-            {/* Linha 3 — Registro (esquerda) */}
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               <div className="flex items-center gap-2 text-gray-700">
                 <BadgeCheck className="h-4 w-4 text-blue-600" />
@@ -173,12 +233,24 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               </div>
             </div>
 
-            {/* Linha 3 — coluna direita vazia (apenas para alinhamento) */}
             <div />
           </div>
-          {/* === /GRID === */}
         </div>
       </div>
+
+      {/* Modal: visualizar / editar / remover foto */}
+      <AvatarPreviewModal
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        professional={professional}
+        onChange={handleReplaceFromModal}
+        onRemove={handleRemoveFromModal}
+        avatarPathOverride={
+          // passa sempre o que estamos usando localmente
+          avatarPathOrUrl ?? undefined
+        }
+        avatarVersionOverride={avatarVersion ?? undefined}
+      />
     </div>
   );
 };

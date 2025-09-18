@@ -68,10 +68,9 @@ export async function replaceProfessionalAvatar(
   if (dbErr) throw dbErr
 
   // 4) lista tudo na pasta e remove todos, exceto o atual
-  //    (cobre o caso de não existir avatar_path antigo)
   const { data: list, error: listErr } = await supabase.storage
     .from('avatars')
-    .list(folder, { limit: 1000 }) // ajuste se necessário
+    .list(folder, { limit: 1000 })
   if (listErr) {
     // não bloqueia o fluxo, mas avisa
     console.error('Falha ao listar arquivos para limpeza:', listErr)
@@ -83,10 +82,10 @@ export async function replaceProfessionalAvatar(
     if (toDelete.length) {
       const { error: delErr } = await supabase.storage.from('avatars').remove(toDelete)
       if (delErr) {
-        // aqui mostramos erro claro p/ você ajustar policies
+        // mostra erro claro p/ você ajustar policies
         console.error('Falha ao remover arquivos antigos:', delErr)
         throw new Error(
-          'Não foi possível apagar as fotos antigas. Verifique as RLS policies de DELETE no bucket "avatars".'
+          'Não foi possível apagar as fotos antigas. Verifique as policies de DELETE no bucket "avatars".'
         )
       }
     }
@@ -100,25 +99,56 @@ export async function replaceProfessionalAvatar(
 }
 
 export async function deleteAllAvatarsForProfessional(professionalId: string) {
-  const BUCKET = 'avatars'; // ajuste se necessário
-  const prefix = `professionals/${professionalId}/`;
+  const BUCKET = 'avatars'
+  const prefix = `professionals/${professionalId}/`
 
   // lista os arquivos no prefixo
   const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
     limit: 100,
     offset: 0,
     search: '',
-  });
+  })
   if (error) {
-    console.warn('Erro ao listar arquivos do prefixo:', error);
-    return;
+    console.warn('Erro ao listar arquivos do prefixo:', error)
+    return
   }
-  if (!data || data.length === 0) return;
+  if (!data || data.length === 0) return
 
   // remove todos os arquivos listados
-  const paths = data.map((o) => `${prefix}${o.name}`);
-  const { error: removeErr } = await supabase.storage.from(BUCKET).remove(paths);
+  const paths = data.map((o) => `${prefix}${o.name}`)
+  const { error: removeErr } = await supabase.storage.from(BUCKET).remove(paths)
   if (removeErr) {
-    console.warn('Erro ao remover arquivos do prefixo:', removeErr);
+    console.warn('Erro ao remover arquivos do prefixo:', removeErr)
   }
+}
+
+/* ===========================================================
+   Wrappers esperados pelo ProfessionalCard.tsx
+   =========================================================== */
+
+/**
+ * Compat: usado pelo card para subir a foto e limpar o prefixo.
+ * Retorna { path, updatedAt } para cache-busting imediato no front.
+ */
+export async function uploadAvatarAndCleanup(
+  professionalId: string,
+  file: File
+): Promise<{ path: string; updatedAt: string }> {
+  const { path, updatedAt } = await replaceProfessionalAvatar(professionalId, file)
+  return { path, updatedAt }
+}
+
+/**
+ * Compat: usado pelo card para remover a foto e zerar colunas no DB.
+ */
+export async function removeAvatarAndCleanup(professionalId: string): Promise<void> {
+  // apaga tudo do prefixo no storage
+  await deleteAllAvatarsForProfessional(professionalId)
+
+  // zera no banco
+  const { error } = await supabase
+    .from('professionals')
+    .update({ avatar_path: null, avatar_updated_at: null })
+    .eq('id', professionalId)
+  if (error) throw error
 }
