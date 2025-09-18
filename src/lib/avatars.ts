@@ -1,10 +1,10 @@
 // src/lib/avatars.ts
 import { supabase } from './supabase'
 
-// Converte para JPEG quando possível. Se não conseguir, devolve o arquivo original.
-export async function toJpegBlob(file: File | Blob): Promise<Blob> {
+// Converte para PNG quando possível. Se não conseguir, devolve o arquivo original.
+export async function toPngBlob(file: File | Blob): Promise<Blob> {
   const type = (file as File).type ?? ''
-  if (type && type.toLowerCase() === 'image/jpeg') return file
+  if (type && type.toLowerCase() === 'image/png') return file
 
   try {
     const url = URL.createObjectURL(file)
@@ -20,7 +20,7 @@ export async function toJpegBlob(file: File | Blob): Promise<Blob> {
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(img, 0, 0)
     const out: Blob | null = await new Promise((res) =>
-      canvas.toBlob((b) => res(b), 'image/jpeg', 0.92)
+      canvas.toBlob((b) => res(b), 'image/png') // <- exporta como PNG
     )
     URL.revokeObjectURL(url)
     return out ?? file
@@ -48,13 +48,13 @@ export async function replaceProfessionalAvatar(
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2)
   const folder = `professionals/${professionalId}`
-  const path = `${folder}/${uuid}.jpg`
+  const path = `${folder}/${uuid}.png` // <- agora PNG
 
-  // 2) upload (jpeg)
-  const jpeg = await toJpegBlob(file)
-  const { error: upErr } = await supabase.storage.from('avatars').upload(path, jpeg, {
+  // 2) upload (png)
+  const png = await toPngBlob(file)
+  const { error: upErr } = await supabase.storage.from('avatars').upload(path, png, {
     upsert: false,
-    contentType: 'image/jpeg',
+    contentType: 'image/png', // <- agora PNG
     cacheControl: '0',
   })
   if (upErr) throw upErr
@@ -82,7 +82,6 @@ export async function replaceProfessionalAvatar(
     if (toDelete.length) {
       const { error: delErr } = await supabase.storage.from('avatars').remove(toDelete)
       if (delErr) {
-        // mostra erro claro p/ você ajustar policies
         console.error('Falha ao remover arquivos antigos:', delErr)
         throw new Error(
           'Não foi possível apagar as fotos antigas. Verifique as policies de DELETE no bucket "avatars".'

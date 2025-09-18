@@ -9,8 +9,7 @@ import Professionals from './pages/Professionals'
 import Schedule from './pages/Schedule'
 import Finance from './pages/Finance'
 import Reports from './pages/Reports'
-// import Login from './pages/Login'         // ⬅️ não usamos mais direto
-import LoginGate from './pages/LoginGate'     // ⬅️ novo: Splash → Login
+import LoginGate from './pages/LoginGate'
 
 // 👇 Tipo mais amplo: inclui as abas do BottomNav + 'perfil'
 type AppTab = Tab | 'perfil'
@@ -91,6 +90,9 @@ export default function App() {
   // ⬇️ Sem usuário logado: mostra Splash e depois Login
   if (!user) return <LoginGate />
 
+  // 👉 cast temporário para aceitar a nova prop até atualizarmos Dashboard.tsx
+  const DashboardComp: any = Dashboard;
+
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais': return <Professionals />
@@ -98,7 +100,21 @@ export default function App() {
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />
       case 'perfil':        return <Profile onBack={() => setActiveTab('inicio')} />
-      default:              return <Dashboard firstName={firstName ?? undefined} onOpenProfile={() => setActiveTab('perfil')} />
+      default:
+        return (
+          <DashboardComp
+            firstName={firstName ?? undefined}
+            onOpenProfile={() => setActiveTab('perfil')}
+            // 👇 NOVO: navegar internamente para Agenda com filtro
+            onGotoSchedule={(filter: 'today' | 'week') => {
+              setActiveTab('agenda');
+              // espera a Agenda montar para ouvir o evento
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('agenda:filter', { detail: filter }));
+              }, 0);
+            }}
+          />
+        )
     }
   }
 

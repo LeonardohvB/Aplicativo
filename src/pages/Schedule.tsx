@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/pages/Schedule.tsx
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit2, Trash2, History } from 'lucide-react';
 import { UserPlus } from 'lucide-react';
 import CreateJourneyModal from '../components/Schedule/CreateJourneyModal';
@@ -60,6 +61,19 @@ const sortJourneysByDateTime = (a: AppointmentJourney, b: AppointmentJourney) =>
   return ta.getTime() - tb.getTime();
 };
 
+// ===== helpers de filtro (dashboard -> agenda) =====
+function isApptStatusOk(status: string) {
+  return ['agendado', 'em_andamento', 'concluido'].includes(status);
+}
+function startEndOfThisWeek() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay()); // domingo
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
 // ====================================================================
 
 const Schedule: React.FC = () => {
@@ -90,6 +104,44 @@ const Schedule: React.FC = () => {
   } = useAppointmentJourneys();
 
   const { professionals } = useProfessionals();
+
+  // -------- filtro vindo do dashboard --------
+  const [dashboardFilter, setDashboardFilter] = useState<'today' | 'week' | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<'today' | 'week'>).detail;
+      setDashboardFilter(detail ?? null);
+      // rolar para o topo ao aplicar filtro (UX)
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('agenda:filter', handler as EventListener);
+    return () => window.removeEventListener('agenda:filter', handler as EventListener);
+  }, []);
+
+  const todayStr = localISODate(new Date());
+  const { start, end } = startEndOfThisWeek();
+
+  // slots já filtrados conforme dashboardFilter (ou todos se sem filtro)
+  const filteredSlots = useMemo(() => {
+    if (!Array.isArray(slots)) return [];
+    if (dashboardFilter === 'today') {
+      return slots.filter((s) => s.date === todayStr && isApptStatusOk(s.status));
+    }
+    if (dashboardFilter === 'week') {
+      return slots.filter((s) => {
+        const d = new Date(s.date);
+        return d >= start && d <= end && isApptStatusOk(s.status);
+      });
+    }
+    return slots;
+  }, [slots, dashboardFilter, todayStr, start, end]);
+
+  // renderizamos apenas jornadas que têm ao menos 1 slot visível
+  const visibleJourneys = useMemo(() => {
+    const ids = new Set(filteredSlots.map((s) => s.journeyId));
+    return [...journeys].filter((j) => ids.has(j.id)).sort(sortJourneysByDateTime);
+  }, [journeys, filteredSlots]);
 
   const handleEditJourney = (journeyId: string) => {
     const journey = journeys.find((j) => j.id === journeyId);
@@ -185,7 +237,15 @@ const Schedule: React.FC = () => {
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
       {/* Cabeçalho ÚNICO com botões no topo direito */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
+          {dashboardFilter === 'today' && (
+            <p className="text-sm text-gray-500">📅 Filtrando: <b>hoje</b></p>
+          )}
+          {dashboardFilter === 'week' && (
+            <p className="text-sm text-gray-500">📅 Filtrando: <b>semana</b></p>
+          )}
+        </div>
         <div className="flex space-x-3">
           {/* Histórico */}
           <button
@@ -218,8 +278,9 @@ const Schedule: React.FC = () => {
 
       {/* Listagem */}
       <div className="space-y-6">
-        {[...journeys].sort(sortJourneysByDateTime).map((journey) => {
-          const journeySlots = slots.filter((slot) => slot.journeyId === journey.id);
+        {visibleJourneys.map((journey) => {
+          // usa apenas os slots visíveis (já filtrados) desta jornada
+          const journeySlots = filteredSlots.filter((slot) => slot.journeyId === journey.id);
           const orderedSlots = [...journeySlots].sort(sortSlotsByTime);
 
           // usar 12:00 para evitar “voltar/avançar” por UTC
@@ -275,15 +336,19 @@ const Schedule: React.FC = () => {
           );
         })}
 
-        {journeys.length === 0 && (
+        {visibleJourneys.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">Nenhuma jornada de atendimento criada ainda.</p>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Criar Primeira Jornada
-            </button>
+            <p className="text-gray-500 mb-4">
+              {dashboardFilter ? 'Nenhum atendimento para este filtro.' : 'Nenhuma jornada de atendimento criada ainda.'}
+            </p>
+            {!dashboardFilter && (
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Criar Primeira Jornada
+              </button>
+            )}
           </div>
         )}
       </div>
