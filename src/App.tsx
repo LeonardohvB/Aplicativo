@@ -1,7 +1,7 @@
+// src/App.tsx
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { ensureProfile } from './lib/ensureProfile'
-
 import Profile from './pages/Profile'
 import BottomNavigation, { Tab } from './components/Layout/BottomNavigation'
 import Dashboard from './pages/Dashboard'
@@ -9,24 +9,23 @@ import Professionals from './pages/Professionals'
 import Schedule from './pages/Schedule'
 import Finance from './pages/Finance'
 import Reports from './pages/Reports'
-import Login from './pages/Login'
+// import Login from './pages/Login'         // ⬅️ não usamos mais direto
+import LoginGate from './pages/LoginGate'     // ⬅️ novo: Splash → Login
 
 // 👇 Tipo mais amplo: inclui as abas do BottomNav + 'perfil'
 type AppTab = Tab | 'perfil'
-
-
-
 
 export default function App() {
   // 👇 agora o estado aceita 'perfil'
   const [activeTab, setActiveTab] = useState<AppTab>('inicio')
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [user, setUser] = useState<any>(null)
+
   const onlyFirst = (full?: string | null) => {
-  if (!full) return null;
-  const p = full.trim().split(/\s+/);
-  return p[0] || null;
-};
+    if (!full) return null;
+    const p = full.trim().split(/\s+/);
+    return p[0] || null;
+  };
   const [firstName, setFirstName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,31 +54,31 @@ export default function App() {
     return () => unsub()
   }, [])
 
-     useEffect(() => {
-  if (!user) return;
+  useEffect(() => {
+    if (!user) return;
 
-  let canceled = false;
-  (async () => {
-    const { data: row, error } = await supabase
-      .from('profiles')
-      .select('name')
-      .eq('id', user.id)
-      .maybeSingle();
+    let canceled = false;
+    (async () => {
+      const { data: row, error } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (!canceled) {
-      if (error) console.warn('fetch profile name error:', error);
-      setFirstName(onlyFirst(row?.name ?? null));
-    }
-  })();
+      if (!canceled) {
+        if (error) console.warn('fetch profile name error:', error);
+        setFirstName(onlyFirst(row?.name ?? null));
+      }
+    })();
 
-  return () => { canceled = true; };
-}, [user]);
+    return () => { canceled = true; };
+  }, [user]);
 
-useEffect(() => {
-  const onSaved = (e: any) => setFirstName(onlyFirst(e?.detail?.name ?? null));
-  window.addEventListener('profile:saved', onSaved);
-  return () => window.removeEventListener('profile:saved', onSaved);
-}, []);
+  useEffect(() => {
+    const onSaved = (e: any) => setFirstName(onlyFirst(e?.detail?.name ?? null));
+    window.addEventListener('profile:saved', onSaved);
+    return () => window.removeEventListener('profile:saved', onSaved);
+  }, []);
 
   if (checkingAuth) {
     return (
@@ -89,7 +88,8 @@ useEffect(() => {
     )
   }
 
-  if (!user) return <Login />
+  // ⬇️ Sem usuário logado: mostra Splash e depois Login
+  if (!user) return <LoginGate />
 
   const renderContent = () => {
     switch (activeTab) {
