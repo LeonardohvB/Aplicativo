@@ -19,7 +19,6 @@ import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { Transaction } from '../types';
 
-type TxStatus = 'pending' | 'paid';
 
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -276,7 +275,7 @@ const Finance: React.FC = () => {
               const prof = extractProfessional(t);
               const patient = t.patientName ?? extractPatientFromDesc(t.description);
               const service = extractService(t);
-              const status: TxStatus = t.status ?? 'pending';
+              const status = t.type === 'income' ? (t.status ?? 'pending') : undefined
               const duration = extractDurationMin(t);
               const notes = extractNotes(t);
 
