@@ -7,8 +7,8 @@ export interface Professional {
   commissionRate: number;
   patients: number;
   isActive: boolean;
-  phone: string;              // telefone do profissional (formato livre)
-  registrationCode: string;   
+  phone: string;                  // telefone do profissional (formato livre)
+  registrationCode: string;
 }
 
 export interface Patient {
@@ -27,7 +27,7 @@ export interface AppointmentJourney {
   startTime: string;
   endTime: string;
   consultationDuration: number; // em minutos
-  bufferDuration: number; // em minutos
+  bufferDuration: number;       // em minutos
   totalSlots: number;
   defaultPrice: number;
   defaultService: string;
@@ -51,8 +51,8 @@ export interface AppointmentSlot {
   patientPhone?: string;
   notes?: string;
   clinicPercentage?: number;
-  startedAt?: string; // Timestamp de quando foi iniciado
-  finishedAt?: string; // Timestamp de quando foi finalizado
+  startedAt?: string;  // quando foi iniciado (ISO)
+  finishedAt?: string; // quando foi finalizado (ISO)
 }
 
 export interface FinancialEntry {
@@ -78,14 +78,32 @@ export interface Appointment {
   date: string;
 }
 
+/* ====== Financeiro ====== */
+
+export type TransactionStatus = 'pending' | 'paid';
+
 export interface Transaction {
   id: string;
   type: 'income' | 'expense';
   description: string;
   amount: number;
-  date: string;
+  date: string;                   // ISO (YYYY-MM-DD)
   category: string;
+  slotId?: string;            // 👈 vínculo com o atendimento
+ 
+  
+  // Relacionamentos (opcionais) — úteis para preencher o card de detalhes:
   professionalId?: string;
+  professionalName?: string;
+  patientId?: string;
+  patientName?: string;
+  service?: string;
+
+  // Pagamento
+  status?: TransactionStatus;     // default: 'paid' (se não vier do DB)
+  paymentMethod?: string | null;  // ex: 'pix', 'dinheiro', 'cartao'...
+  paidAt?: string | null;         // ISO datetime quando quitado
+  dueDate?: string | null;        // opcional: data de vencimento
 }
 
 export interface AppointmentHistory {
@@ -107,8 +125,8 @@ export interface AppointmentHistory {
   notes?: string;
   completedAt: string;
   actualDuration?: number; // Duração real em minutos
-  startedAt?: string; // Quando foi iniciado
-  finishedAt?: string; // Quando foi finalizado
+  startedAt?: string;      // Quando foi iniciado
+  finishedAt?: string;     // Quando foi finalizado
 }
 
 export interface DashboardStats {
@@ -118,4 +136,15 @@ export interface DashboardStats {
   totalBalance: number;
   totalRevenue: number;
   totalExpenses: number;
+}
+// src/types.ts
+export interface Transaction {
+  id: string;
+  type: 'income' | 'expense';
+  description: string;
+  amount: number;
+  date: string;
+  category: string;
+  professionalId?: string;
+
 }

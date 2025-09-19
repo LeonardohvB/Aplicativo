@@ -8,8 +8,20 @@ type FilterKind = 'today' | 'week';
 type Props = {
   onOpenProfile?: () => void;
   firstName?: string;
-  onGotoSchedule?: (filter: FilterKind) => void; // 👈 novo
+  onGotoSchedule?: (filter: FilterKind) => void;
 };
+
+function parseToDate(s?: string | null) {
+  if (!s) return null;
+  // DD/MM/AAAA
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/').map(Number);
+    return new Date(yyyy, mm - 1, dd);
+  }
+  // ISO ou outros formatos aceitos pelo Date
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }) => {
   const { slots } = useAppointmentJourneys();
@@ -45,8 +57,19 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
     );
   });
 
+  // ==== RECEITA DO MÊS (APENAS PAGAS) ====
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const isPaid = (t: any) => ((t?.status ?? 'pending') === 'paid');
+
   const monthlyRevenue = transactions
-    .filter((t) => t.type === 'income')
+    .filter((t) => t.type === 'income' && isPaid(t))
+    .filter((t) => {
+      const d = parseToDate(t.date);
+      return d ? d >= monthStart && d < nextMonthStart : true; // se não der pra parsear, não bloqueia
+    })
     .reduce((sum, t) => sum + t.amount, 0);
 
   const upcomingAppointments = slots
@@ -112,7 +135,13 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
           <StatCard title="Atendimentos Hoje" value={todayAppointments.length} icon={Users} color="blue" />
         </CardButton>
 
-        <StatCard title="Receita do Mês" value={`R$ ${monthlyRevenue.toFixed(2)}`} icon={DollarSign} color="green" />
+        {/* Agora reflete o Financeiro: soma APENAS receitas pagas do mês */}
+        <StatCard
+          title="Receita do Mês"
+          value={`R$ ${monthlyRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          icon={DollarSign}
+          color="green"
+        />
 
         <CardButton
           onClick={() => onGotoSchedule?.('week')}
