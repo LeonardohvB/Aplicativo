@@ -318,7 +318,7 @@ const Finance: React.FC = () => {
               fill="none"
               stroke={
                 neutralMode
-                  ? 'rgba(255,255,255,.55)'
+                  ? 'rgba(255, 255, 255, 0.5)'
                   : isNegative
                   ? '#ef4444'
                   : '#22c55e'
