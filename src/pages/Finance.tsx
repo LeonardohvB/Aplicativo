@@ -19,7 +19,7 @@ import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { Transaction } from '../types';
 
-/* ---------------- Sparkline helpers (curvas acentuadas) ---------------- */
+/* ====================== SPARKLINE (saldo acumulado) ====================== */
 type Pt = { x: number; y: number };
 
 function catmullToBezier(points: Pt[]): string {
@@ -41,48 +41,125 @@ function catmullToBezier(points: Pt[]): string {
   return d;
 }
 
-function buildSparkPath(
+/* ====================== Número animado (estável) + onFinish ====================== */
+function useAnimatedNumber(
+  value: number,
+  opts?: { duration?: number; easing?: (t: number) => number; onFinish?: () => void }
+) {
+  // easing padrão (cúbica out). Definido fora do effect para não mudar a cada render.
+  const defaultEasing = (t: number) => 1 - Math.pow(1 - t, 3);
+
+  // primitives estáveis
+  const duration = opts?.duration ?? 800;
+
+  // guardamos a função de easing em uma ref para não disparar re-render/efeito
+  const easingRef = React.useRef<(t: number) => number>(opts?.easing ?? defaultEasing);
+  React.useEffect(() => {
+    if (opts?.easing) easingRef.current = opts.easing;
+  }, [opts?.easing]);
+
+  const [display, setDisplay] = useState(value);
+  const prevRef = React.useRef(value);
+
+  React.useEffect(() => {
+    const from = prevRef.current;
+    const to = value;
+    if (from === to) return;
+
+    let raf = 0;
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const k = easingRef.current(t);
+      // arredonda para 2 casas para evitar tremor visual ao formatar
+      const next = Math.round((from + (to - from) * k) * 100) / 100;
+      setDisplay(next);
+
+      if (t < 1) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        prevRef.current = to;
+        setDisplay(to);
+        opts?.onFinish?.(); // avisa o término (para o "pulso")
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+
+  return display;
+}
+
+/* ====================== Utilidades de data ====================== */
+function parseBrDate(d?: string): number {
+  // tenta dd/mm/aaaa; se falhar, cai para Date normal
+  if (!d) return Date.now();
+  const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) {
+    const [_, dd, mm, yyyy] = m;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd)).getTime();
+  }
+  const t = Date.parse(d);
+  return Number.isFinite(t) ? t : Date.now();
+}
+
+function buildSparkPathFromTransactions(
   transactions: any[],
-  balance: number,
   width = 600,
   height = 200
 ): string {
-  const midY = height * 0.55;
+  const sorted = [...transactions].sort((a, b) => {
+    const ta = parseBrDate(a.date);
+    const tb = parseBrDate(b.date);
+    return ta - tb || String(a.id).localeCompare(String(b.id));
+  });
 
-  const signed = transactions
-    .slice(-8)
-    .map((t) => (t.type === 'income' ? +t.amount : -t.amount));
-
-  if (signed.length < 2) {
-    const A = Math.max(16, Math.min(40, 16 + Math.log10(Math.abs(balance) + 1) * 16));
-    const pts: Pt[] = Array.from({ length: 8 }, (_, i) => {
-      const x = (i / 7) * width;
-      const y = midY + Math.sin((i / 7) * Math.PI * 2) * A;
-      return { x, y };
-    });
-    return catmullToBezier(pts);
+  let running = 0;
+  const acc: number[] = [];
+  for (const t of sorted) {
+    if (t.type === 'income') {
+      const st = t.status ?? 'pending';
+      if (st === 'paid') running += Number(t.amount) || 0;
+    } else if (t.type === 'expense') {
+      running -= Number(t.amount) || 0;
+    }
+    acc.push(running);
   }
 
-  const maxAbs = Math.max(1, ...signed.map((v) => Math.abs(v)));
-  const amp =
-    Math.max(20, Math.min(48, 20 + Math.log10(Math.abs(balance) + 10) * 18)) *
-    (signed.length >= 4 ? 1.05 : 0.95);
+  if (acc.length === 0) return `M0,110 C150,110 300,110 600,110`;
 
-  const pts: Pt[] = signed.map((v, i) => {
-    const x = (i / (signed.length - 1)) * width;
-    const y = midY - (v / maxAbs) * amp;
+  const last = acc.slice(-16);
+  const min = Math.min(...last);
+  const max = Math.max(...last);
+  const range = Math.max(1, max - min);
+
+  // base central do gráfico
+  const midY = height * 0.52;
+
+  // amplitude mais agressiva (mas com teto/assoalho controlados)
+  // usa log para não explodir com ranges enormes e dar vida a ranges pequenos
+  const ampLog = Math.log10(range + 10);
+  const ampBase = Math.min(96, Math.max(36, ampLog * 28));
+
+  const pts: Pt[] = last.map((v, i) => {
+    const x = (i / (last.length - 1)) * width;
+    const y = midY - ((v - (min + range / 2)) / range) * ampBase * 1.9; // ganho extra
     return { x, y };
   });
 
   return catmullToBezier(pts);
 }
-/* ---------------------------------------------------------------------- */
+
+/* ======================================================================== */
 
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showBalance, setShowBalance] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [pulse, setPulse] = useState(false); // <- ativa o pulso ao final da animação
 
   const {
     transactions,
@@ -120,9 +197,8 @@ const Finance: React.FC = () => {
     return undefined;
   };
 
-  const extractNotes = (t: any): string | undefined => {
-    return t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
-  };
+  const extractNotes = (t: any): string | undefined =>
+    t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
 
   const minutesBetween = (a: Date, b: Date) =>
     Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
@@ -154,10 +230,19 @@ const Finance: React.FC = () => {
   const isNegative = balance < 0;
   const isPositive = balance > 0;
 
-  // Gráfico: recalcula quando transações/saldo mudam
+  // número animado + pulso ao terminar
+  const animatedBalance = useAnimatedNumber(showBalance ? balance : 0, {
+    duration: 900,
+    onFinish: () => {
+      setPulse(true);
+      setTimeout(() => setPulse(false), 180);
+    },
+  });
+
+  // Sparkline reage a alterações das transações/saldo
   const sparkPathD = useMemo(
-    () => buildSparkPath(transactions as any[], balance, 600, 200),
-    [transactions, balance]
+    () => buildSparkPathFromTransactions(transactions as any[], 600, 200),
+    [transactions]
   );
 
   const handleEdit = (id: string) => {
@@ -203,6 +288,8 @@ const Finance: React.FC = () => {
     );
   }
 
+  const neutralMode = !showBalance || balance === 0;
+
   return (
     <div className="pb-24 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       {/* Header */}
@@ -218,7 +305,7 @@ const Finance: React.FC = () => {
         </div>
 
         {/* Card do Saldo */}
-        <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/12 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.18)]">
+        <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.18)]">
           {/* Sparkline único */}
           <svg
             className="pointer-events-none absolute inset-0 w-full h-full"
@@ -229,7 +316,13 @@ const Finance: React.FC = () => {
             <path
               d={sparkPathD}
               fill="none"
-              stroke={showBalance ? (isNegative ? '#ef4444' : '#22c55e') : 'rgba(255,255,255,.55)'}
+              stroke={
+                neutralMode
+                  ? 'rgba(255,255,255,.55)'
+                  : isNegative
+                  ? '#ef4444'
+                  : '#22c55e'
+              }
               strokeWidth="2.8"
               strokeLinecap="round"
             >
@@ -262,20 +355,33 @@ const Finance: React.FC = () => {
 
           {/* Pílula do valor */}
           <div className="text-center relative z-10">
-            <div className="inline-flex items-center justify-center rounded-2xl bg-white/92 px-5 py-2.5 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-1 ring-slate-200/80 backdrop-blur">
+            <div
+              className={[
+                'inline-flex items-center justify-center px-5 py-2.5 rounded-2xl backdrop-blur',
+                'transition-transform duration-250 will-change-transform', // pulso suave
+                pulse ? 'scale-110' : 'scale-100',
+                neutralMode
+                  ? 'bg-transparent shadow-none ring-0'
+                  : 'bg-white/92 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-0',
+              ].join(' ')}
+            >
               <span
-                className={`text-2xl sm:text-4xl font-bold tabular-nums tracking-tight ${
-                  !showBalance
-                    ? 'text-black'
+                className={[
+                  'text-2xl sm:text-4xl font-bold tabular-nums tracking-tight',
+                  neutralMode
+                    ? 'text-white'
                     : isNegative
                     ? 'text-red-600'
                     : isPositive
                     ? 'text-green-600'
-                    : 'text-slate-900'
-                }`}
+                    : 'text-slate-900',
+                ].join(' ')}
               >
                 {showBalance
-                  ? `R$ ${balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ? `R$ ${animatedBalance.toLocaleString('pt-BR', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`
                   : '••••••'}
               </span>
             </div>
