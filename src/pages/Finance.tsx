@@ -1,5 +1,5 @@
 // src/pages/Finance.tsx
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Plus,
   TrendingUp,
@@ -19,6 +19,64 @@ import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { Transaction } from '../types';
 
+/* ---------------- Sparkline helpers (curvas acentuadas) ---------------- */
+type Pt = { x: number; y: number };
+
+function catmullToBezier(points: Pt[]): string {
+  if (points.length < 2) return `M0,110 C150,110 300,110 600,110`;
+  let d = `M ${points[0].x},${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
+
+function buildSparkPath(
+  transactions: any[],
+  balance: number,
+  width = 600,
+  height = 200
+): string {
+  const midY = height * 0.55;
+
+  const signed = transactions
+    .slice(-8)
+    .map((t) => (t.type === 'income' ? +t.amount : -t.amount));
+
+  if (signed.length < 2) {
+    const A = Math.max(16, Math.min(40, 16 + Math.log10(Math.abs(balance) + 1) * 16));
+    const pts: Pt[] = Array.from({ length: 8 }, (_, i) => {
+      const x = (i / 7) * width;
+      const y = midY + Math.sin((i / 7) * Math.PI * 2) * A;
+      return { x, y };
+    });
+    return catmullToBezier(pts);
+  }
+
+  const maxAbs = Math.max(1, ...signed.map((v) => Math.abs(v)));
+  const amp =
+    Math.max(20, Math.min(48, 20 + Math.log10(Math.abs(balance) + 10) * 18)) *
+    (signed.length >= 4 ? 1.05 : 0.95);
+
+  const pts: Pt[] = signed.map((v, i) => {
+    const x = (i / (signed.length - 1)) * width;
+    const y = midY - (v / maxAbs) * amp;
+    return { x, y };
+  });
+
+  return catmullToBezier(pts);
+}
+/* ---------------------------------------------------------------------- */
 
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -63,24 +121,15 @@ const Finance: React.FC = () => {
   };
 
   const extractNotes = (t: any): string | undefined => {
-    return (
-      t?.notes ??
-      t?.observation ??
-      t?.observations ??
-      t?.appointmentNotes ??
-      undefined
-    );
+    return t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
   };
 
   const minutesBetween = (a: Date, b: Date) =>
     Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 
   const extractDurationMin = (t: any): number | undefined => {
-    // preferir campos diretos
     if (typeof t?.durationMin === 'number') return t.durationMin;
     if (typeof t?.actualDuration === 'number') return t.actualDuration;
-
-    // tentar calcular com started/finished (camelCase e snake_case)
     const startISO = t?.startedAt ?? t?.started_at ?? null;
     const endISO = t?.finishedAt ?? t?.finished_at ?? null;
     if (startISO && endISO) {
@@ -92,7 +141,7 @@ const Finance: React.FC = () => {
     return undefined;
   };
 
-  // Totais: só contam receitas **pagas**
+  // Totais (receitas pagas)
   const totalRevenue = transactions
     .filter((t: any) => t.type === 'income' && ((t.status ?? 'pending') === 'paid'))
     .reduce((sum, t) => sum + t.amount, 0);
@@ -102,10 +151,24 @@ const Finance: React.FC = () => {
     .reduce((sum, t) => sum + t.amount, 0);
 
   const balance = totalRevenue - totalExpenses;
+  const isNegative = balance < 0;
+  const isPositive = balance > 0;
+
+  // Gráfico: recalcula quando transações/saldo mudam
+  const sparkPathD = useMemo(
+    () => buildSparkPath(transactions as any[], balance, 600, 200),
+    [transactions, balance]
+  );
 
   const handleEdit = (id: string) => {
     const t = transactions.find((x) => x.id === id) || null;
     setEditing(t as Transaction | null);
+  };
+
+  const handleDelete = async (id: string) => {
+    const ok = window.confirm('Deseja realmente excluir esta transação? Essa ação não pode ser desfeita.');
+    if (!ok) return;
+    await deleteTransaction(id);
   };
 
   const handleSaveEdit = async (updates: {
@@ -130,9 +193,7 @@ const Finance: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const toggleOpen = (id: string) => {
-    setOpenId((cur) => (cur === id ? null : id));
-  };
+  const toggleOpen = (id: string) => setOpenId((cur) => (cur === id ? null : id));
 
   if (loading) {
     return (
@@ -145,52 +206,78 @@ const Finance: React.FC = () => {
   return (
     <div className="pb-24 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 pt-8 pb-6">
+      <div className="bg-gradient-to-r from-black to-indigo-600 px-6 pt-8 pb-6">
         <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Financeiro</h1>
-            <p className="text-blue-100 text-sm mt-1">Gerencie suas finanças</p>
-          </div>
+          <h1 className="text-2xl font-bold text-white">Financeiro</h1>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="p-3 bg-white/20 backdrop-blur-sm text-white rounded-2xl hover:bg-white/30 transition-all duration-300 shadow-lg hover:shadow-xl flex-shrink-0"
+            className="p-3 bg-white/20 backdrop-blur-sm text-white rounded-2xl hover:bg-white/30 transition-all shadow-lg hover:shadow-xl"
           >
             <Plus className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Saldo */}
-        <div className="bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/20 shadow-xl">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-white/20 rounded-xl">
+        {/* Card do Saldo */}
+        <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/12 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.18)]">
+          {/* Sparkline único */}
+          <svg
+            className="pointer-events-none absolute inset-0 w-full h-full"
+            viewBox="0 0 600 200"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path
+              d={sparkPathD}
+              fill="none"
+              stroke={showBalance ? (isNegative ? '#ef4444' : '#22c55e') : 'rgba(255,255,255,.55)'}
+              strokeWidth="2.8"
+              strokeLinecap="round"
+            >
+              <animateTransform
+                attributeName="transform"
+                type="translate"
+                from="-120 0"
+                to="0 0"
+                dur="4.5s"
+                repeatCount="indefinite"
+              />
+            </path>
+          </svg>
+
+          <div className="flex items-start justify-between mb-4 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/15 rounded-xl">
                 <Wallet className="w-5 h-5 text-white" />
               </div>
-              <span className="text-white/90 font-medium text-sm sm:text-base">
-                Saldo Total
-              </span>
+              <span className="text-white/90 font-medium text-sm sm:text-base">Saldo Total</span>
             </div>
             <button
               onClick={() => setShowBalance(!showBalance)}
-              className="p-2 bg-white/20 rounded-xl hover:bg-white/30 transition-colors flex-shrink-0"
+              className="p-2 bg-white/15 rounded-xl hover:bg-white/25 transition-colors"
               title={showBalance ? 'Ocultar valores' : 'Mostrar valores'}
             >
               {showBalance ? <Eye className="w-4 h-4 text-white" /> : <EyeOff className="w-4 h-4 text-white" />}
             </button>
           </div>
 
-          <div className="text-center">
-            <p className="text-2xl sm:text-4xl font-bold text-white mb-2 break-all">
-              {showBalance
-                ? `R$ ${balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : '••••••'}
-            </p>
-            <div
-              className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
-                balance >= 0 ? 'bg-green-500/20 text-green-100' : 'bg-red-500/20 text-red-100'
-              }`}
-            >
-              {balance >= 0 ? '↗ Positivo' : '↘ Negativo'}
+          {/* Pílula do valor */}
+          <div className="text-center relative z-10">
+            <div className="inline-flex items-center justify-center rounded-2xl bg-white/92 px-5 py-2.5 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-1 ring-slate-200/80 backdrop-blur">
+              <span
+                className={`text-2xl sm:text-4xl font-bold tabular-nums tracking-tight ${
+                  !showBalance
+                    ? 'text-black'
+                    : isNegative
+                    ? 'text-red-600'
+                    : isPositive
+                    ? 'text-green-600'
+                    : 'text-slate-900'
+                }`}
+              >
+                {showBalance
+                  ? `R$ ${balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : '••••••'}
+              </span>
             </div>
           </div>
         </div>
@@ -199,8 +286,8 @@ const Finance: React.FC = () => {
       {/* Resumo */}
       <div className="px-6 mt-10 md:mt-20 lg:mt-24 mb-6 relative z-10">
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all duration-300">
-            <div className="flex items-start space-x-2 mb-3">
+          <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all">
+            <div className="flex items-start gap-2 mb-3">
               <div className="p-2 bg-green-50 rounded-xl">
                 <TrendingUp className="w-5 h-5 text-green-600" />
               </div>
@@ -211,18 +298,16 @@ const Finance: React.FC = () => {
                 ? `R$ ${totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 : '••••••'}
             </p>
-            <div className="flex items-center mt-2">
-              <div className="w-full bg-green-100 rounded-full h-1.5">
-                <div
-                  className="bg-green-500 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: totalRevenue > 0 ? '100%' : '0%' }}
-                />
-              </div>
+            <div className="mt-2 w-full bg-green-100 rounded-full h-1.5">
+              <div
+                className="bg-green-500 h-1.5 rounded-full transition-all duration-500"
+                style={{ width: totalRevenue > 0 ? '100%' : '0%' }}
+              />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all duration-300">
-            <div className="flex items-start space-x-2 mb-3">
+          <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all">
+            <div className="flex items-start gap-2 mb-3">
               <div className="p-2 bg-red-50 rounded-xl">
                 <TrendingDown className="w-5 h-5 text-red-600" />
               </div>
@@ -233,13 +318,11 @@ const Finance: React.FC = () => {
                 ? `R$ ${totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 : '••••••'}
             </p>
-            <div className="flex items-center mt-2">
-              <div className="w-full bg-red-100 rounded-full h-1.5">
-                <div
-                  className="bg-red-500 h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: totalExpenses > 0 ? '100%' : '0%' }}
-                />
-              </div>
+            <div className="mt-2 w-full bg-red-100 rounded-full h-1.5">
+              <div
+                className="bg-red-500 h-1.5 rounded-full transition-all duration-500"
+                style={{ width: totalExpenses > 0 ? '100%' : '0%' }}
+              />
             </div>
           </div>
         </div>
@@ -275,13 +358,12 @@ const Finance: React.FC = () => {
               const prof = extractProfessional(t);
               const patient = t.patientName ?? extractPatientFromDesc(t.description);
               const service = extractService(t);
-              const status = t.type === 'income' ? (t.status ?? 'pending') : undefined
+              const status = t.type === 'income' ? (t.status ?? 'pending') : undefined;
               const duration = extractDurationMin(t);
               const notes = extractNotes(t);
 
               return (
                 <div key={t.id} className="group">
-                  {/* CARD */}
                   <div
                     role="button"
                     tabIndex={0}
@@ -294,21 +376,14 @@ const Finance: React.FC = () => {
                     }}
                   >
                     <TransactionCard
-                      transaction={{
-                        ...t,
-                        professionalName: prof,
-                        patientName: patient,
-                        service,
-                        status,
-                      }}
+                      transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
                       onEdit={handleEdit}
-                      onDelete={deleteTransaction}
+                      onDelete={handleDelete}
                       onUpdateStatus={(id, next) => updateTxStatus(id, next)}
                       isOpen={openId === t.id}
                     />
                   </div>
 
-                  {/* DETALHES */}
                   {openId === t.id && (
                     <div className="mx-1 mt-[-6px] rounded-2xl border border-gray-100 bg-white shadow-sm p-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -354,7 +429,6 @@ const Finance: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Removido o bloco "Pagamento" aqui */}
                         <div className="space-y-2 sm:col-span-2">
                           <div className="flex items-center gap-2 text-sm">
                             <span className="w-4 h-4 rounded bg-gray-200" />

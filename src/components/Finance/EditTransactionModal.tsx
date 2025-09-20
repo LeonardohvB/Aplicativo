@@ -1,4 +1,4 @@
-
+// src/components/Finance/EditTransactionModal.tsx
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { Transaction } from '../../types';
@@ -15,6 +15,18 @@ interface EditTransactionModalProps {
     date: string;
   }) => Promise<void> | void;
 }
+
+// --- Helpers de Title Case ---
+const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1) : '');
+const titleCase = (input: string) => {
+  if (!input) return '';
+  return input
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => (w.includes('-') ? w.split('-').map(cap).join('-') : cap(w)))
+    .join(' ');
+};
 
 const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   isOpen,
@@ -34,10 +46,10 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     if (transaction) {
       setFormData({
         type: transaction.type,
-        description: transaction.description,
-        amount: transaction.amount,
-        category: transaction.category,
-        date: transaction.date,
+        description: transaction.description ?? '',
+        amount: Number(transaction.amount ?? 0),
+        category: transaction.category ?? '',
+        date: transaction.date ?? '',
       });
     }
   }, [transaction]);
@@ -46,7 +58,14 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSave(formData);
+    const payload = {
+      ...formData,
+      description: titleCase(formData.description).trim(),
+      category: titleCase(formData.category).trim(),
+      amount: Number(formData.amount),
+      date: formData.date || new Date().toLocaleDateString('pt-BR'),
+    };
+    await onSave(payload);
   };
 
   return (
@@ -70,7 +89,9 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <select
                 name="type"
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'income' | 'expense' })}
+                onChange={(e) =>
+                  setFormData({ ...formData, type: e.target.value as 'income' | 'expense' })
+                }
                 className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="income">Receita</option>
@@ -98,6 +119,10 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               name="description"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onBlur={(e) =>
+                setFormData((s) => ({ ...s, description: titleCase(e.target.value) }))
+              }
+              placeholder="Ex.: Recebimento de Pix"
               className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               required
             />
@@ -111,6 +136,10 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 name="category"
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                onBlur={(e) =>
+                  setFormData((s) => ({ ...s, category: titleCase(e.target.value) }))
+                }
+                placeholder="Ex.: Consultas"
                 className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>

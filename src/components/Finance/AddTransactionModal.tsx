@@ -12,6 +12,18 @@ interface AddTransactionModalProps {
   }) => void;
 }
 
+// Helpers: Title Case (preserva hífen)
+const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1) : '');
+const titleCase = (input: string) => {
+  if (!input) return '';
+  return input
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => (w.includes('-') ? w.split('-').map(cap).join('-') : cap(w)))
+    .join(' ');
+};
+
 const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   isOpen,
   onClose,
@@ -26,24 +38,31 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.description || !formData.amount || !formData.category) {
       alert('Por favor, preencha todos os campos');
       return;
     }
 
+    // normaliza campos antes de enviar
+    const description = titleCase(formData.description).trim();
+    const category = titleCase(formData.category).trim();
+    const amountNum = parseFloat(String(formData.amount).replace(',', '.'));
+
     onAdd({
       type: formData.type,
-      description: formData.description,
-      amount: parseFloat(formData.amount),
-      category: formData.category,
+      description,
+      amount: amountNum,
+      category,
     });
 
     setFormData({ type: 'income', description: '', amount: '', category: '' });
     onClose();
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -60,6 +79,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           <button
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -90,8 +110,11 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               name="description"
               value={formData.description}
               onChange={handleChange}
+              onBlur={(e) =>
+                setFormData((s) => ({ ...s, description: titleCase(e.target.value) }))
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Ex: Consulta - Dr. João, Material de escritório"
+              placeholder="Ex.: Recebimento de Pix"
             />
           </div>
 
@@ -120,8 +143,11 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               name="category"
               value={formData.category}
               onChange={handleChange}
+              onBlur={(e) =>
+                setFormData((s) => ({ ...s, category: titleCase(e.target.value) }))
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Ex: Consultas, Materiais, Equipamentos"
+              placeholder="Ex.: Consultas, Materiais, Equipamentos"
             />
           </div>
 
