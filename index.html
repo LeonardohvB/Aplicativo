@@ -10,7 +10,10 @@
     />
 
     <!-- PWA -->
-    <meta name="theme-color" content="#2563eb" />
+    <!-- cor clara para status/overscroll no iOS/Safari -->
+    <meta name="theme-color" content="#f9fafb" />
+    <!-- opcional: tema escuro segue cor escura -->
+    <meta name="theme-color" content="#0b0b0f" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -21,7 +24,7 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
-    <title>Sistema de Gestão Consultório Ideiva</title>
+    <title>Sistema de Gestão</title>
 
     <!-- iOS às vezes ignora user-scalable=no: estes listeners reforçam o bloqueio de pinch -->
     <script>
@@ -35,4 +38,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

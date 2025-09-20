@@ -85,12 +85,17 @@ button, a, [role="button"] {
 html, body {
   height: 100%;
   overflow: hidden;          /* impede a rolagem da página */
+  margin: 0;
+}
+
+/* Fundo claro da viewport (aparece ao “puxar” no Safari) */
+html {
+  background-color: #f9fafb; /* mesma cor do bg-gray-50 */
 }
 
 body {
   position: fixed;           /* fixa a página na viewport */
   inset: 0;                  /* ocupa toda a tela */
-  margin: 0;
   overscroll-behavior: none; /* sem pull-to-refresh */
   -webkit-overflow-scrolling: auto;
 }
@@ -103,7 +108,31 @@ body {
 /* Contêiner interno que VAI rolar */
 .app-viewport {
   height: 100%;
-  overflow-y: auto;                 /* rolagem só aqui */
-  -webkit-overflow-scrolling: touch;/* scroll suave iOS */
-  overscroll-behavior: contain;     /* bloqueia rubber-band */
+  overflow-y: auto;                  /* rolagem só aqui */
+  -webkit-overflow-scrolling: touch; /* scroll suave iOS */
+  overscroll-behavior: contain;      /* bloqueia rubber-band */
+  background-color: #f9fafb;         /* redundante, mas garante consistência */
 }
+
+/* Pinta a faixa da safe area superior (iOS) com a mesma cor do app */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: env(safe-area-inset-top);
+  background: #f9fafb;               /* cor do fundo desejada */
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+/* (opcional) se quiser uniformizar também a bottom safe area:
+body::after {
+  content: "";
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: env(safe-area-inset-bottom);
+  background: #f9fafb;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+*/
