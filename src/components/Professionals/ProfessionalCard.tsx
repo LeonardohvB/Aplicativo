@@ -22,25 +22,45 @@ const placeholder = "https://placehold.co/96x96?text=Foto";
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
 
+/** Helpers locais de formatação de telefone */
+const onlyDigits = (v: string | null | undefined) =>
+  String(v ?? "").replace(/\D+/g, "");
+
+/** 10 dígitos -> (DD) XXXX-XXXX | 11 dígitos -> (DD) 9 XXXX-XXXX */
+const formatPhoneBR = (v: string | null | undefined): string => {
+  const d = onlyDigits(v);
+  if (!d) return "—";
+
+  const ddd = d.slice(0, 2);
+
+  // fixo (10)
+  if (d.length <= 10) {
+    const p1 = d.slice(2, 6);
+    const p2 = d.slice(6, 10);
+    return `(${ddd}) ${p1}${p2 ? `-${p2}` : ""}`;
+  }
+
+  // celular (11)
+  const nine = d.slice(2, 3);
+  const p1 = d.slice(3, 7);
+  const p2 = d.slice(7, 11);
+  return `(${ddd}) ${nine} ${p1}${p2 ? `-${p2}` : ""}`;
+};
+
 /** Retorna uma URL exibível a partir de (path ou URL) + fallback */
 function toDisplayUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  // se já é http(s), usa direto; senão é path de storage
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return publicUrlFromPath(trimmed) || null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed; // já é URL
+  return publicUrlFromPath(trimmed) || null; // path do storage
 }
 
 function resolveAvatarBaseUrl(p: Professional): string {
-  // principais no app (camelCase)
   const camelPathOrUrl = (p as any).avatar as string | undefined;
   const camel = toDisplayUrl(camelPathOrUrl);
-
-  // compat: se vier snake_case junto
   const snakePath = (p as any).avatar_path as string | undefined;
   const snake = toDisplayUrl(snakePath);
-
   return camel || snake || placeholder;
 }
 function resolveAvatarVersion(p: Professional): string | undefined {
@@ -61,13 +81,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     resolveAvatarVersion(professional) || null
   );
   const [avatarPathOrUrl, setAvatarPathOrUrl] = useState<string | null>(
-    // preferir camelCase, senão snake_case
     ((professional as any).avatar as string | undefined) ??
       ((professional as any).avatar_path as string | undefined) ??
       null
   );
 
-  // Quando as props mudarem (troca de aba/refetch), sincroniza o state local
   useEffect(() => {
     setAvatarVersion(resolveAvatarVersion(professional) || null);
     const next =
@@ -89,7 +107,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   const handleReplaceFromModal = async (id: string, file: File) => {
     try {
       const { path, updatedAt } = await uploadAvatarAndCleanup(id, file);
-      // atualiza localmente com o path novo
       setAvatarPathOrUrl(path);
       setAvatarVersion(updatedAt);
       onPhotoChange(id, file);
@@ -111,6 +128,9 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   };
   // =========================================
 
+  const formattedPhone = formatPhoneBR(professional.phone);
+  const telHref = `tel:+55${onlyDigits(professional.phone)}`;
+
   return (
     <div
       role="button"
@@ -128,15 +148,14 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     >
       <div className="flex items-start gap-4">
         {/* Avatar com ring + overlay + status dot */}
-        <div
-          className="relative"
-          onClick={stop}
-          onMouseDown={stop}
-        >
+        <div className="relative" onClick={stop} onMouseDown={stop}>
           <button
             type="button"
             className="relative h-16 w-16 rounded-full overflow-hidden ring-2 ring-gray-100 hover:scale-[1.02] transition"
-            onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPreviewOpen(true);
+            }}
             onMouseDown={stop}
             title="Visualizar foto"
           >
@@ -144,7 +163,9 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               src={avatarSrc}
               alt={professional.name}
               className="h-full w-full object-cover"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = placeholder)}
+              onError={(e) =>
+                ((e.currentTarget as HTMLImageElement).src = placeholder)
+              }
               loading="lazy"
               decoding="async"
               draggable={false}
@@ -178,7 +199,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
               )}
             </div>
 
-            <div className="flex items-start justify-center" onClick={stop} onMouseDown={stop}>
+            <div
+              className="flex items-start justify-center"
+              onClick={stop}
+              onMouseDown={stop}
+            >
               <button
                 onClick={() => onToggle(professional.id)}
                 className={`relative h-6 w-11 rounded-full transition ${
@@ -197,32 +222,38 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
             <div className="col-span-2 my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
 
+            {/* Telefone */}
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               {professional.phone && (
-                <div className="flex items-center gap-2 text-gray-700" onClick={stop} onMouseDown={stop}>
+                <div
+                  className="flex items-center gap-2 text-gray-700"
+                  onClick={stop}
+                  onMouseDown={stop}
+                >
                   <Phone className="h-4 w-4 text-blue-600" />
-                  <span className="select-text">{professional.phone}</span>
+                  <span className="select-text">{formattedPhone}</span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-center" onClick={stop} onMouseDown={stop}>
+            <div
+              className="flex items-center justify-center"
+              onClick={stop}
+              onMouseDown={stop}
+            >
               {professional.phone && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.location.href = `tel:${professional.phone}`;
-                  }}
+                <a
+                  href={telHref}
                   className="inline-flex items-center gap-1 rounded-full border border-blue-600 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   title="Ligar"
-                  aria-label={`Ligar para ${professional.phone}`}
+                  aria-label={`Ligar para ${formattedPhone}`}
                 >
                   Ligar
-                </button>
+                </a>
               )}
             </div>
 
+            {/* Registro */}
             <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
               <div className="flex items-center gap-2 text-gray-700">
                 <BadgeCheck className="h-4 w-4 text-blue-600" />
@@ -245,10 +276,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
         professional={professional}
         onChange={handleReplaceFromModal}
         onRemove={handleRemoveFromModal}
-        avatarPathOverride={
-          // passa sempre o que estamos usando localmente
-          avatarPathOrUrl ?? undefined
-        }
+        avatarPathOverride={avatarPathOrUrl ?? undefined}
         avatarVersionOverride={avatarVersion ?? undefined}
       />
     </div>

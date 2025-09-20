@@ -1,6 +1,8 @@
 // src/components/Professionals/AddProfessionalModal.tsx
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { titleAllWordsLive, titleAllWordsFinal } from '../../lib/strings'; // ⬅️ importe aqui
 
 interface AddProfessionalModalProps {
   isOpen: boolean;
@@ -109,13 +111,13 @@ export default function AddProfessionalModal({
           <div>
             <label className="block text-sm font-medium text-gray-700">Nome</label>
             <input
-              value={name}
-              onChange={(e) => { setName(e.target.value); if (errors.name) setErrors(s => ({...s, name: undefined})); }}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2
-                ${errors.name ? 'border-red-400 focus:border-red-500 focus:ring-red-200' : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'}`}
-              placeholder="Ex.: Maria Silva"
-              aria-invalid={!!errors.name}
-            />
+  value={name}
+  onChange={(e) => setName(titleAllWordsLive(e.target.value))}
+  onBlur={() => setName((v) => titleAllWordsFinal(v))}
+  className="mt-1 w-full rounded-lg border px-3 py-2"
+  placeholder="Nome do profissional"
+  required
+/>
             {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
           </div>
 
@@ -123,13 +125,13 @@ export default function AddProfessionalModal({
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
-              value={specialty}
-              onChange={(e) => { setSpecialty(e.target.value); if (errors.specialty) setErrors(s => ({...s, specialty: undefined})); }}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2
-                ${errors.specialty ? 'border-red-400 focus:border-red-500 focus:ring-red-200' : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'}`}
-              placeholder="Ex.: Psicóloga"
-              aria-invalid={!!errors.specialty}
-            />
+  value={specialty}
+  onChange={(e) => setSpecialty(titleAllWordsLive(e.target.value))}
+  onBlur={() => setSpecialty((v) => titleAllWordsFinal(v))}
+  className="mt-1 w-full rounded-lg border px-3 py-2"
+  placeholder="Profissão/Especialidade"
+  required
+/>
             {errors.specialty && <p className="mt-1 text-xs text-red-600">{errors.specialty}</p>}
           </div>
 
