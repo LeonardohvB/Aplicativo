@@ -11,21 +11,20 @@ import Finance from './pages/Finance'
 import Reports from './pages/Reports'
 import LoginGate from './pages/LoginGate'
 
-// 👇 Tipo mais amplo: inclui as abas do BottomNav + 'perfil'
+// Tipo mais amplo: inclui as abas do BottomNav + 'perfil'
 type AppTab = Tab | 'perfil'
 
 export default function App() {
-  // 👇 agora o estado aceita 'perfil'
   const [activeTab, setActiveTab] = useState<AppTab>('inicio')
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [user, setUser] = useState<any>(null)
 
   const onlyFirst = (full?: string | null) => {
-    if (!full) return null;
-    const p = full.trim().split(/\s+/);
-    return p[0] || null;
-  };
-  const [firstName, setFirstName] = useState<string | null>(null);
+    if (!full) return null
+    const p = full.trim().split(/\s+/)
+    return p[0] || null
+  }
+  const [firstName, setFirstName] = useState<string | null>(null)
 
   useEffect(() => {
     let unsub = () => {}
@@ -54,30 +53,30 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) return
 
-    let canceled = false;
-    (async () => {
+    let canceled = false
+    ;(async () => {
       const { data: row, error } = await supabase
         .from('profiles')
         .select('name')
         .eq('id', user.id)
-        .maybeSingle();
+        .maybeSingle()
 
       if (!canceled) {
-        if (error) console.warn('fetch profile name error:', error);
-        setFirstName(onlyFirst(row?.name ?? null));
+        if (error) console.warn('fetch profile name error:', error)
+        setFirstName(onlyFirst(row?.name ?? null))
       }
-    })();
+    })()
 
-    return () => { canceled = true; };
-  }, [user]);
+    return () => { canceled = true }
+  }, [user])
 
   useEffect(() => {
-    const onSaved = (e: any) => setFirstName(onlyFirst(e?.detail?.name ?? null));
-    window.addEventListener('profile:saved', onSaved);
-    return () => window.removeEventListener('profile:saved', onSaved);
-  }, []);
+    const onSaved = (e: any) => setFirstName(onlyFirst(e?.detail?.name ?? null))
+    window.addEventListener('profile:saved', onSaved)
+    return () => window.removeEventListener('profile:saved', onSaved)
+  }, [])
 
   if (checkingAuth) {
     return (
@@ -87,11 +86,11 @@ export default function App() {
     )
   }
 
-  // ⬇️ Sem usuário logado: mostra Splash e depois Login
+  // Sem usuário logado: mostra Splash/Login
   if (!user) return <LoginGate />
 
-  // 👉 cast temporário para aceitar a nova prop até atualizarmos Dashboard.tsx
-  const DashboardComp: any = Dashboard;
+  // cast temporário para aceitar a nova prop até atualizarmos Dashboard.tsx
+  const DashboardComp: any = Dashboard
 
   const renderContent = () => {
     switch (activeTab) {
@@ -105,13 +104,11 @@ export default function App() {
           <DashboardComp
             firstName={firstName ?? undefined}
             onOpenProfile={() => setActiveTab('perfil')}
-            // 👇 NOVO: navegar internamente para Agenda com filtro
             onGotoSchedule={(filter: 'today' | 'week') => {
-              setActiveTab('agenda');
-              // espera a Agenda montar para ouvir o evento
+              setActiveTab('agenda')
               setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('agenda:filter', { detail: filter }));
-              }, 0);
+                window.dispatchEvent(new CustomEvent('agenda:filter', { detail: filter }))
+              }, 0)
             }}
           />
         )
@@ -119,18 +116,18 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {renderContent()}
+    <>
+      {/* Wrapper de viewport: rolagem só aqui (a página/viewport está travada no CSS global). */}
+      <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50">
+        {renderContent()}
 
-      {/* 
-        BottomNavigation só conhece Tabs “normais”.
-        - Se estiver em 'perfil', mostramos como 'inicio' para não quebrar tipagem.
-        - onTabChange continua recebendo Tab e definimos no estado (AppTab) sem erro.
-      */}
-      <BottomNavigation
-        activeTab={activeTab === 'perfil' ? 'inicio' : (activeTab as Tab)}
-        onTabChange={(t: Tab) => setActiveTab(t)}
-      />
-    </div>
+        {/* BottomNavigation só conhece Tabs “normais”.
+           - Se estiver em 'perfil', mostramos como 'inicio' para não quebrar tipagem. */}
+        <BottomNavigation
+          activeTab={activeTab === 'perfil' ? 'inicio' : (activeTab as Tab)}
+          onTabChange={(t: Tab) => setActiveTab(t)}
+        />
+      </div>
+    </>
   )
 }

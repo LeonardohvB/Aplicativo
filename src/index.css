@@ -80,3 +80,30 @@ button, a, [role="button"] {
 .app-scroll {
   overscroll-behavior: contain; /* impede que o gesto de scroll “vaze” para a viewport */
 }
+
+/* === Travar rolagem da viewport (iOS Safari/PWA) === */
+html, body {
+  height: 100%;
+  overflow: hidden;          /* impede a rolagem da página */
+}
+
+body {
+  position: fixed;           /* fixa a página na viewport */
+  inset: 0;                  /* ocupa toda a tela */
+  margin: 0;
+  overscroll-behavior: none; /* sem pull-to-refresh */
+  -webkit-overflow-scrolling: auto;
+}
+
+/* root ocupa a tela toda */
+#root {
+  height: 100%;
+}
+
+/* Contêiner interno que VAI rolar */
+.app-viewport {
+  height: 100%;
+  overflow-y: auto;                 /* rolagem só aqui */
+  -webkit-overflow-scrolling: touch;/* scroll suave iOS */
+  overscroll-behavior: contain;     /* bloqueia rubber-band */
+}
