@@ -53,3 +53,30 @@
   80%     { transform: translateX(3px); }
 }
 .animate-shake { animation: shake .22s ease-in-out; }
+
+/* ======== BLOQUEIOS MOBILE PROFISSIONAIS ======== */
+
+/* ocupa a viewport toda e evita “vazamento” de scroll */
+html, body, #root {
+  height: 100%;
+}
+
+/* trava o rubber-band/pull-to-refresh na viewport */
+body {
+  overscroll-behavior-y: none;  /* Safari 16+/Chrome/Android */
+  overscroll-behavior-x: none;
+  -webkit-overflow-scrolling: auto; /* reduz bounce no iOS */
+  -ms-text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  touch-action: pan-x pan-y; /* permite rolagem, mas sem gestos extras */
+}
+
+/* evita double-tap zoom em botões/links */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* (opcional) se houver um container rolável principal, use esta classe nele */
+.app-scroll {
+  overscroll-behavior: contain; /* impede que o gesto de scroll “vaze” para a viewport */
+}
