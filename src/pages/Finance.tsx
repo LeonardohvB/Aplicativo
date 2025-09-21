@@ -297,6 +297,9 @@ const Finance: React.FC = () => {
   const totalRevenue = transactions.filter((t: any) => t.type === 'income' && ((t.status ?? 'pending') === 'paid')).reduce((s, t) => s + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const balance = totalRevenue - totalExpenses;
+  const moneyBR = (n: number) =>
+  `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const masked = (n: number) => (showBalance ? moneyBR(n) : '••••••');
   const isNegative = balance < 0, isPositive = balance > 0;
 
   const animatedBalance = useAnimatedNumber(showBalance ? balance : 0, {
@@ -374,8 +377,8 @@ const Finance: React.FC = () => {
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Receitas</span>
             </div>
             <p className="text-lg sm:text-2xl font-bold text-green-600 break-all">
-              R$ {totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+               {masked(totalRevenue)}
+              </p>
             <div className="mt-2 w-full bg-green-100 rounded-full h-1.5">
               <div className="bg-green-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalRevenue > 0 ? '100%' : '0%' }} />
             </div>
@@ -392,8 +395,8 @@ const Finance: React.FC = () => {
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Despesas</span>
             </div>
             <p className="text-lg sm:text-2xl font-bold text-red-600 break-all">
-              R$ {totalExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
+               {masked(totalExpenses)}
+               </p>
             <div className="mt-2 w-full bg-red-100 rounded-full h-1.5">
               <div className="bg-red-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalExpenses > 0 ? '100%' : '0%' }} />
             </div>

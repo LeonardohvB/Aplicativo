@@ -1,5 +1,5 @@
 // src/components/Schedule/SchedulePatientModal.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { AppointmentSlot, Patient } from '../../types';
 import { supabase } from '../../lib/supabase'; // opcional: busca no banco se não achar na prop
@@ -76,20 +76,30 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shake, setShake] = useState(false);
 
+  // 🔎 timer de debounce para a busca por CPF
+  const searchTimer = useRef<number | null>(null);
+
   useEffect(() => {
-  if (!isOpen) return;
+    if (!isOpen) return;
 
-  // limpa tudo ao abrir
-  setCPF('');
-  setFound(null);
-  setPatientName('');
-  setPatientPhone('');
-  setNotes('');
-  setErrors({});
-  setShake(false);
+    // limpa tudo ao abrir
+    setCPF('');
+    setFound(null);
+    setPatientName('');
+    setPatientPhone('');
+    setNotes('');
+    setErrors({});
+    setShake(false);
 
-  setService(slot?.service || 'Consulta');
-}, [isOpen, slot?.id]);
+    setService(slot?.service || 'Consulta');
+  }, [isOpen, slot?.id]);
+
+  // limpa o timer quando o componente desmontar
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    };
+  }, []);
 
   const localFindByCPF = (cpfDigits: string) =>
     patients.find((p) => onlyDigits((p as any).cpf || '') === cpfDigits);
@@ -147,35 +157,35 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
     if (!isValidCell(patientPhone)) e.patientPhone = 'Telefone deve ter 11 dígitos.';
     if (!service.trim()) e.service = 'Informe o serviço.';
     return e;
-    }
-
-function submit(e: React.FormEvent) {
-  e.preventDefault();
-
-  const eMap = validate();
-  if (Object.keys(eMap).length) {
-    setErrors(eMap);
-    setShake(true);
-    setTimeout(() => setShake(false), 260);
-    return;
   }
 
-  // ✅ Narrowing explícito
-  if (!slot) return;
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
 
-  const { id, price } = slot; // agora o TS sabe que não é null
+    const eMap = validate();
+    if (Object.keys(eMap).length) {
+      setErrors(eMap);
+      setShake(true);
+      setTimeout(() => setShake(false), 260);
+      return;
+    }
 
-  onSchedule(id, {
-    patientName: patientName.trim(),
-    patientPhone: onlyDigits(patientPhone),
-    service: service.trim(),
-    price,
-    notes: notes.trim() || undefined,
-  });
+    // ✅ Narrowing explícito
+    if (!slot) return;
 
-  onClose();
-  setCPF(''); setPatientName(''); setPatientPhone(''); setNotes(''); setFound(null);
-}
+    const { id, price } = slot;
+
+    onSchedule(id, {
+      patientName: patientName.trim(),
+      patientPhone: onlyDigits(patientPhone),
+      service: service.trim(),
+      price,
+      notes: notes.trim() || undefined,
+    });
+
+    onClose();
+    setCPF(''); setPatientName(''); setPatientPhone(''); setNotes(''); setFound(null);
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -201,8 +211,13 @@ function submit(e: React.FormEvent) {
                 const v = formatCPF(e.target.value);
                 setCPF(v);
                 if (errors.cpf) setErrors((s) => ({ ...s, cpf: '' }));
+
+                // 🔎 debounce da busca por CPF conforme digita
+                if (searchTimer.current) window.clearTimeout(searchTimer.current);
+                searchTimer.current = window.setTimeout(() => {
+                  tryAutoFill(v);
+                }, 350);
               }}
-              onBlur={() => tryAutoFill(cpf)}
               className={inputClass(!!errors.cpf)}
               placeholder="000.000.000-00"
               inputMode="numeric"
@@ -216,7 +231,7 @@ function submit(e: React.FormEvent) {
               ) : found ? (
                 <p className="text-green-600">Paciente encontrado: <b>{found.name}</b></p>
               ) : (
-                <p className="text-gray-400">Digite o CPF e saia do campo para buscar.</p>
+                <p className="text-gray-400">A busca acontece automaticamente ao digitar.</p>
               )}
             </div>
           </div>
