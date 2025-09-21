@@ -149,3 +149,4 @@ export interface Transaction {
   professionalId?: string;
 
 }
+ export type TxStatus = 'pending' | 'paid';

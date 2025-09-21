@@ -1,5 +1,5 @@
 // src/pages/Finance.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   TrendingUp,
@@ -13,6 +13,8 @@ import {
   User,
   Clock,
   Filter,   // ← funil do lucide
+  Edit2,    // ← adicionado para o botão de editar (painel lateral)
+  Trash2,   // ← adicionado para o botão de excluir (painel lateral)
 } from 'lucide-react';
 import TransactionCard from '../components/Finance/TransactionCard';
 import AddTransactionModal from '../components/Finance/AddTransactionModal';
@@ -97,13 +99,150 @@ function buildSparkPathFromTransactions(transactions: any[], width = 600, height
   return catmullToBezier(pts);
 }
 
+/* ====================== Swipe Row (sem libs) ====================== */
+// Painel de ações à direita (vertical) aparece ao arrastar para a esquerda.
+// Fecha ao arrastar para a direita ou clicar fora.
+type SwipeRowProps = {
+  rowId: string;
+  isOpen: boolean;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+};
+
+function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }: SwipeRowProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const startX = useRef<number>(0);
+  const currentX = useRef<number>(0);
+  const dragging = useRef<boolean>(false);
+  const [tx, setTx] = useState<number>(0); // translateX do conteúdo
+
+  const ACTIONS_WIDTH = 100; // largura do painel de ações
+  const OPEN_TX = -ACTIONS_WIDTH;
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    const handleDocClick = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handleDocClick);
+    return () => document.removeEventListener('mousedown', handleDocClick);
+  }, [onClose]);
+
+  // Sincroniza estado aberto/fechado com translate
+  useEffect(() => { setTx(isOpen ? OPEN_TX : 0); }, [isOpen]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    dragging.current = true;
+    startX.current = e.clientX;
+    currentX.current = isOpen ? startX.current + OPEN_TX : startX.current;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - startX.current;
+    let next = (isOpen ? OPEN_TX : 0) + dx;
+    // limitações: não arrastar para a esquerda além do painel, nem para a direita além de 0
+    next = Math.min(0, Math.max(next, -ACTIONS_WIDTH));
+    setTx(next);
+  };
+  const onPointerUp = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    // snap: se passou de -40px, abre; caso contrário, fecha
+    if (tx < -40) {
+      setTx(OPEN_TX);
+      onOpen(rowId);
+    } else {
+      setTx(0);
+      onClose();
+    }
+  };
+
+  // Suporte a toque (touch) – encaminha para pointer
+  const onTouchStart = (e: React.TouchEvent) => {
+    dragging.current = true;
+    startX.current = e.touches[0].clientX;
+    currentX.current = isOpen ? startX.current + OPEN_TX : startX.current;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!dragging.current) return;
+    const dx = e.touches[0].clientX - startX.current;
+    let next = (isOpen ? OPEN_TX : 0) + dx;
+    next = Math.min(0, Math.max(next, -ACTIONS_WIDTH));
+    setTx(next);
+  };
+  const onTouchEnd = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    if (tx < -40) {
+      setTx(OPEN_TX);
+      onOpen(rowId);
+    } else {
+      setTx(0);
+      onClose();
+    }
+  };
+  
+
+  return (
+    <div ref={containerRef} className="relative select-none">
+      {/* Painel de ações (lado direito) */}
+      <div className="absolute right-0 top-0 h-full w-24 pr-2 pl-2 flex items-center justify-center">
+        <div className="h-[0px] w-[0px] rounded-2xl bg-white shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="p-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow transition"
+            aria-label="Editar"
+            title="Editar"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-6 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow transition"
+            aria-label="Excluir"
+            title="Excluir"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Conteúdo deslizável */}
+      <div
+        className="bg-transparent"
+        style={{ transform: `translateX(${tx}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ======================================================================== */
 
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showBalance, setShowBalance] = useState(true);
-  const [openId, setOpenId] = useState<string | null>(null);
+
+  // Estado para o painel de detalhes (o seu "isOpen" dos cards)
+  const [detailsOpenId, setDetailsOpenId] = useState<string | null>(null);
+  // Estado para o swipe (ações Editar/Excluir)
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
+
   const [pulse, setPulse] = useState(false);
 
   const { transactions, loading, addTransaction, deleteTransaction, editTransaction, updateTxStatus } = useTransactions();
@@ -175,7 +314,6 @@ const Finance: React.FC = () => {
   const handleAdd = async (newTransaction: { type: 'income' | 'expense'; description: string; amount: number; category: string; }) => {
     await addTransaction(newTransaction); setIsModalOpen(false);
   };
-  const toggleOpen = (id: string) => setOpenId((cur) => (cur === id ? null : id));
 
   if (loading) {
     return (<div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center"><div className="text-gray-600">Carregando transações...</div></div>);
@@ -343,24 +481,36 @@ const Finance: React.FC = () => {
               const status = t.type === 'income' ? (t.status ?? 'pending') : undefined;
               const duration = extractDurationMin(t);
               const notes = extractNotes(t);
+
+              const isDetailsOpen = detailsOpenId === t.id;
+              const isSwipeOpen = swipeOpenId === t.id;
+
               return (
                 <div key={t.id} className="group">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleOpen(t.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleOpen(t.id); } }}
+                  <SwipeRow
+                    rowId={t.id}
+                    isOpen={isSwipeOpen}
+                    onOpen={(id) => setSwipeOpenId(id)}
+                    onClose={() => setSwipeOpenId(null)}
+                    onEdit={() => handleEdit(t.id)}
+                    onDelete={() => handleDelete(t.id)}
                   >
-                    <TransactionCard
-                      transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onUpdateStatus={(id, next) => updateTxStatus(id, next)}
-                      isOpen={openId === t.id}
-                    />
-                  </div>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailsOpenId((cur) => (cur === t.id ? null : t.id)); } }}
+                    >
+                      <TransactionCard
+                        transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
+                        // IMPORTANTE: não passamos onEdit/onDelete para NÃO exibir na frente do card
+                        onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                        isOpen={isDetailsOpen}
+                      />
+                    </div>
+                  </SwipeRow>
 
-                  {openId === t.id && (
+                  {isDetailsOpen && (
                     <div className="mx-1 mt-[-6px] rounded-2xl border border-gray-100 bg-white shadow-sm p-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">

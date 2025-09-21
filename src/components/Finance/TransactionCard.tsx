@@ -1,4 +1,3 @@
-// src/components/Finance/TransactionCard.tsx
 import React from 'react';
 import {
   Edit2,
@@ -12,9 +11,7 @@ import {
   CheckCircle2,
   Clock3,
 } from 'lucide-react';
-import { Transaction } from '../../types';
-
-type TxStatus = 'pending' | 'paid';
+import { Transaction, TxStatus } from '../../types';
 
 interface TransactionCardProps {
   transaction: Transaction & {
@@ -30,8 +27,9 @@ interface TransactionCardProps {
     actualDuration?: number | null;
     notes?: string | null;
   };
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  /** Tornados opcionais para esconder as ações da frente do card */
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
   /** Ações rápidas de status (opcional) — usadas só em RECEITAS */
   onUpdateStatus?: (id: string, next: TxStatus) => void;
   /** Visual: rotaciona o chevron quando o wrapper abrir */
@@ -124,7 +122,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({
           />
         </div>
 
-        {/* Linha 2 — categoria + data  |  editar/excluir à direita */}
+        {/* Linha 2 — categoria + data  |  editar/excluir à direita (só se as props existirem) */}
         <div className="flex items-center justify-between">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <div className="flex items-center gap-1 text-xs sm:text-sm text-gray-600">
@@ -137,39 +135,41 @@ const TransactionCard: React.FC<TransactionCardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onMouseDown={stop}
-              onClick={(e) => {
-                stop(e);
-                onEdit(transaction.id);
-              }}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-200 hover:scale-110"
-              title="Editar"
-              aria-label="Editar transação"
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
-            <button
-              onMouseDown={stop}
-              onClick={(e) => {
-                stop(e);
-                onDelete(transaction.id);
-              }}
-              className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-110"
-              title="Excluir"
-              aria-label="Excluir transação"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+          {onEdit && onDelete && (
+            <div className="flex items-center gap-2">
+              <button
+                onMouseDown={stop}
+                onClick={(e) => {
+                  stop(e);
+                  onEdit(transaction.id);
+                }}
+                className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all duration-200 hover:scale-110"
+                title="Editar"
+                aria-label="Editar transação"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                onMouseDown={stop}
+                onClick={(e) => {
+                  stop(e);
+                  onDelete(transaction.id);
+                }}
+                className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 hover:scale-110"
+                title="Excluir"
+                aria-label="Excluir transação"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Linha 3 — valor + (badge de status apenas para RECEITAS) + ações */}
         <div className="flex items-center justify-between">
           <div className="text-left">
             <span className={`font-bold text-base sm:text-lg ${amountClass} whitespace-nowrap tabular-nums`}>
-              {isIncome ? '+' : '-'} R${' '}
+              {isIncome ? '+' : '-'} R{'$ '}
               {transaction.amount.toLocaleString('pt-BR', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
