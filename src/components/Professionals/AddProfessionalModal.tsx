@@ -1,14 +1,14 @@
 // src/components/Professionals/AddProfessionalModal.tsx
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { titleAllWordsLive, titleAllWordsFinal } from '../../lib/strings'; // ⬅️ importe aqui
+import { titleAllWordsLive, titleAllWordsFinal } from '../../lib/strings';
 
 interface AddProfessionalModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (professional: {
     name: string;
+    cpf: string;               // <- NOVO (apenas dígitos)
     specialty: string;
     phone: string;             // apenas dígitos
     registrationCode: string;  // "SIGLA - número"
@@ -16,18 +16,60 @@ interface AddProfessionalModalProps {
   }) => void;
 }
 
-/* Helpers de telefone */
+/* ===== Helpers de dígitos/telefone ===== */
 function onlyDigits(v: string) { return (v || '').replace(/\D+/g, ''); }
+
 function formatBRCell(v: string) {
   const d = onlyDigits(v).slice(0, 11);
   const len = d.length;
   if (len === 0) return '';
-  if (len <= 2) return `(${d}`;
-  if (len <= 3) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (len <= 7) return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3)}`;
+  if (len <= 2)  return `(${d}`;
+  if (len <= 3)  return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (len <= 7)  return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
 }
 const isValidCell = (v: string) => onlyDigits(v).length === 11;
+
+/* ===== CPF (formatação + validação) ===== */
+function formatCPF(v: string) {
+  const d = onlyDigits(v).slice(0, 11);
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 9);
+  const p4 = d.slice(9, 11);
+  if (d.length <= 3)  return p1;
+  if (d.length <= 6)  return `${p1}.${p2}`;
+  if (d.length <= 9)  return `${p1}.${p2}.${p3}`;
+  return `${p1}.${p2}.${p3}-${p4}`;
+}
+
+function isValidCPF(cpfStr: string) {
+  const cpf = onlyDigits(cpfStr);
+  if (cpf.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false; // todos iguais
+
+  const calcCheck = (base: string, factor: number) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) {
+      sum += Number(base[i]) * (factor - i);
+    }
+    const mod = (sum * 10) % 11;
+    return mod === 10 ? 0 : mod;
+  };
+
+  const d1 = calcCheck(cpf.slice(0, 9), 10);
+  const d2 = calcCheck(cpf.slice(0, 10), 11);
+
+  return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
+}
+
+/* ===== Nome completo (mínimo nome + sobrenome) ===== */
+function hasFirstAndLastName(full: string) {
+  const parts = (full || '').trim().split(/\s+/).filter(Boolean);
+  // considera “nome completo” se houver pelo menos 2 partes com 2+ caracteres
+  const strong = parts.filter(p => p.replace(/[^a-zá-úà-ùãõç]/gi, '').length >= 2);
+  return strong.length >= 2;
+}
 
 /* Conselhos */
 const COUNCILS = ['CRM','CREA','CREFITO','CRP','CRO','COREN','CRF','CRFa','CRN','CRESS','CREF'];
@@ -38,6 +80,7 @@ export default function AddProfessionalModal({
   onAdd,
 }: AddProfessionalModalProps) {
   const [name, setName] = useState('');
+  const [cpf, setCpf] = useState(''); // <- NOVO
   const [specialty, setSpecialty] = useState('');
   const [phone, setPhone] = useState('');
 
@@ -47,15 +90,22 @@ export default function AddProfessionalModal({
   const [regNumber, setRegNumber] = useState('');
 
   const [commissionRate, setCommissionRate] = useState<number | ''>('');
-  const [errors, setErrors] = useState<{name?:string; specialty?:string; phone?:string; regNumber?:string; customCouncil?:string}>({});
+  const [errors, setErrors] = useState<{
+    name?: string;
+    cpf?: string;
+    specialty?: string;
+    phone?: string;
+    regNumber?: string;
+    customCouncil?: string;
+  }>({});
   const [shake, setShake] = useState(false);
 
+  // Reset ao abrir/fechar
   useEffect(() => {
     if (!isOpen) {
-      setName(''); setSpecialty(''); setPhone('');
+      setName(''); setCpf(''); setSpecialty(''); setPhone('');
       setCouncil('CRM'); setCustomCouncil(''); setRegNumber('');
-      setCommissionRate(''); setErrors({});
-      setShake(false);
+      setCommissionRate(''); setErrors({}); setShake(false);
     }
   }, [isOpen]);
 
@@ -65,18 +115,30 @@ export default function AddProfessionalModal({
     e.preventDefault();
     const nextErrors: typeof errors = {};
 
-    if (!name.trim()) nextErrors.name = 'Informe o nome.';
+    // Nome completo
+    if (!name.trim()) nextErrors.name = 'Informe o nome completo.';
+    else if (!hasFirstAndLastName(name)) nextErrors.name = 'Mínimo: nome e sobrenome.';
+
+    // CPF
+    if (!cpf.trim()) nextErrors.cpf = 'Informe o CPF.';
+    else if (onlyDigits(cpf).length !== 11) nextErrors.cpf = 'CPF deve ter 11 dígitos.';
+    else if (!isValidCPF(cpf)) nextErrors.cpf = 'CPF inválido.';
+
+    // Especialidade
     if (!specialty.trim()) nextErrors.specialty = 'Informe a profissão/especialidade.';
 
+    // Telefone
     const phoneDigits = onlyDigits(phone);
     if (phoneDigits.length !== 11) nextErrors.phone = 'Telefone celular deve ter 11 dígitos (DDD + 9).';
 
+    // Conselho/Registro
     const chosenCouncil = council === 'OUTRO'
       ? (customCouncil || '').trim().toUpperCase()
       : council.toUpperCase();
     if (council === 'OUTRO' && !chosenCouncil) nextErrors.customCouncil = 'Informe a sigla do conselho.';
     if (!regNumber.trim()) nextErrors.regNumber = 'Informe o número do registro.';
 
+    // Se houver erros → treme + destaca
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       setShake(true);
@@ -88,8 +150,9 @@ export default function AddProfessionalModal({
 
     onAdd({
       name: name.trim(),
+      cpf: onlyDigits(cpf),          // envia apenas dígitos
       specialty: specialty.trim(),
-      phone: phoneDigits, // só dígitos
+      phone: phoneDigits,            // só dígitos
       registrationCode,
       commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
     });
@@ -107,31 +170,70 @@ export default function AddProfessionalModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Nome */}
+          {/* Nome completo */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nome</label>
+            <label className="block text-sm font-medium text-gray-700">Nome completo</label>
             <input
-  value={name}
-  onChange={(e) => setName(titleAllWordsLive(e.target.value))}
-  onBlur={() => setName((v) => titleAllWordsFinal(v))}
-  className="mt-1 w-full rounded-lg border px-3 py-2"
-  placeholder="Nome do profissional"
-  required
-/>
-            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+              value={name}
+              onChange={(e) => {
+                setName(titleAllWordsLive(e.target.value));
+                if (errors.name) setErrors(s => ({ ...s, name: undefined }));
+              }}
+              onBlur={() => setName((v) => titleAllWordsFinal(v))}
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                errors.name
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+              }`}
+              placeholder="Nome e sobrenome"
+              aria-invalid={!!errors.name}
+            />
+            <p className={`mt-1 text-xs ${errors.name ? 'text-red-600' : 'text-gray-400'}`}>
+              {errors.name ? errors.name : 'Mínimo: nome e sobrenome.'}
+            </p>
+          </div>
+
+          {/* CPF */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">CPF</label>
+            <input
+              value={cpf}
+              onChange={(e) => {
+                setCpf(formatCPF(e.target.value));
+                if (errors.cpf) setErrors(s => ({ ...s, cpf: undefined }));
+              }}
+              inputMode="numeric"
+              placeholder="000.000.000-00"
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                errors.cpf
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+              }`}
+              aria-invalid={!!errors.cpf}
+            />
+            <p className={`mt-1 text-xs ${errors.cpf ? 'text-red-600' : 'text-gray-400'}`}>
+              {errors.cpf ? errors.cpf : 'Digite 11 dígitos (serão validados).'}
+            </p>
           </div>
 
           {/* Especialidade */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
-  value={specialty}
-  onChange={(e) => setSpecialty(titleAllWordsLive(e.target.value))}
-  onBlur={() => setSpecialty((v) => titleAllWordsFinal(v))}
-  className="mt-1 w-full rounded-lg border px-3 py-2"
-  placeholder="Profissão/Especialidade"
-  required
-/>
+              value={specialty}
+              onChange={(e) => {
+                setSpecialty(titleAllWordsLive(e.target.value));
+                if (errors.specialty) setErrors(s => ({ ...s, specialty: undefined }));
+              }}
+              onBlur={() => setSpecialty((v) => titleAllWordsFinal(v))}
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                errors.specialty
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+              }`}
+              placeholder="Profissão/Especialidade"
+              aria-invalid={!!errors.specialty}
+            />
             {errors.specialty && <p className="mt-1 text-xs text-red-600">{errors.specialty}</p>}
           </div>
 
@@ -140,18 +242,22 @@ export default function AddProfessionalModal({
             <label className="block text-sm font-medium text-gray-700">Telefone (celular)</label>
             <input
               value={phone}
-              onChange={(e) => { setPhone(formatBRCell(e.target.value)); if (errors.phone) setErrors(s => ({...s, phone: undefined})); }}
+              onChange={(e) => {
+                setPhone(formatBRCell(e.target.value));
+                if (errors.phone) setErrors(s => ({ ...s, phone: undefined }));
+              }}
               type="tel"
               inputMode="numeric"
               placeholder="(81) 9 9999-9999"
-              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2
-                ${(phone && !isValidCell(phone)) || errors.phone
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                (phone && !isValidCell(phone)) || errors.phone
                   ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
-                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'}`}
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+              }`}
               aria-invalid={(phone && !isValidCell(phone)) || !!errors.phone}
             />
-            <p className={`mt-1 text-xs ${ (phone && !isValidCell(phone)) || errors.phone ? 'text-red-600' : 'text-transparent'}`}>
-              Informe 11 dígitos (DDD + 9).
+            <p className={`mt-1 text-xs ${ (phone && !isValidCell(phone)) || errors.phone ? 'text-red-600' : 'text-gray-400'}`}>
+              {(errors.phone ?? 'Informe 11 dígitos (DDD + 9).')}
             </p>
           </div>
 
@@ -162,7 +268,10 @@ export default function AddProfessionalModal({
             <div className="mt-1 flex gap-2">
               <select
                 value={council}
-                onChange={(e) => { setCouncil(e.target.value); if (errors.customCouncil) setErrors(s => ({...s, customCouncil: undefined})); }}
+                onChange={(e) => {
+                  setCouncil(e.target.value);
+                  if (errors.customCouncil) setErrors(s => ({ ...s, customCouncil: undefined }));
+                }}
                 className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               >
                 {COUNCILS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -172,20 +281,32 @@ export default function AddProfessionalModal({
               {council === 'OUTRO' && (
                 <input
                   value={customCouncil}
-                  onChange={(e) => { setCustomCouncil(e.target.value.toUpperCase()); if (errors.customCouncil) setErrors(s => ({...s, customCouncil: undefined})); }}
+                  onChange={(e) => {
+                    setCustomCouncil(e.target.value.toUpperCase());
+                    if (errors.customCouncil) setErrors(s => ({ ...s, customCouncil: undefined }));
+                  }}
                   placeholder="Sigla (ex.: CRM)"
-                  className={`w-[30%] rounded-lg border px-3 py-2 focus:outline-none focus:ring-2
-                    ${errors.customCouncil ? 'border-red-400 focus:border-red-500 focus:ring-red-200' : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'}`}
+                  className={`w-[30%] rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                    errors.customCouncil
+                      ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                      : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+                  }`}
                   aria-invalid={!!errors.customCouncil}
                 />
               )}
 
               <input
                 value={regNumber}
-                onChange={(e) => { setRegNumber(e.target.value); if (errors.regNumber) setErrors(s => ({...s, regNumber: undefined})); }}
+                onChange={(e) => {
+                  setRegNumber(e.target.value);
+                  if (errors.regNumber) setErrors(s => ({ ...s, regNumber: undefined }));
+                }}
                 placeholder="número (ex.: 26465 / SP)"
-                className={`flex-1 rounded-lg border px-3 py-2 focus:outline-none focus:ring-2
-                  ${errors.regNumber ? 'border-red-400 focus:border-red-500 focus:ring-red-200' : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'}`}
+                className={`flex-1 rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                  errors.regNumber
+                    ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                    : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+                }`}
                 aria-invalid={!!errors.regNumber}
               />
             </div>

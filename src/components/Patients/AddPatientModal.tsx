@@ -100,7 +100,8 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
   const [editing, setEditing] = useState<Patient | null>(null);
 
   const [name, setName] = useState('');
-  const [cpf, setCPF] = useState('');
+  const [cpf, setCPF] = useState(''); // só dígitos
+  const [cpfFocused, setCpfFocused] = useState(false);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
 
@@ -121,6 +122,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     setEditing(null);
     setName('');
     setCPF('');
+    setCpfFocused(false);
     setPhone('');
     setEmail('');
     setErrors({});
@@ -184,7 +186,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
 
       const list: Patient[] = [];
       const { data: byName } = await nameReq;
-      if (byName) list.push(...byName as Patient[]);
+      if (byName) list.push(...(byName as Patient[]));
 
       if (digits.length >= 3) {
         const { data: byCpf } = await supabase
@@ -211,7 +213,8 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
   function selectToEdit(p: Patient) {
     setEditing(p);
     setName(p.name || '');
-    setCPF(p.cpf || '');
+    setCPF(onlyDigits(p.cpf || ''));
+    setCpfFocused(false);
     setPhone(p.phone || '');
     setEmail(p.email || '');
     setErrors({});
@@ -315,6 +318,14 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     }
   };
 
+  // -------- handlers auxiliares para JSX limpo --------
+  const handleSearchKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchPatients();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       {/* shake local */}
@@ -356,6 +367,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
               setTouched({});
               setName('');
               setCPF('');
+              setCpfFocused(false);
               setPhone('');
               setEmail('');
             }}
@@ -417,12 +429,16 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700">CPF *</label>
               <input
-                value={formatCPF(cpf)}
+                value={cpfFocused ? cpf : formatCPF(cpf)}
                 onChange={(e) => {
-                  setCPF(e.target.value);
+                  setCPF(onlyDigits(e.target.value));
                   if (errors.cpf) setErrors((s) => ({ ...s, cpf: '' }));
                 }}
-                onBlur={() => setTouched((t) => ({ ...t, cpf: true }))}
+                onFocus={() => setCpfFocused(true)}
+                onBlur={() => {
+                  setCpfFocused(false);
+                  setTouched((t) => ({ ...t, cpf: true }));
+                }}
                 className={inputClass(!!(touched.cpf && (!cpfOk || errors.cpf)))}
                 placeholder="000.000.000-00"
                 inputMode="numeric"
@@ -498,8 +514,9 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), searchPatients())}
+                      onChange={(e) => setQ(titleCaseNameBRLive(e.target.value))}
+                      onBlur={() => setQ((v) => titleCaseNameBRFinal(v))}
+                      onKeyDown={handleSearchKeyDown}
                       className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
                       placeholder="Buscar por nome ou CPF"
                     />
@@ -523,7 +540,9 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                         onClick={() => selectToEdit(p)}
                         className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-gray-50"
                       >
-                        <div className="font-medium text-gray-900">{p.name}</div>
+                        <div className="font-medium text-gray-900">
+                          {titleCaseNameBRFinal(p.name)}
+                        </div>
                         <div className="text-xs text-gray-600 mt-0.5">
                           CPF: {formatCPF(p.cpf)} {p.phone ? `• Tel: ${formatBRCell(p.phone)}` : ''}
                         </div>

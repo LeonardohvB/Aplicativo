@@ -3,25 +3,11 @@ import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { AppointmentSlot, Patient } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { titleAllWordsLive, titleAllWordsFinal } from '../../lib/strings';
 
-interface EditPatientModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onUpdate: (
-    slotId: string,
-    patientData: {
-      patientName: string;
-      patientPhone: string; // só dígitos
-      service: string;
-      notes?: string;
-    }
-  ) => void;
-  slot: AppointmentSlot | null;
-  patients: Patient[];
-}
-
-/* helpers cpf/phone */
+/* =============== Helpers de formatação/validação =============== */
 const onlyDigits = (v: string) => (v || '').replace(/\D+/g, '');
+
 const formatCPF = (v: string) => {
   const d = onlyDigits(v).slice(0, 11);
   if (!d) return '';
@@ -30,19 +16,21 @@ const formatCPF = (v: string) => {
   if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
   return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
 };
+
 const isValidCPF = (cpfMasked: string) => {
   const str = onlyDigits(cpfMasked);
   if (!str || str.length !== 11 || /^(\d)\1+$/.test(str)) return false;
   let s = 0;
-  for (let i=0;i<9;i++) s += parseInt(str[i])*(10-i);
-  let d1 = 11 - (s%11); if (d1>=10) d1=0;
+  for (let i = 0; i < 9; i++) s += parseInt(str[i]) * (10 - i);
+  let d1 = 11 - (s % 11); if (d1 >= 10) d1 = 0;
   s = 0;
-  for (let i=0;i<10;i++) s += parseInt(str[i])*(11-i);
-  let d2 = 11 - (s%11); if (d2>=10) d2=0;
-  return d1===parseInt(str[9]) && d2===parseInt(str[10]);
+  for (let i = 0; i < 10; i++) s += parseInt(str[i]) * (11 - i);
+  let d2 = 11 - (s % 11); if (d2 >= 10) d2 = 0;
+  return d1 === parseInt(str[9]) && d2 === parseInt(str[10]);
 };
+
 const formatCell = (v: string) => {
-  const d = onlyDigits(v).slice(0,11);
+  const d = onlyDigits(v).slice(0, 11);
   if (!d) return '';
   if (d.length <= 2) return `(${d}`;
   if (d.length <= 3) return `(${d.slice(0,2)}) ${d.slice(2)}`;
@@ -50,6 +38,18 @@ const formatCell = (v: string) => {
   return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3,7)}-${d.slice(7)}`;
 };
 const isValidCell = (v: string) => onlyDigits(v).length === 11;
+
+/* ========================== Componente ========================== */
+interface EditPatientModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (
+    slotId: string,
+    patientData: { patientName: string; patientPhone: string; service: string; notes?: string }
+  ) => void;
+  slot: AppointmentSlot | null;
+  patients: Patient[];
+}
 
 const EditPatientModal: React.FC<EditPatientModalProps> = ({
   isOpen,
@@ -63,52 +63,82 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
   const [patientPhone, setPatientPhone] = useState('');
   const [service, setService] = useState('');
   const [notes, setNotes] = useState('');
-  const [found, setFound] = useState<null | { name: string; phone?: string }>(null);
+  const [foundMsg, setFoundMsg] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shake, setShake] = useState(false);
+  const [loadingLookup, setLoadingLookup] = useState(false);
 
+  /* Ao abrir, preenche TUDO a partir do slot. (Sem useMemo → menos chance de “correr” vazio.) */
   useEffect(() => {
-    if (slot && isOpen) {
-      // se o slot já tiver cpf salvo no banco, preencha aqui (slot.patientCpf?) — senão deixa vazio
-      setPatientName(slot.patientName || '');
-      setPatientPhone(formatCell(slot.patientPhone || ''));
-      setService(slot.service || '');
-      setNotes(slot.notes || '');
-      setErrors({});
-      setShake(false);
-    }
+    if (!slot || !isOpen) return;
+    const rawCpf =
+      (slot as any).patientCpf ??
+      (slot as any).patient_cpf ??
+      (slot as any).cpf ??
+      '';
+    setCPF(formatCPF(String(rawCpf || '')));
+    setPatientName(slot.patientName || '');
+    setPatientPhone(formatCell(slot.patientPhone || ''));
+    setService(slot.service || '');
+    setNotes(slot.notes || '');
+    setErrors({});
+    setShake(false);
+    setFoundMsg(null);
   }, [slot, isOpen]);
 
-  async function lookupByCPF(v: string) {
-    const digits = onlyDigits(v);
-    if (digits.length !== 11 || !isValidCPF(v)) {
-      setFound(null);
+  /* lookup por CPF (cache local → supabase) */
+  const lookupByCPF = async (masked: string) => {
+    const digits = onlyDigits(masked);
+    if (digits.length !== 11 || !isValidCPF(masked)) {
+      setFoundMsg(null);
       return;
     }
-    const local = patients.find((p) => onlyDigits((p as any).cpf || '') === digits);
-    if (local) {
-      setFound({ name: local.name, phone: local.phone });
-      setPatientName(local.name || '');
-      setPatientPhone(formatCell(local.phone || ''));
+
+    // 1) local
+    const pLocal = patients.find((p: any) => onlyDigits(p.cpf || '') === digits);
+    if (pLocal) {
+      setPatientName(titleAllWordsFinal(pLocal.name || ''));
+      setPatientPhone(formatCell(pLocal.phone || ''));
+      setFoundMsg('Paciente carregado do cache local.');
       return;
     }
+
+    // 2) Supabase
     try {
-      const { data } = await supabase
+      setLoadingLookup(true);
+      const { data, error } = await supabase
         .from('patients')
         .select('name, phone, cpf')
         .eq('cpf', digits)
         .maybeSingle();
-      if (data) {
-        setFound({ name: data.name, phone: data.phone });
-        setPatientName(data.name || '');
-        setPatientPhone(formatCell(data.phone || ''));
-      } else setFound(null);
-    } catch {
-      setFound(null);
-    }
-  }
 
-  if (!isOpen || !slot) return null;
+      if (error) throw error;
+
+      if (data) {
+        setPatientName(titleAllWordsFinal(data.name || ''));
+        setPatientPhone(formatCell(data.phone || ''));
+        setFoundMsg('Paciente encontrado no banco.');
+      } else {
+        setFoundMsg('CPF não cadastrado.');
+      }
+    } catch {
+      setFoundMsg('Erro ao buscar CPF.');
+    } finally {
+      setLoadingLookup(false);
+    }
+  };
+
+  /* dispara busca automática quando CPF ficar válido */
+  useEffect(() => {
+    if (!isOpen) return;
+    const d = onlyDigits(cpf);
+    if (d.length < 11) { setFoundMsg(null); return; }
+    if (!isValidCPF(cpf)) { setFoundMsg('CPF inválido.'); return; }
+
+    const t = setTimeout(() => lookupByCPF(cpf), 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpf, isOpen]);
 
   const inputClass = (bad: boolean) =>
     `w-full px-3 py-2 rounded-lg border focus:ring-2 focus:outline-none ${
@@ -119,36 +149,35 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
 
   function validate() {
     const e: Record<string, string> = {};
-    if (cpf && !isValidCPF(cpf)) e.cpf = 'CPF inválido.'; // permitir edição sem CPF, mas válido se informado
+    // CPF continua opcional aqui (como estava antes). Se quiser obrigatório, mude esta linha:
+    if (cpf && !isValidCPF(cpf)) e.cpf = 'CPF inválido.';
     if (!patientName.trim()) e.patientName = 'Informe o nome do paciente.';
-    if (!isValidCell(patientPhone)) e.patientPhone = 'Telefone deve ter 11 dígitos.';
+    if (!isValidCell(patientPhone)) e.patientPhone = 'Telefone deve ter 11 dígitos (DDD + 9).';
     if (!service.trim()) e.service = 'Informe o serviço.';
     return e;
   }
 
   function submit(e: React.FormEvent) {
-  e.preventDefault();
+    e.preventDefault();
+    const eMap = validate();
+    if (Object.keys(eMap).length) {
+      setErrors(eMap);
+      setShake(true);
+      setTimeout(() => setShake(false), 260);
+      return;
+    }
+    if (!slot) return;
 
-  const eMap = validate();
-  if (Object.keys(eMap).length) {
-    setErrors(eMap);
-    setShake(true);
-    setTimeout(() => setShake(false), 260);
-    return;
+    onUpdate(slot.id, {
+      patientName: patientName.trim(),
+      patientPhone: onlyDigits(patientPhone),
+      service: titleAllWordsFinal(service.trim()),
+      notes: notes.trim() || undefined,
+    });
+    onClose();
   }
 
-  // ✅ Narrowing explícito
-  if (!slot) return;
-
-  onUpdate(slot.id, {
-    patientName: patientName.trim(),
-    patientPhone: onlyDigits(patientPhone),
-    service: service.trim(),
-    notes: notes.trim() || undefined,
-  });
-
-  onClose();
-}
+  if (!isOpen || !slot) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -167,13 +196,12 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
         </div>
 
         <form onSubmit={submit} className="space-y-4">
-          {/* CPF (opcional na edição, mas válido se preenchido) */}
+          {/* CPF – chave de busca */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">CPF do Paciente</label>
             <input
               value={cpf}
               onChange={(e) => { setCPF(formatCPF(e.target.value)); if (errors.cpf) setErrors(s => ({...s, cpf: ''})); }}
-              onBlur={() => lookupByCPF(cpf)}
               className={inputClass(!!errors.cpf)}
               placeholder="000.000.000-00"
               inputMode="numeric"
@@ -182,10 +210,10 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
             <div className="mt-1 text-xs">
               {errors.cpf ? (
                 <p className="text-red-600">{errors.cpf}</p>
-              ) : found ? (
-                <p className="text-green-600">Paciente encontrado: <b>{found.name}</b></p>
               ) : (
-                <p className="text-gray-400">Informe para localizar e preencher automaticamente.</p>
+                <p className={foundMsg ? 'text-green-600' : 'text-gray-400'}>
+                  {loadingLookup ? 'Buscando...' : (foundMsg || 'Informe o CPF para localizar e preencher automaticamente.')}
+                </p>
               )}
             </div>
           </div>
@@ -195,7 +223,8 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Paciente *</label>
             <input
               value={patientName}
-              onChange={(e) => { setPatientName(e.target.value); if (errors.patientName) setErrors(s => ({...s, patientName: ''})); }}
+              onChange={(e) => { setPatientName(titleAllWordsLive(e.target.value)); if (errors.patientName) setErrors(s => ({...s, patientName: ''})); }}
+              onBlur={() => setPatientName(v => titleAllWordsFinal(v))}
               className={inputClass(!!errors.patientName)}
               placeholder="Nome completo"
               aria-invalid={!!errors.patientName}
@@ -224,7 +253,8 @@ const EditPatientModal: React.FC<EditPatientModalProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">Serviço *</label>
             <input
               value={service}
-              onChange={(e) => { setService(e.target.value); if (errors.service) setErrors(s => ({...s, service: ''})); }}
+              onChange={(e) => { setService(titleAllWordsLive(e.target.value)); if (errors.service) setErrors(s => ({...s, service: ''})); }}
+              onBlur={() => setService(v => titleAllWordsFinal(v))}
               className={inputClass(!!errors.service)}
               placeholder="Consulta"
               aria-invalid={!!errors.service}

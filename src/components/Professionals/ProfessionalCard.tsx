@@ -8,6 +8,7 @@ import {
   removeAvatarAndCleanup,
 } from "../../lib/avatars";
 import AvatarPreviewModal from "./AvatarPreviewModal";
+import { shortPersonName } from '../../lib/strings';
 
 interface ProfessionalCardProps {
   professional: Professional;
@@ -76,6 +77,12 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 }) => {
   const [previewOpen, setPreviewOpen] = useState(false);
 
+  // Nome curto (Primeiro + Último) para exibição
+  const shortName = useMemo(
+    () => shortPersonName(professional.name),
+    [professional.name]
+  );
+
   // Estado local para refletir imediatamente as mudanças de avatar
   const [avatarVersion, setAvatarVersion] = useState<string | null>(
     resolveAvatarVersion(professional) || null
@@ -143,8 +150,8 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
         }
       }}
       className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-      aria-label={`Editar ${professional.name ?? "profissional"}`}
-      title="Abrir edição"
+      aria-label={`Editar ${shortName || "profissional"}`}
+      title={`Abrir edição de ${professional.name || shortName || "profissional"}`}
     >
       <div className="flex items-start gap-4">
         {/* Avatar com ring + overlay + status dot */}
@@ -161,7 +168,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
           >
             <img
               src={avatarSrc}
-              alt={professional.name}
+              alt={shortName || professional.name}
               className="h-full w-full object-cover"
               onError={(e) =>
                 ((e.currentTarget as HTMLImageElement).src = placeholder)
@@ -189,8 +196,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
         <div className="min-w-0 flex-1">
           <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 sm:gap-y-3">
             <div className="min-w-0">
-              <div className="truncate text-base font-semibold text-gray-900">
-                {professional.name}
+              <div
+                className="truncate text-base font-semibold text-gray-900"
+                title={professional.name} // mostra nome completo no hover
+              >
+                {shortName}
               </div>
               {professional.specialty && (
                 <div className="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600">

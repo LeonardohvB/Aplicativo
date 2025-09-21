@@ -114,6 +114,7 @@ export interface AppointmentHistory {
   patientId?: string;
   patientName: string;
   patientPhone?: string;
+  patientCpf?: string | null;
   service: string;
   price: number;
   date: string;

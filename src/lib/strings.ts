@@ -20,3 +20,13 @@ export const titleAllWordsLive = (input: string) => {
 };
 
 export const titleAllWordsFinal = (input: string) => titleAllWordsLive(input).trim();
+
+export function shortPersonName(full?: string | null): string {
+  const s = (full ?? '').trim();
+  if (!s) return '';
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0];
+  const first = parts[0];
+  const last  = parts[parts.length - 1];
+  return `${first} ${last}`;
+}
