@@ -1,3 +1,4 @@
+// src/components/Finance/TransactionDetails.tsx
 import React from 'react';
 import {
   Tag, Calendar, User, Briefcase, CreditCard, CheckCircle2, Clock3, StickyNote
@@ -25,7 +26,6 @@ type Tx = {
 
 function extractProfessional(t: Tx): string | undefined {
   if (t.professionalName) return t.professionalName;
-  // título costuma ser “Atendimento - {Profissional}”
   const firstLine = (t.description || '').split('\n')[0] ?? '';
   const m = firstLine.match(/Atendimento\s*-\s*(.+)$/i);
   return m?.[1]?.trim();
@@ -34,7 +34,6 @@ function extractProfessional(t: Tx): string | undefined {
 function extractPatient(desc?: string): string | undefined {
   if (!desc) return undefined;
   const m = desc.match(/Atendimento\s*-\s*(.+?)\s*\((.+?)\)/i);
-  // pelo padrão usado antes: group 1 -> paciente, group 2 -> serviço
   return m?.[1]?.trim();
 }
 
@@ -71,9 +70,11 @@ const Row: React.FC<{ icon: React.ReactNode; label: string; children?: React.Rea
 type Props = {
   tx: Tx;
   onUpdateStatus?: (id: string, next: TxStatus) => void;
+  /** quando true, esconde toda a seção de pagamento */
+  hidePayment?: boolean;
 };
 
-const TransactionDetails: React.FC<Props> = ({ tx, onUpdateStatus }) => {
+const TransactionDetails: React.FC<Props> = ({ tx, onUpdateStatus, hidePayment = false }) => {
   const professional = extractProfessional(tx);
   const patient = tx.patientName ?? extractPatient(tx.description);
   const service = tx.service ?? extractService(tx.description);
@@ -81,14 +82,21 @@ const TransactionDetails: React.FC<Props> = ({ tx, onUpdateStatus }) => {
   const status = (tx.status ?? 'paid') as TxStatus;
   const paidAt = tx.paidAt ? new Date(tx.paidAt) : null;
   const paidAtFmt = paidAt
-    ? paidAt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? paidAt.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
     : undefined;
 
   return (
-    <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    // wrapper sem borda/bg/rounded — só conteúdo
+    <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Row icon={<Tag className="w-4 h-4" />} label="Categoria">
-          {tx.category || '—'}
+          {service ?? tx.category ?? '—'}
         </Row>
 
         <Row icon={<Calendar className="w-4 h-4" />} label="Data">
@@ -106,12 +114,21 @@ const TransactionDetails: React.FC<Props> = ({ tx, onUpdateStatus }) => {
         <Row icon={<Tag className="w-4 h-4" />} label="Serviço">
           {service || '—'}
         </Row>
+      </div>
 
-        <Row icon={<CreditCard className="w-4 h-4" />} label="Pagamento">
-          <div className="flex items-center gap-2">
+      {/* Pagamento (opcional e apenas para receitas) */}
+      {!hidePayment && tx.type === 'income' && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <CreditCard className="w-4 h-4" />
+            <span>Pagamento</span>
+          </div>
+
+          <div className="pl-6 flex items-center gap-2">
             {status === 'paid' ? <Badge tone="green">Pago</Badge> : <Badge tone="amber">Pendente</Badge>}
-            {onUpdateStatus && (
-              status === 'paid' ? (
+
+            {onUpdateStatus &&
+              (status === 'paid' ? (
                 <button
                   className="px-2 py-1 text-[11px] rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
                   onClick={() => onUpdateStatus(tx.id, 'pending')}
@@ -120,20 +137,24 @@ const TransactionDetails: React.FC<Props> = ({ tx, onUpdateStatus }) => {
                 </button>
               ) : (
                 <button
-                    className="px-2 py-1 text-[11px] rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
-                    onClick={() => onUpdateStatus(tx.id, 'paid')}
+                  className="px-2 py-1 text-[11px] rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                  onClick={() => onUpdateStatus(tx.id, 'paid')}
                 >
                   Pagar
                 </button>
-              )
-            )}
+              ))}
           </div>
-          <div className="mt-1 text-[12px] text-slate-500">
-            {tx.paymentMethod ? `Método: ${tx.paymentMethod}` : 'Método: —'}
-            {paidAtFmt ? ` • Pago em: ${paidAtFmt}` : ''}
-          </div>
-        </Row>
 
+          {(tx.paymentMethod || paidAtFmt) && (
+            <div className="pl-6 text-[12px] text-slate-500">
+              {tx.paymentMethod ? `Método: ${tx.paymentMethod}` : 'Método: —'}
+              {paidAtFmt ? ` • Pago em: ${paidAtFmt}` : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1">
         <Row icon={<StickyNote className="w-4 h-4" />} label="Observações">
           {tx.notes || '—'}
         </Row>

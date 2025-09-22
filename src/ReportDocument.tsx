@@ -59,16 +59,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: 700, marginBottom: 2 },
   subtitle: { fontSize: 12, color: '#4B5563' },
 
-  cardsRow: { flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 14 },
-  card: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 8, padding: 10 },
+  cardsRow: { flexDirection: 'row', marginTop: 12, marginBottom: 14 },
+  card: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 8, padding: 10, marginRight: 8 },
   cardTitle: { fontSize: 9, color: '#6B7280', marginBottom: 4 },
   cardValue: { fontSize: 12, fontWeight: 700, color: '#111827' },
 
   sectionTitle: { fontSize: 12, fontWeight: 700, marginTop: 12, marginBottom: 6 },
 
-  chartWrap: { flexDirection: 'row', gap: 16, alignItems: 'center', marginBottom: 10 },
-  legend: { flexWrap: 'wrap', flexDirection: 'column' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  chartWrap: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  legend: { flexDirection: 'column', marginLeft: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
 
   tableHeader: {
     flexDirection: 'row',
@@ -113,10 +113,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   miniRowAlt: { backgroundColor: '#F9FAFB' },
-  mColProf: { flex: 1.2 },               // Profissional / Paciente
-  mColMid:  { width: 95, textAlign: 'right' }, // Concl./Total ou Atendimentos
-  mColVal:  { width: 105, textAlign: 'right' },// Bruto
-  mColVal2: { width: 105, textAlign: 'right' },// Clínica
+  mColProf: { flex: 1.2 },                 // Profissional / Paciente
+  mColMid:  { width: 95, textAlign: 'right' },  // Concl./Total ou Atendimentos
+  mColVal:  { width: 105, textAlign: 'right' }, // Bruto
+  mColVal2: { width: 105, textAlign: 'right' }, // Clínica
   footer: { marginTop: 12, color: '#6B7280', fontSize: 9, textAlign: 'right' },
 });
 
@@ -260,8 +260,10 @@ const ReportDocument: React.FC<Props> = ({
               <View style={styles.legend}>
                 {chartEntries.map((e, i) => (
                   <View key={i} style={styles.legendItem}>
-                    <Svg width={10} height={10}><Rect x={0} y={0} width={10} height={10} fill={e.color} /></Svg>
-                    <Text>{e.label} — {e.value}</Text>
+                    <Svg width={10} height={10}>
+                      <Rect x={0} y={0} width={10} height={10} fill={e.color} />
+                    </Svg>
+                    <Text style={{ marginLeft: 6 }}>{e.label} — {e.value}</Text>
                   </View>
                 ))}
               </View>
@@ -295,7 +297,7 @@ const ReportDocument: React.FC<Props> = ({
                 {(r.status || '')
                   .toString()
                   .replace(/_/g, ' ')
-                  .replace(/^\w/, c => c.toUpperCase())}
+                  .replace(/^\w/u, c => c.toUpperCase())}
               </Text>
             </View>
             <View style={styles.colVal}><Text>{r.price != null ? currency(r.price) : '—'}</Text></View>

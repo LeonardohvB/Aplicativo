@@ -8,17 +8,14 @@ import {
   EyeOff,
   Wallet,
   CreditCard,
-  Calendar,
-  Tag,
-  User,
-  Clock,
-  Filter,   // ← funil do lucide
-  Edit2,    // ← adicionado para o botão de editar (painel lateral)
-  Trash2,   // ← adicionado para o botão de excluir (painel lateral)
+  Filter,   // funil do lucide
+  Edit2,    // botão de editar (painel lateral)
+  Trash2,   // botão de excluir (painel lateral)
 } from 'lucide-react';
 import TransactionCard from '../components/Finance/TransactionCard';
 import AddTransactionModal from '../components/Finance/AddTransactionModal';
 import EditTransactionModal from '../components/Finance/EditTransactionModal';
+import TransactionDetails from '../components/Finance/TransactionDetails';
 import { useTransactions } from '../hooks/useTransactions';
 import { Transaction } from '../types';
 
@@ -100,8 +97,6 @@ function buildSparkPathFromTransactions(transactions: any[], width = 600, height
 }
 
 /* ====================== Swipe Row (sem libs) ====================== */
-// Painel de ações à direita (vertical) aparece ao arrastar para a esquerda.
-// Fecha ao arrastar para a direita ou clicar fora.
 type SwipeRowProps = {
   rowId: string;
   isOpen: boolean;
@@ -115,14 +110,12 @@ type SwipeRowProps = {
 function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }: SwipeRowProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const startX = useRef<number>(0);
-  const currentX = useRef<number>(0);
   const dragging = useRef<boolean>(false);
-  const [tx, setTx] = useState<number>(0); // translateX do conteúdo
+  const [tx, setTx] = useState<number>(0);
 
-  const ACTIONS_WIDTH = 100; // largura do painel de ações
+  const ACTIONS_WIDTH = 100;
   const OPEN_TX = -ACTIONS_WIDTH;
 
-  // Fecha ao clicar fora
   useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
@@ -132,42 +125,27 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
     return () => document.removeEventListener('mousedown', handleDocClick);
   }, [onClose]);
 
-  // Sincroniza estado aberto/fechado com translate
   useEffect(() => { setTx(isOpen ? OPEN_TX : 0); }, [isOpen]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     dragging.current = true;
-    startX.current = e.clientX;
-    currentX.current = isOpen ? startX.current + OPEN_TX : startX.current;
     (e.target as Element).setPointerCapture?.(e.pointerId);
+    startX.current = e.clientX;
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
     const dx = e.clientX - startX.current;
     let next = (isOpen ? OPEN_TX : 0) + dx;
-    // limitações: não arrastar para a esquerda além do painel, nem para a direita além de 0
     next = Math.min(0, Math.max(next, -ACTIONS_WIDTH));
     setTx(next);
   };
   const onPointerUp = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    // snap: se passou de -40px, abre; caso contrário, fecha
-    if (tx < -40) {
-      setTx(OPEN_TX);
-      onOpen(rowId);
-    } else {
-      setTx(0);
-      onClose();
-    }
+    if (tx < -40) { setTx(OPEN_TX); onOpen(rowId); } else { setTx(0); onClose(); }
   };
 
-  // Suporte a toque (touch) – encaminha para pointer
-  const onTouchStart = (e: React.TouchEvent) => {
-    dragging.current = true;
-    startX.current = e.touches[0].clientX;
-    currentX.current = isOpen ? startX.current + OPEN_TX : startX.current;
-  };
+  const onTouchStart = (e: React.TouchEvent) => { dragging.current = true; startX.current = e.touches[0].clientX; };
   const onTouchMove = (e: React.TouchEvent) => {
     if (!dragging.current) return;
     const dx = e.touches[0].clientX - startX.current;
@@ -178,19 +156,12 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
   const onTouchEnd = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    if (tx < -40) {
-      setTx(OPEN_TX);
-      onOpen(rowId);
-    } else {
-      setTx(0);
-      onClose();
-    }
+    if (tx < -40) { setTx(OPEN_TX); onOpen(rowId); } else { setTx(0); onClose(); }
   };
-  
 
   return (
     <div ref={containerRef} className="relative select-none">
-      {/* Painel de ações (lado direito) */}
+      {/* Painel de ações (direita) */}
       <div className="absolute right-0 top-0 h-full w-24 pr-2 pl-2 flex items-center justify-center">
         <div className="h-[0px] w-[0px] rounded-2xl bg-white shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-3">
           <button
@@ -238,9 +209,7 @@ const Finance: React.FC = () => {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [showBalance, setShowBalance] = useState(true);
 
-  // Estado para o painel de detalhes (o seu "isOpen" dos cards)
   const [detailsOpenId, setDetailsOpenId] = useState<string | null>(null);
-  // Estado para o swipe (ações Editar/Excluir)
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
 
   const [pulse, setPulse] = useState(false);
@@ -264,7 +233,7 @@ const Finance: React.FC = () => {
     return base;
   }, [transactions, txFilter, customEnabled, dateFrom, dateTo]);
 
-  /* Helpers de extração para o card */
+  /* Helpers */
   const extractProfessional = (t: any): string | undefined => {
     if (t?.professionalName) return t.professionalName;
     if (t?.professional) return t.professional;
@@ -282,23 +251,14 @@ const Finance: React.FC = () => {
     if (t?.category) return String(t.category);
     return undefined;
   };
-  const extractNotes = (t: any): string | undefined => t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
-  const minutesBetween = (a: Date, b: Date) => Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
-  const extractDurationMin = (t: any): number | undefined => {
-    if (typeof t?.durationMin === 'number') return t.durationMin;
-    if (typeof t?.actualDuration === 'number') return t.actualDuration;
-    const startISO = t?.startedAt ?? t?.started_at ?? null;
-    const endISO = t?.finishedAt ?? t?.finished_at ?? null;
-    if (startISO && endISO) { const m = minutesBetween(new Date(startISO), new Date(endISO)); if (Number.isFinite(m)) return m; }
-    return undefined;
-  };
+  const extractNotes = (t: any): string | undefined =>
+    t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
 
   // Totais (globais)
   const totalRevenue = transactions.filter((t: any) => t.type === 'income' && ((t.status ?? 'pending') === 'paid')).reduce((s, t) => s + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const balance = totalRevenue - totalExpenses;
-  const moneyBR = (n: number) =>
-  `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const moneyBR = (n: number) => `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const masked = (n: number) => (showBalance ? moneyBR(n) : '••••••');
   const isNegative = balance < 0, isPositive = balance > 0;
 
@@ -309,8 +269,12 @@ const Finance: React.FC = () => {
 
   const sparkPathD = useMemo(() => buildSparkPathFromTransactions(transactions as any[], 600, 200), [transactions]);
 
-  const handleEdit = (id: string) => setEditing((transactions.find((x) => x.id === id) as Transaction) || null);
-  const handleDelete = async (id: string) => { if (window.confirm('Deseja realmente excluir esta transação? Essa ação não pode ser desfeita.')) await deleteTransaction(id); };
+  const handleEdit = (id: string) =>
+    setEditing((transactions.find((x) => x.id === id) as Transaction) || null);
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Deseja realmente excluir esta transação? Essa ação não pode ser desfeita.'))
+      await deleteTransaction(id);
+  };
   const handleSaveEdit = async (updates: { type: 'income' | 'expense'; description: string; amount: number; category: string; date: string; }) => {
     if (!editing) return; await editTransaction(editing.id, updates); setEditing(null);
   };
@@ -422,7 +386,7 @@ const Finance: React.FC = () => {
               </span>
             </button>
 
-            {/* Limpar tipo (Todos) — aparece só quando receitas/despesas estiver ativo */}
+            {/* Limpar tipo */}
             {txFilter !== 'all' && (
               <button
                 onClick={() => setTxFilter('all')}
@@ -440,7 +404,6 @@ const Finance: React.FC = () => {
           </div>
         </div>
 
-        {/* Intervalo de datas (só quando personalizado estiver ativo) */}
         {customEnabled && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
@@ -482,68 +445,64 @@ const Finance: React.FC = () => {
               const patient = t.patientName ?? extractPatientFromDesc(t.description);
               const service = extractService(t);
               const status = t.type === 'income' ? (t.status ?? 'pending') : undefined;
-              const duration = extractDurationMin(t);
               const notes = extractNotes(t);
 
               const isDetailsOpen = detailsOpenId === t.id;
               const isSwipeOpen = swipeOpenId === t.id;
 
               return (
-                <div key={t.id} className="group">
-                  <SwipeRow
-                    rowId={t.id}
-                    isOpen={isSwipeOpen}
-                    onOpen={(id) => setSwipeOpenId(id)}
-                    onClose={() => setSwipeOpenId(null)}
-                    onEdit={() => handleEdit(t.id)}
-                    onDelete={() => handleDelete(t.id)}
-                  >
+                <SwipeRow
+                  key={t.id}
+                  rowId={t.id}
+                  isOpen={isSwipeOpen}
+                  onOpen={(id) => setSwipeOpenId(id)}
+                  onClose={() => setSwipeOpenId(null)}
+                  onEdit={() => handleEdit(t.id)}
+                  onDelete={() => handleDelete(t.id)}
+                >
+                  {/* CARD ÚNICO: header + detalhes no mesmo contêiner */}
+                  <div className="bg-white rounded-2xl border border-gray-100/50 shadow-lg transition-all">
+                    {/* Header (TransactionCard sem moldura) */}
                     <div
                       role="button"
                       tabIndex={0}
+                      className="p-5"
                       onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailsOpenId((cur) => (cur === t.id ? null : t.id)); } }}
                     >
                       <TransactionCard
+                        wrap={false}
                         transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
-                        // IMPORTANTE: não passamos onEdit/onDelete para NÃO exibir na frente do card
                         onUpdateStatus={(id, next) => updateTxStatus(id, next)}
                         isOpen={isDetailsOpen}
                       />
                     </div>
-                  </SwipeRow>
 
-                  {isDetailsOpen && (
-                    <div className="mx-1 mt-[-6px] rounded-2xl border border-gray-100 bg-white shadow-sm p-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm"><Tag className="w-4 h-4 text-gray-400" /><span className="text-gray-500">Categoria</span></div>
-                          <div className="pl-6 text-gray-900 font-medium">{service ?? '—'}</div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span className="text-gray-500">Data</span></div>
-                          <div className="pl-6 text-gray-900 font-medium">{t.date}</div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span className="text-gray-500">Profissional</span></div>
-                          <div className="pl-6 text-gray-900 font-medium">{prof ?? '—'}</div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span className="text-gray-500">Paciente</span></div>
-                          <div className="pl-6 text-gray-900 font-medium">{patient ?? '—'}</div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-gray-400" /><span className="text-gray-500">Duração</span></div>
-                          <div className="pl-6 text-gray-900 font-medium">{typeof duration === 'number' ? `${duration} min` : '—'}</div>
-                        </div>
-                        <div className="space-y-2 sm:col-span-2">
-                          <div className="flex items-center gap-2 text-sm"><span className="w-4 h-4 rounded bg-gray-200" /><span className="text-gray-500">Observações</span></div>
-                          <div className="pl-6 text-gray-700">{notes ?? '—'}</div>
-                        </div>
+                    {/* Expand colado (estilo Reports/GlassStatCard) */}
+                    <div
+                      className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
+                        isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
+                      }`}
+                    >
+                      <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                      <div className="px-5 pb-5">
+                        <TransactionDetails
+                          tx={{
+                            ...t,
+                            professionalName: prof,
+                            patientName: patient,
+                            service,
+                            notes,
+                            status,
+                            paymentMethod: (t as any).paymentMethod ?? (t as any).method ?? null,
+                            paidAt: (t as any).paidAt ?? (t as any).paid_at ?? null,
+                          }}
+                          onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </SwipeRow>
               );
             })}
           </div>
