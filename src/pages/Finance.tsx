@@ -336,7 +336,7 @@ const Finance: React.FC = () => {
   return (
     <div className="pb-24 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       {/* Header */}
-      <div className="bg-gradient-to-r from-black to-indigo-600 px-6 pt-8 pb-6">
+       <div className=" p-5 md:p-6 bg-gradient-to-br from-slate-900 to-indigo-900 text-white shadow-xl">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-white">Financeiro</h1>
           <button onClick={() => setIsModalOpen(true)} className="p-3 bg-white/20 backdrop-blur-sm text-white rounded-2xl hover:bg-white/30 transition-all shadow-lg hover:shadow-xl">
