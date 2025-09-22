@@ -1,11 +1,9 @@
-// src/components/Finance/TransactionCard.tsx
 import React from 'react';
 import {
   Edit2,
   Trash2,
   TrendingUp,
   TrendingDown,
-  Calendar,
   Tag,
   User,
   ChevronDown,
@@ -35,7 +33,7 @@ interface TransactionCardProps {
   onUpdateStatus?: (id: string, next: TxStatus) => void;
   /** Visual: rotaciona o chevron quando o wrapper abrir */
   isOpen?: boolean;
-  /** NOVO: quando false, não renderiza a moldura externa (usado no Finance) */
+  /** quando false, não renderiza a moldura externa (usado no Finance) */
   wrap?: boolean;
 }
 
@@ -65,7 +63,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({
   onDelete,
   onUpdateStatus,
   isOpen = false,
-  wrap = true, // <- padrão mantém o comportamento atual
+  wrap = true,
 }) => {
   const isIncome = transaction.type === 'income';
 
@@ -126,16 +124,12 @@ const TransactionCard: React.FC<TransactionCardProps> = ({
         />
       </div>
 
-      {/* Linha 2 — categoria + data  |  editar/excluir à direita (só se as props existirem) */}
+      {/* Linha 2 — categoria  |  editar/excluir à direita (sem data aqui!) */}
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <div className="flex items-center gap-1 text-xs sm:text-sm text-gray-600">
             <Tag className="w-3.5 h-3.5 text-gray-400" />
             <span>{(transaction as any).service ?? (transaction as any).category}</span>
-          </div>
-          <div className="flex items-center gap-1 text-xs sm:text-sm text-gray-500">
-            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-            <span>{(transaction as any).date}</span>
           </div>
         </div>
 
@@ -219,7 +213,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({
   // ------- WRAP opcional -------
   if (wrap) {
     return (
-      <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+      <div className="bg-white rounded-2xl p-5 shadow-lg border border-gray-100/50 hover:shadow-xl transition-all duration-300">
         {header}
       </div>
     );

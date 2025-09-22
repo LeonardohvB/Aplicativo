@@ -1,4 +1,3 @@
-// src/pages/Finance.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
@@ -8,16 +7,17 @@ import {
   EyeOff,
   Wallet,
   CreditCard,
-  Filter,   // funil do lucide
-  Edit2,    // botão de editar (painel lateral)
-  Trash2,   // botão de excluir (painel lateral)
+  Filter,
+  Edit2,
+  Trash2,
+  Calendar,
 } from 'lucide-react';
 import TransactionCard from '../components/Finance/TransactionCard';
 import AddTransactionModal from '../components/Finance/AddTransactionModal';
 import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import TransactionDetails from '../components/Finance/TransactionDetails';
 import { useTransactions } from '../hooks/useTransactions';
-import { Transaction } from '../types';
+import { Transaction, TxStatus } from '../types';
 
 /* ====================== SPARKLINE ====================== */
 type Pt = { x: number; y: number };
@@ -73,27 +73,24 @@ function useAnimatedNumber(
 /* ====================== Datas ====================== */
 function parseBrDate(d?: string): number {
   if (!d) return Date.now();
-  const m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const m = d.match?.(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return new Date(+m[3], +m[2] - 1, +m[1]).getTime();
-  const t = Date.parse(d); return Number.isFinite(t) ? t : Date.now();
+  const t = Date.parse(d);
+  return Number.isFinite(t) ? t : Date.now();
 }
 function isoLocalDate(d = new Date()): string {
   const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
   return x.toISOString().slice(0, 10);
 }
-function buildSparkPathFromTransactions(transactions: any[], width = 600, height = 200): string {
-  const sorted = [...transactions].sort((a, b) => parseBrDate(a.date) - parseBrDate(b.date) || String(a.id).localeCompare(String(b.id)));
-  let running = 0; const acc: number[] = [];
-  for (const t of sorted) {
-    if (t.type === 'income') { if ((t.status ?? 'pending') === 'paid') running += Number(t.amount) || 0; }
-    else if (t.type === 'expense') running -= Number(t.amount) || 0;
-    acc.push(running);
-  }
-  if (acc.length === 0) return `M0,110 C150,110 300,110 600,110`;
-  const last = acc.slice(-16), min = Math.min(...last), max = Math.max(...last), range = Math.max(1, max - min);
-  const midY = height * 0.52, ampLog = Math.log10(range + 10), ampBase = Math.min(96, Math.max(36, ampLog * 28));
-  const pts: Pt[] = last.map((v, i) => ({ x: (i / (last.length - 1)) * width, y: midY - ((v - (min + range / 2)) / range) * ampBase * 1.9 }));
-  return catmullToBezier(pts);
+function formatBr(d: Date): string {
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+function dayKey(dateStr?: string): string {
+  const t = parseBrDate(dateStr);
+  const d = new Date(t);
+  // normaliza para meia-noite
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
 }
 
 /* ====================== Swipe Row (sem libs) ====================== */
@@ -233,11 +230,14 @@ const Finance: React.FC = () => {
     return base;
   }, [transactions, txFilter, customEnabled, dateFrom, dateTo]);
 
-  /* Helpers */
+  /* Helpers de extração para o card */
   const extractProfessional = (t: any): string | undefined => {
     if (t?.professionalName) return t.professionalName;
     if (t?.professional) return t.professional;
-    if (typeof t?.description === 'string') { const parts = t.description.split('\n'); if (parts[1]) return parts[1].trim(); }
+    if (typeof t?.description === 'string') {
+      const parts = t.description.split('\n');
+      if (parts[1]) return parts[1].trim();
+    }
     return undefined;
   };
   const extractPatientFromDesc = (desc?: string): string | undefined => {
@@ -247,7 +247,10 @@ const Finance: React.FC = () => {
   };
   const extractService = (t: any): string | undefined => {
     if (t?.service) return String(t.service);
-    if (typeof t?.description === 'string') { const m = t.description.match(/\(([^)]+)\)\s*$/); if (m?.[1]) return m[1].trim(); }
+    if (typeof t?.description === 'string') {
+      const m = t.description.match(/\(([^)]+)\)\s*$/);
+      if (m?.[1]) return m[1].trim();
+    }
     if (t?.category) return String(t.category);
     return undefined;
   };
@@ -255,8 +258,12 @@ const Finance: React.FC = () => {
     t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
 
   // Totais (globais)
-  const totalRevenue = transactions.filter((t: any) => t.type === 'income' && ((t.status ?? 'pending') === 'paid')).reduce((s, t) => s + t.amount, 0);
-  const totalExpenses = transactions.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalRevenue = transactions
+    .filter((t: any) => t.type === 'income' && ((t.status ?? 'pending') === 'paid'))
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const totalExpenses = transactions
+    .filter((t) => t.type === 'expense')
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const balance = totalRevenue - totalExpenses;
   const moneyBR = (n: number) => `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const masked = (n: number) => (showBalance ? moneyBR(n) : '••••••');
@@ -267,7 +274,41 @@ const Finance: React.FC = () => {
     onFinish: () => { setPulse(true); setTimeout(() => setPulse(false), 180); },
   });
 
-  const sparkPathD = useMemo(() => buildSparkPathFromTransactions(transactions as any[], 600, 200), [transactions]);
+  const sparkPathD = useMemo(() => {
+    const sorted = [...transactions].sort(
+      (a, b) => parseBrDate(a.date) - parseBrDate(b.date) || String(a.id).localeCompare(String(b.id))
+    );
+    let running = 0; const acc: number[] = [];
+    for (const t of sorted) {
+      if (t.type === 'income') { if ((t.status ?? 'pending') === 'paid') running += Number(t.amount) || 0; }
+      else if (t.type === 'expense') running -= Number(t.amount) || 0;
+      acc.push(running);
+    }
+    if (acc.length === 0) return `M0,110 C150,110 300,110 600,110`;
+    const last = acc.slice(-16), min = Math.min(...last), max = Math.max(...last), range = Math.max(1, max - min);
+    const width = 600, height = 200;
+    const midY = height * 0.52, ampLog = Math.log10(range + 10), ampBase = Math.min(96, Math.max(36, ampLog * 28));
+    const pts: Pt[] = last.map((v, i) => ({ x: (i / (last.length - 1)) * width, y: midY - ((v - (min + range / 2)) / range) * ampBase * 1.9 }));
+    return catmullToBezier(pts);
+  }, [transactions]);
+
+  /* Agrupamento por dia */
+  type Group = { key: string; label: string; items: any[] };
+  const groups: Group[] = useMemo(() => {
+    const map = new Map<string, Group>();
+    for (const t of visibleTxs) {
+      const k = dayKey(t.date);
+      const g = map.get(k);
+      if (g) g.items.push(t);
+      else map.set(k, { key: k, label: formatBr(new Date(k)), items: [t] });
+    }
+    // ordena por data desc e dentro do dia mantém a ordem original (ou ordena por hora se tiver)
+    const out = Array.from(map.values()).sort((a, b) => +new Date(b.key) - +new Date(a.key));
+    for (const g of out) {
+      g.items.sort((a, b) => parseBrDate(b.date) - parseBrDate(a.date));
+    }
+    return out;
+  }, [visibleTxs]);
 
   const handleEdit = (id: string) =>
     setEditing((transactions.find((x) => x.id === id) as Transaction) || null);
@@ -283,7 +324,11 @@ const Finance: React.FC = () => {
   };
 
   if (loading) {
-    return (<div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center"><div className="text-gray-600">Carregando transações...</div></div>);
+    return (
+      <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Carregando transações...</div>
+      </div>
+    );
   }
 
   const neutralMode = !showBalance || balance === 0;
@@ -341,8 +386,8 @@ const Finance: React.FC = () => {
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Receitas</span>
             </div>
             <p className="text-lg sm:text-2xl font-bold text-green-600 break-all">
-               {masked(totalRevenue)}
-              </p>
+              {masked(totalRevenue)}
+            </p>
             <div className="mt-2 w-full bg-green-100 rounded-full h-1.5">
               <div className="bg-green-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalRevenue > 0 ? '100%' : '0%' }} />
             </div>
@@ -359,8 +404,8 @@ const Finance: React.FC = () => {
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Despesas</span>
             </div>
             <p className="text-lg sm:text-2xl font-bold text-red-600 break-all">
-               {masked(totalExpenses)}
-               </p>
+              {masked(totalExpenses)}
+            </p>
             <div className="mt-2 w-full bg-red-100 rounded-full h-1.5">
               <div className="bg-red-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalExpenses > 0 ? '100%' : '0%' }} />
             </div>
@@ -404,6 +449,7 @@ const Finance: React.FC = () => {
           </div>
         </div>
 
+        {/* Intervalo de datas (só quando personalizado estiver ativo) */}
         {customEnabled && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
@@ -427,7 +473,8 @@ const Finance: React.FC = () => {
           </div>
         )}
 
-        {visibleTxs.length === 0 ? (
+        {/* LISTA AGRUPADA POR DIA */}
+        {groups.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100/50 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CreditCard className="w-8 h-8 text-gray-400" />
@@ -439,72 +486,90 @@ const Finance: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="space-y-3 pb-32">
-            {visibleTxs.map((t: any) => {
-              const prof = extractProfessional(t);
-              const patient = t.patientName ?? extractPatientFromDesc(t.description);
-              const service = extractService(t);
-              const status = t.type === 'income' ? (t.status ?? 'pending') : undefined;
-              const notes = extractNotes(t);
+          <div className="space-y-8 pb-32">
+            {groups.map((g) => (
+              <div key={g.key}>
+                {/* Cabeçalho da data */}
+                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 pl-0.5">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">{g.label}</span>
+                </div>
 
-              const isDetailsOpen = detailsOpenId === t.id;
-              const isSwipeOpen = swipeOpenId === t.id;
+                <div className="space-y-3">
+                  {g.items.map((t: any) => {
+                    const prof = extractProfessional(t);
+                    const patient = t.patientName ?? extractPatientFromDesc(t.description);
+                    const service = extractService(t);
+                    const status: TxStatus | undefined =
+                      t.type === 'income' ? ((t.status ?? 'pending') as TxStatus) : undefined;
+                    const notes = extractNotes(t);
 
-              return (
-                <SwipeRow
-                  key={t.id}
-                  rowId={t.id}
-                  isOpen={isSwipeOpen}
-                  onOpen={(id) => setSwipeOpenId(id)}
-                  onClose={() => setSwipeOpenId(null)}
-                  onEdit={() => handleEdit(t.id)}
-                  onDelete={() => handleDelete(t.id)}
-                >
-                  {/* CARD ÚNICO: header + detalhes no mesmo contêiner */}
-                  <div className="bg-white rounded-2xl border border-gray-100/50 shadow-lg transition-all">
-                    {/* Header (TransactionCard sem moldura) */}
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="p-5"
-                      onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailsOpenId((cur) => (cur === t.id ? null : t.id)); } }}
-                    >
-                      <TransactionCard
-                        wrap={false}
-                        transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
-                        onUpdateStatus={(id, next) => updateTxStatus(id, next)}
-                        isOpen={isDetailsOpen}
-                      />
-                    </div>
+                    const isDetailsOpen = detailsOpenId === t.id;
+                    const isSwipeOpen = swipeOpenId === t.id;
 
-                    {/* Expand colado (estilo Reports/GlassStatCard) */}
-                    <div
-                      className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
-                        isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
-                      }`}
-                    >
-                      <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
-                      <div className="px-5 pb-5">
-                        <TransactionDetails
-                          tx={{
-                            ...t,
-                            professionalName: prof,
-                            patientName: patient,
-                            service,
-                            notes,
-                            status,
-                            paymentMethod: (t as any).paymentMethod ?? (t as any).method ?? null,
-                            paidAt: (t as any).paidAt ?? (t as any).paid_at ?? null,
-                          }}
-                          onUpdateStatus={(id, next) => updateTxStatus(id, next)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </SwipeRow>
-              );
-            })}
+                    return (
+                      <SwipeRow
+                        key={t.id}
+                        rowId={t.id}
+                        isOpen={isSwipeOpen}
+                        onOpen={(id) => setSwipeOpenId(id)}
+                        onClose={() => setSwipeOpenId(null)}
+                        onEdit={() => handleEdit(t.id)}
+                        onDelete={() => handleDelete(t.id)}
+                      >
+                        {/* CARD ÚNICO: header + detalhes no mesmo contêiner */}
+                        <div className={`bg-white rounded-2xl border border-gray-100/50 shadow-lg transition-all ${isDetailsOpen ? 'ring-2 ring-blue-300/60' : ''}`}>
+                          {/* Header (TransactionCard sem moldura) */}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className="p-5"
+                            onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setDetailsOpenId((cur) => (cur === t.id ? null : t.id));
+                              }
+                            }}
+                          >
+                            <TransactionCard
+                              wrap={false}
+                              transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
+                              onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                              isOpen={isDetailsOpen}
+                            />
+                          </div>
+
+                          {/* Expand colado */}
+                          <div
+                            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
+                              isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
+                            }`}
+                          >
+                            <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                            <div className="px-5 pb-5">
+                              <TransactionDetails
+                                tx={{
+                                  ...t,
+                                  professionalName: prof,
+                                  patientName: patient,
+                                  service,
+                                  notes,
+                                  status,
+                                  paymentMethod: (t as any).paymentMethod ?? (t as any).method ?? null,
+                                  paidAt: (t as any).paidAt ?? (t as any).paid_at ?? null,
+                                }}
+                                onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </SwipeRow>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
