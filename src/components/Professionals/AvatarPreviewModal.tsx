@@ -1,6 +1,7 @@
 // src/components/Professionals/AvatarPreviewModal.tsx
 import React from "react";
 import { X, Camera, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";               // ⬅️ NOVO
 import { Professional } from "../../types";
 import { publicUrlFromPath } from "../../lib/avatars";
 
@@ -48,12 +49,18 @@ export default function AvatarPreviewModal({
   // fechar com ESC
   React.useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
+
+  // bloquear scroll do fundo enquanto o modal estiver aberto
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isOpen]);
 
   if (!isOpen || !professional) return null;
 
@@ -69,13 +76,10 @@ export default function AvatarPreviewModal({
   const src = withV(base, version);
 
   const handleBackdropClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (e.target === e.currentTarget) {
-      e.stopPropagation();
-      onClose();
-    }
+    if (e.target === e.currentTarget) { e.stopPropagation(); onClose(); }
   };
 
-  const handleChooseFile = () => fileRef.current?.click();
+  
 
   const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const f = e.target.files?.[0];
@@ -85,32 +89,30 @@ export default function AvatarPreviewModal({
 
   const handleRemove = () => onRemove(professional.id);
 
-  return (
+  // ⬇️ conteúdo do modal (igual ao seu, só adicionei data-noswipe e z-index alto)
+  const node = (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4"
       onClick={handleBackdropClick}
       aria-modal="true"
       role="dialog"
       aria-label={`Foto de ${professional.name}`}
+      data-noswipe
     >
       <div
         className="relative w-full max-w-lg rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        data-noswipe
       >
         {/* header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="text-lg font-semibold">Foto de {professional.name}</h3>
           <button
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
             className="rounded p-2 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-300"
             aria-label="Fechar"
+            data-noswipe
           >
             <X className="w-5 h-5" />
           </button>
@@ -124,41 +126,41 @@ export default function AvatarPreviewModal({
             alt={professional.name}
             className="mx-auto max-h-[60vh] w-auto rounded-lg object-contain bg-gray-50"
             draggable={false}
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
-            }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
           />
         </div>
 
         {/* ações */}
         <div className="flex gap-2 p-4 border-t">
-          <button
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            onClick={(e) => { e.stopPropagation(); handleChooseFile(); }}
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          <label
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+            data-noswipe
           >
             <Camera className="w-4 h-4" />
             Alterar foto
-          </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </label>
 
           <button
             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onClick={(e) => { e.stopPropagation(); handleRemove(); }}
             className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
+            data-noswipe
           >
             <Trash2 className="w-4 h-4" />
             Remover foto
           </button>
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
         </div>
       </div>
     </div>
   );
+
+  // ⬅️ renderiza fora do card/SwipeRow para não ser afetado por transforms
+  return createPortal(node, document.body);
 }

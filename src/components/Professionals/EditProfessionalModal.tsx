@@ -13,7 +13,7 @@ interface EditProfessionalModalProps {
       name?: string;
       specialty?: string;
       phone?: string;
-      registrationCode?: string; // montado como "SIGLA - número"
+      registrationCode?: string;
       commissionRate?: number;
       isActive?: boolean;
     }
@@ -22,19 +22,56 @@ interface EditProfessionalModalProps {
   professional: Professional | null;
 }
 
-// opções de conselhos mais comuns (adicione/retire à vontade)
 const COUNCILS = [
   'CRM', 'CREA', 'CREFITO', 'CRP', 'CRO', 'COREN', 'CRF', 'CRFa', 'CRN', 'CRESS', 'CREF',
 ];
 
-// helper: separa "SIGLA - número" em { council, number }
 function splitRegistration(s: string | undefined | null) {
   const raw = (s ?? '').trim();
   const m = raw.match(/^\s*([A-Za-zÀ-ÿ]{2,10})\s*-\s*(.+)$/);
   if (m) return { council: m[1], number: m[2] };
-  // se vier só o número, assume CRM por padrão
   return { council: 'CRM', number: raw };
 }
+
+/* ===== Title Case PT-BR ===== */
+const PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e', "d'", "d’"]);
+
+// usada ENQUANTO DIGITA — preserva espaços (inclui espaço no fim)
+function titleCaseLive(input: string) {
+  // separa por "tokens", preservando os separadores de espaço
+  const tokens = input.split(/(\s+)/);
+  let wordIndex = 0; // índice de palavras (ignora espaços)
+  return tokens
+    .map(tok => {
+      if (/^\s+$/.test(tok)) return tok; // mantém espaços como estão
+      const lower = tok.toLowerCase();
+
+      // mantém partículas minúsculas se não forem a primeira palavra
+      if (wordIndex > 0 && (PARTICLES.has(lower) || PARTICLES.has(lower.replace(/’/g, "'")))) {
+        wordIndex++;
+        return lower;
+      }
+
+      // trata hifenizados
+      const capped = lower
+        .split('-')
+        .map(p => (p ? p.charAt(0).toUpperCase() + p.slice(1) : p))
+        .join('-');
+
+      wordIndex++;
+      return capped;
+    })
+    .join('');
+}
+
+// usada no BLUR/salvar — normaliza espaços e aplica title case definitivo
+function titleCaseFinalize(input: string) {
+  const trimmed = input.replace(/\s+/g, ' ').trim();
+  if (!trimmed) return '';
+  // reaproveita a live em cima do normalizado
+  return titleCaseLive(trimmed);
+}
+/* =========================== */
 
 export default function EditProfessionalModal({
   isOpen,
@@ -48,11 +85,9 @@ export default function EditProfessionalModal({
   const [phone, setPhone] = useState('');
   const [commissionRate, setCommissionRate] = useState<number | ''>('');
 
-  // novo: estados para o registro
-  const [council, setCouncil] = useState<string>('CRM');  // sigla escolhida
-  const [customCouncil, setCustomCouncil] = useState(''); // quando "Outro"
-  const [regNumber, setRegNumber] = useState('');         // número/sufixo
-
+  const [council, setCouncil] = useState<string>('CRM');
+  const [customCouncil, setCustomCouncil] = useState('');
+  const [regNumber, setRegNumber] = useState('');
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -64,9 +99,7 @@ export default function EditProfessionalModal({
         typeof professional.commissionRate === 'number' ? professional.commissionRate : ''
       );
 
-      // preencher conselho + número a partir do campo atual
       const { council: c, number: n } = splitRegistration(professional.registrationCode);
-      // se a sigla não está na lista, marcamos como "Outro"
       if (COUNCILS.includes(c.toUpperCase())) {
         setCouncil(c.toUpperCase());
         setCustomCouncil('');
@@ -83,8 +116,13 @@ export default function EditProfessionalModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return alert('Nome é obrigatório.');
-    if (!specialty.trim()) return alert('Profissão/Especialidade é obrigatória.');
+
+    const nameFinal = titleCaseFinalize(name);
+    const specialtyFinal = titleCaseFinalize(specialty);
+
+    if (!nameFinal) return alert('Nome é obrigatório.');
+    if (!specialtyFinal) return alert('Profissão/Especialidade é obrigatória.');
+
     const chosenCouncil =
       council === 'OUTRO'
         ? (customCouncil || '').trim().toUpperCase()
@@ -95,8 +133,8 @@ export default function EditProfessionalModal({
     const registrationCode = `${chosenCouncil} - ${regNumber.trim()}`;
 
     onUpdate(professional.id, {
-      name,
-      specialty,
+      name: nameFinal,
+      specialty: specialtyFinal,
       phone,
       registrationCode,
       commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
@@ -132,26 +170,33 @@ export default function EditProfessionalModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Nome */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Nome</label>
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setName(titleCaseLive(e.target.value))}
+              onBlur={(e) => setName(titleCaseFinalize(e.target.value))}
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              placeholder="Nome completo"
               required
             />
           </div>
 
+          {/* Profissão/Especialidade */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
               value={specialty}
-              onChange={(e) => setSpecialty(e.target.value)}
+              onChange={(e) => setSpecialty(titleCaseLive(e.target.value))}
+              onBlur={(e) => setSpecialty(titleCaseFinalize(e.target.value))}
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              placeholder="Ex.: Arquiteta"
               required
             />
           </div>
 
+          {/* Telefone */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Telefone</label>
             <input
@@ -162,7 +207,7 @@ export default function EditProfessionalModal({
             />
           </div>
 
-          {/* --- Registro Profissional (com sigla pronta) --- */}
+          {/* Registro Profissional */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Registro Profissional (obrigatório)
@@ -205,8 +250,8 @@ export default function EditProfessionalModal({
               </span>
             </div>
           </div>
-          {/* --- /Registro --- */}
 
+          {/* Comissão */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Comissão (%) <span className="text-gray-400">(opcional)</span>

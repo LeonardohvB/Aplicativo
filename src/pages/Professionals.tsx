@@ -6,11 +6,15 @@ import AddProfessionalModal from '../components/Professionals/AddProfessionalMod
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
+import SwipeRow from '../components/common/SwipeRow'; // ⬅️ NOVO
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
+
+  // ⬇️ controla qual linha está com as ações abertas
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
 
   const {
     professionals,
@@ -21,7 +25,7 @@ const Professionals: React.FC = () => {
     deleteProfessional,
   } = useProfessionals();
 
-  const handleEdit = (id: string) => {
+  const openEditById = (id: string) => {
     const professional = professionals.find((p) => p.id === id);
     if (professional) {
       setEditingProfessional(professional);
@@ -67,12 +71,9 @@ const Professionals: React.FC = () => {
 
   /**
    * Callback chamado pelo ProfessionalCard DEPOIS do upload/limpeza ter sido feito por ele.
-   * Não precisamos re-enviar a foto aqui. Mantemos apenas para compatibilidade.
-   * Se quiser forçar revalidação da lista, pode chamar updateProfessional(id, {}).
    */
   const handlePhotoChange = async (_id: string, _photoFile: File) => {
-    // noop: o card já atualiza o DB e a imagem (cache-busting local)
-    // Opcional: await updateProfessional(_id, {} as any);
+    // noop — o card já atualiza visualmente (cache-busting) e no DB.
   };
 
   if (loading) {
@@ -96,16 +97,29 @@ const Professionals: React.FC = () => {
       </div>
 
       <div className="space-y-4">
-        {professionals.map((professional) => (
-          <ProfessionalCard
-            key={professional.id}
-            professional={professional}
-            onToggle={toggleProfessional}
-            onEdit={handleEdit}
-            onDelete={handleDelete}              // card não usa, mas mantemos a prop
-            onPhotoChange={handlePhotoChange}    // agora é só um ack (sem re-upload)
-          />
-        ))}
+        {professionals.map((p) => {
+          const isSwipeOpen = swipeOpenId === p.id;
+          return (
+            <div key={p.id} className="group">
+              <SwipeRow
+                rowId={p.id}
+                isOpen={isSwipeOpen}
+                onOpen={(id) => setSwipeOpenId(id)}
+                onClose={() => setSwipeOpenId(null)}
+                onEdit={() => openEditById(p.id)}
+                onDelete={() => handleDelete(p.id)}
+              >
+                <ProfessionalCard
+                  professional={p}
+                  onToggle={toggleProfessional}
+                  onEdit={openEditById}          // mantido por compat (não é usado dentro do card)
+                  onDelete={handleDelete}        // idem
+                  onPhotoChange={handlePhotoChange}
+                />
+              </SwipeRow>
+            </div>
+          );
+        })}
       </div>
 
       <AddProfessionalModal

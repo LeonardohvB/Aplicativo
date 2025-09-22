@@ -13,8 +13,8 @@ import { shortPersonName } from '../../lib/strings';
 interface ProfessionalCardProps {
   professional: Professional;
   onToggle: (id: string) => void;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void; // não usado aqui
+  onEdit: (id: string) => void;               // ← mantido por compatibilidade (não usado aqui)
+  onDelete: (id: string) => void;             // não usado aqui
   onPhotoChange: (id: string, photoFile: File) => void; // compatibilidade
 }
 
@@ -71,7 +71,7 @@ function resolveAvatarVersion(p: Professional): string | undefined {
 const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
-  onEdit,
+  onEdit: _onEdit,       // ← não utilizado (swipe cuida de editar)
   // onDelete
   onPhotoChange,
 }) => {
@@ -139,25 +139,17 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   const telHref = `tel:+55${onlyDigits(professional.phone)}`;
 
   return (
+    // 🔹 NÃO é mais "clicável para editar": removidos role/tabIndex/onClick
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onEdit(professional.id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onEdit(professional.id);
-        }
-      }}
-      className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-      aria-label={`Editar ${shortName || "profissional"}`}
-      title={`Abrir edição de ${professional.name || shortName || "profissional"}`}
+      className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md"
     >
       <div className="flex items-start gap-4">
-        {/* Avatar com ring + overlay + status dot */}
+        {/* Avatar com ring + overlay + status dot
+            data-noswipe → impede que o SwipeRow capture o gesto neste elemento */}
         <div className="relative" onClick={stop} onMouseDown={stop}>
           <button
             type="button"
+            data-noswipe
             className="relative h-16 w-16 rounded-full overflow-hidden ring-2 ring-gray-100 hover:scale-[1.02] transition"
             onClick={(e) => {
               e.stopPropagation();
@@ -198,7 +190,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             <div className="min-w-0">
               <div
                 className="truncate text-base font-semibold text-gray-900"
-                title={professional.name} // mostra nome completo no hover
+                title={professional.name}
               >
                 {shortName}
               </div>
