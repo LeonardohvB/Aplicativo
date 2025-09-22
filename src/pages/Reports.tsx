@@ -36,10 +36,52 @@ const byOwner = <T extends Record<string, any>>(arr: T[], uid: string | null): T
   const hasOwner = arr.some(it => 'owner_id' in it);
   return hasOwner ? arr.filter(it => it.owner_id === uid) : arr;
 };
-const isIncome  = (t?: string) => (t ?? '').toLowerCase() === 'income';
-const isExpense = (t?: string) => (t ?? '').toLowerCase() === 'expense';
-const isDone    = (s?: string) => (s ?? '').toLowerCase() === 'concluido';
+const isDone = (s?: string) => (s ?? '').toLowerCase() === 'concluido';
 const currency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/* ===== Helpers de valores e datas ===== */
+// Parser robusto pt-BR: aceita number, "R$ 1.234,56", "-100,00", "100,00-", "(100,00)", "−100,00"
+function parseAmountBR(input: any): number {
+  if (typeof input === 'number') return Number.isFinite(input) ? input : 0;
+  if (input == null) return 0;
+
+  // normaliza e troca sinais unicode por '-'
+  let raw = String(input).normalize('NFKD').replace(/[\u2212\u2013\u2014]/g, '-').trim();
+
+  // negativo por parênteses
+  let negative = /^\(.*\)$/.test(raw);
+  // sinal em qualquer lugar (início/meio/fim) conta como negativo (ex.: "100,00-")
+  if (/-/.test(raw)) negative = true;
+
+  // mantém só dígitos, vírgula, ponto e hífen
+  let cleaned = raw.replace(/[^\d,.\-]/g, '');
+  // tira hífens para parsear, aplicaremos sinal depois
+  cleaned = cleaned.replace(/-/g, '');
+
+  // pt-BR: vírgula é decimal
+  if (cleaned.includes(',')) cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
+
+  let n = parseFloat(cleaned);
+  if (!Number.isFinite(n)) n = 0;
+  return negative ? -Math.abs(n) : n;
+}
+
+// aceita 'YYYY-MM-DD', ISO, ou 'DD/MM/AAAA'
+const parseStrDate = (s?: string | null): Date | null => {
+  if (!s) return null;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/').map(Number);
+    const d = new Date(yyyy, mm - 1, dd);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+};
+const isWithin = (d: Date, fromISO: string, toISO: string) => {
+  const fromD = new Date(`${fromISO}T00:00:00`);
+  const toD   = new Date(`${toISO}T23:59:59.999`);
+  return d >= fromD && d <= toD;
+};
 
 /* ======================================================================
    Mini input de data
@@ -178,13 +220,6 @@ const PatientPdfDocument: React.FC<{
 ====================================================================== */
 type PatientAgg = { name: string; phone?: string; count: number; lastDate: string; };
 
-/* >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-   NOVO HELPER: abrevia nomes no formato:
-   "Primeiro" + iniciais dos meios + (partícula do último, se houver) + "Último"
-   Ex.: "Ana Beatriz dos Santos" -> "Ana B dos Santos"
-        "João da Silva"          -> "João da Silva"
-        "Leonardo Henrique Vieira Barros" -> "Leonardo H V Barros"
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> */
 function abbreviateNamePT(fullName: string): string {
   if (!fullName) return '';
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -193,19 +228,15 @@ function abbreviateNamePT(fullName: string): string {
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
   if (parts.length === 1) return cap(parts[0]);
 
-  // encontra último sobrenome (pula partículas no fim)
   let lastIdx = parts.length - 1;
   while (lastIdx > 0 && particles.has(parts[lastIdx].toLowerCase())) lastIdx--;
 
-  // monta "partícula + Último" se a palavra anterior for partícula
   let last = cap(parts[lastIdx]);
   if (lastIdx - 1 >= 0 && particles.has(parts[lastIdx - 1].toLowerCase())) {
     last = parts[lastIdx - 1].toLowerCase() + ' ' + last;
   }
 
   const first = cap(parts[0]);
-
-  // iniciais dos nomes do meio (entre primeiro e lastIdx), ignorando partículas
   const mids = parts.slice(1, lastIdx)
     .filter(p => !particles.has(p.toLowerCase()))
     .map(p => p[0].toUpperCase());
@@ -597,7 +628,7 @@ const Reports: React.FC = () => {
     }
   }, [rangeMode]);
 
-  // dados do período
+  // histórico do período
   const rangeHistory = useMemo(
     () => myHistory.filter(h => (h.date ?? '') >= from && (h.date ?? '') <= to),
     [myHistory, from, to]
@@ -605,33 +636,67 @@ const Reports: React.FC = () => {
   const completedRangeHistory = useMemo(
     () => rangeHistory.filter(h => isDone(h.status)), [rangeHistory]
   );
-  const rangeTransactions = useMemo(
-    () => myTransactions.filter(t => ((t as any).date ?? '') >= from && ((t as any).date ?? '') <= to),
-    [myTransactions, from, to]
-  );
 
-  // métricas
-  const commissionsForClinic = useMemo(() =>
-    completedRangeHistory.reduce((s, h) => s + (Number(h.price)||0) * ((Number(h.clinicPercentage)||0)/100), 0)
-  , [completedRangeHistory]);
-  const totalExpenses = useMemo(() =>
-    rangeTransactions.filter(t => isExpense(t.type)).reduce((s,t)=> s + (Number(t.amount)||0), 0)
-  , [rangeTransactions]);
-  const totalRevenue = useMemo(() =>
-    rangeTransactions.filter(t => isIncome(t.type)).reduce((s,t)=> s + (Number(t.amount)||0), 0)
-  , [rangeTransactions]);
+/* ======= Transações do período (MESMA REGRA DO FINANCEIRO) ======= */
+const rangeTransactionsAll = useMemo(() => {
+  return myTransactions.filter((t) => {
+    const dateStr =
+      (t as any)?.date ??
+      (t as any)?.created_at ??
+      (t as any)?.createdAt;
+    const d = parseStrDate(dateStr);
+    return !!d && isWithin(d, from, to);
+  });
+}, [myTransactions, from, to]);
+
+// REGRA: prioriza 'type' (igual ao Financeiro). Se não houver 'type', usa o sinal.
+const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
+  let revenue = 0;
+  let expenses = 0;
+
+  for (const t of rangeTransactionsAll) {
+    const raw = (t as any)?.amount;
+    const val = parseAmountBR(raw);
+    const type = String((t as any)?.type || '').toLowerCase();
+
+    if (type === 'income') {
+      if (val >= 0) revenue += val;     // receita normal
+      else expenses += Math.abs(val);   // estorno de receita conta como despesa
+      continue;
+    }
+
+    if (type === 'expense') {
+      expenses += Math.abs(val);        // despesa sempre soma no módulo (mesmo se positivo)
+      continue;
+    }
+
+    // Sem 'type': classifica pelo sinal
+    if (val > 0) revenue += val;
+    else if (val < 0) expenses += Math.abs(val);
+  }
+
+  return { revenue, expenses };
+}, [rangeTransactionsAll]);
+
+
   const profitMargin = useMemo(() =>
-    totalRevenue > 0 ? (((totalRevenue-totalExpenses)/totalRevenue)*100).toFixed(1) : '0.0'
-  , [totalRevenue,totalExpenses]);
+    totalRevenue > 0 ? (((totalRevenue - totalExpenses) / totalRevenue) * 100).toFixed(1) : '0.0'
+  , [totalRevenue, totalExpenses]);
+
   const uniquePatients = useMemo(() =>
     new Set(rangeHistory.map(h => (h.patientName ?? '').toString().toLowerCase())).size
   , [rangeHistory]);
+
   const completionRate = useMemo(() => {
     const total = rangeHistory.length, done = completedRangeHistory.length;
-    return total > 0 ? ((done/total)*100).toFixed(1) : '0.0';
+    return total > 0 ? ((done / total) * 100).toFixed(1) : '0.0';
   }, [rangeHistory, completedRangeHistory]);
 
-  // resumo por profissional
+  // comissões e resumo por profissional
+  const commissionsForClinic = useMemo(() =>
+    completedRangeHistory.reduce((s, h) => s + (Number(h.price)||0) * ((Number(h.clinicPercentage)||0)/100), 0)
+  , [completedRangeHistory]);
+
   const professionalReports = useMemo(() => {
     type Acc = { name: string; specialty?: string; patientsSet: Set<string>; attendanceValue: number; commission: number; totalAppointments: number; };
     const byKey = new Map<string, Acc>();
@@ -855,7 +920,6 @@ const Reports: React.FC = () => {
 
         <div className="space-y-5 md:space-y-6">
           {professionalReports.map((p, idx) => {
-            // bar entre 0..1 baseado no maior valor bruto
             const maxGross = Math.max(1, ...professionalReports.map(x => x.attendanceValue));
             const bar = Math.min(1, p.attendanceValue / maxGross);
 
@@ -874,12 +938,10 @@ const Reports: React.FC = () => {
                   </div>
                 </div>
 
-                {/* mini barra */}
                 <div className="mt-3 h-3 rounded-full bg-gray-100 overflow-hidden">
                   <div className="h-full bg-blue-600 rounded-full" style={{ width: `${bar * 100}%` }} />
                 </div>
 
-                {/* chips pequenos */}
                 <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
                   <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5">Pacientes: {p.patients}</span>
                   <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5">Atendimentos: {p.totalAppointments}</span>
