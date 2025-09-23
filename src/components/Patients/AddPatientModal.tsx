@@ -1,6 +1,5 @@
-// src/components/Patients/AddPatientModal.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type Patient = {
@@ -9,13 +8,15 @@ type Patient = {
   cpf: string;
   phone?: string | null;
   email?: string | null;
+  birth_date?: string | null; // ISO YYYY-MM-DD
 };
 
 type NewPatient = {
   name: string;
   cpf: string;
-  phone: string;           // ← obrigatório no create
+  phone: string;           // obrigatório no create
   email?: string;
+  birth_date?: string;     // ISO YYYY-MM-DD
 };
 
 type Props = {
@@ -42,6 +43,36 @@ const formatBRCell = (v: string) => {
   if (d.length <= 3) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
   if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3)}`;
   return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
+};
+
+// Data BR: "DD/MM/AAAA"
+const formatBRDate = (v: string) => {
+  const d = onlyDigits(v).slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+};
+const isValidBRDate = (s: string) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (!m) return false;
+  const dd = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  const yyyy = parseInt(m[3], 10);
+  if (mm < 1 || mm > 12) return false;
+  const maxDay = new Date(yyyy, mm, 0).getDate();
+  if (dd < 1 || dd > maxDay) return false;
+  return true;
+};
+const brDateToISO = (s: string): string | null => {
+  if (!isValidBRDate(s)) return null;
+  const [dd, mm, yyyy] = s.split('/');
+  return `${yyyy}-${mm}-${dd}`;
+};
+const isoToBRDate = (iso?: string | null): string => {
+  if (!iso) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return '';
+  return `${m[3]}/${m[2]}/${m[1]}`;
 };
 
 // Validação de CPF
@@ -79,35 +110,39 @@ function titleCaseNameBRLive(input: string) {
 function titleCaseNameBRFinal(input: string) { return titleCaseNameBRLive(input).trim(); }
 
 export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
+  // ---- HOOKS (ordem fixa) ----
   const [mode, setMode] = useState<'create' | 'search' | 'edit'>('create');
 
-  // Estados de criação/edição
   const [editing, setEditing] = useState<Patient | null>(null);
   const [name, setName] = useState('');
-  const [cpf, setCPF] = useState(''); // só dígitos
-  const [phone, setPhone] = useState(''); // só dígitos
+  const [cpf, setCPF] = useState('');              // dígitos
+  const [birthDate, setBirthDate] = useState('');  // DD/MM/AAAA
+  const [phone, setPhone] = useState('');          // dígitos
   const [email, setEmail] = useState('');
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [shake, setShake] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Busca
   const [q, setQ] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<Patient[]>([]);
 
-  // Checagem de CPF existente (debounce)
   const [cpfCheckLoading, setCpfCheckLoading] = useState(false);
   const cpfTimer = useRef<number | null>(null);
 
+  // ⚠️ sem useEffect de busca: só um timer ref
+  const searchTimer = useRef<number | null>(null);
+
+  // reset ao abrir
   useEffect(() => {
     if (!isOpen) return;
-    // reset ao abrir
     setMode('create');
     setEditing(null);
     setName('');
     setCPF('');
+    setBirthDate('');
     setPhone('');
     setEmail('');
     setErrors({});
@@ -118,15 +153,20 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     setResults([]);
   }, [isOpen]);
 
-  // limpar debounce no unmount
+  // limpar timers no unmount
   useEffect(() => {
-    return () => { if (cpfTimer.current) window.clearTimeout(cpfTimer.current); };
+    return () => {
+      if (cpfTimer.current) window.clearTimeout(cpfTimer.current);
+      if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    };
   }, []);
 
+  // ✅ return condicional só depois dos hooks
   if (!isOpen) return null;
 
   const cpfOk = isValidCPF(cpf);
   const phoneOk = onlyDigits(phone).length === 11;
+  const birthOk = isValidBRDate(birthDate);
 
   const inputClass = (bad: boolean) =>
     `w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
@@ -134,11 +174,12 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'
     }`;
 
-  // 🔴 Agora valida telefone como obrigatório (11 dígitos)
+  // validações do Create
   const validateCreate = () => {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = 'Informe o nome.';
     if (!cpfOk) e.cpf = 'CPF inválido.';
+    if (!birthOk) e.birthDate = 'Data de nascimento obrigatória (DD/MM/AAAA).';
     if (!phoneOk) e.phone = 'Telefone obrigatório.';
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'E-mail inválido.';
     return e;
@@ -148,19 +189,15 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
 
   const onSubmitCreate = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    // força touched nos obrigatórios (inclui telefone)
-    setTouched({ name: true, cpf: true, phone: true });
+    setTouched({ name: true, cpf: true, phone: true, birthDate: true });
 
     const e = validateCreate();
-    if (Object.keys(e).length) {
-      setErrors(e);
-      shakeNow();
-      return;
-    }
+    if (Object.keys(e).length) { setErrors(e); shakeNow(); return; }
 
     setLoading(true);
     try {
       const cpfDigits = cpf;
+
       // pré-checagem duplicidade
       const { data: existRows } = await supabase
         .from('patients')
@@ -177,8 +214,9 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
       const payload: NewPatient = {
         name: name.trim(),
         cpf: cpfDigits,
-        phone: onlyDigits(phone), // obrigatório
+        phone: onlyDigits(phone),
         email: email.trim() || undefined,
+        birth_date: brDateToISO(birthDate) || undefined,
       };
 
       const { data, error } = await supabase.from('patients').insert([payload]).select().single();
@@ -205,8 +243,6 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     ev.preventDefault();
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = 'Informe o nome.';
-    // (se quiser obrigatório no editar, descomente a linha abaixo)
-    // if (onlyDigits(phone).length !== 11) e.phone = 'Telefone deve ter 11 dígitos.';
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'E-mail inválido.';
     if (Object.keys(e).length) { setErrors(e); shakeNow(); return; }
     if (!editing) return;
@@ -219,6 +255,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           name: name.trim(),
           phone: onlyDigits(phone) || null,
           email: email.trim() || null,
+          birth_date: brDateToISO(birthDate),
         })
         .eq('id', editing.id)
         .select()
@@ -231,13 +268,50 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     }
   };
 
-  const runSearch = async () => {
+  const onDelete = async () => {
+    if (!editing) return;
+    const ok = window.confirm('Excluir este paciente? Esta ação não pode ser desfeita.');
+    if (!ok) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('patients').delete().eq('id', editing.id);
+      if (error) {
+        setErrors((s) => ({
+          ...s,
+          _global:
+            'Não foi possível excluir. Este paciente pode estar vinculado a atendimentos. Remova os vínculos e tente novamente.'
+        }));
+        shakeNow();
+        return;
+      }
+      setResults((r) => r.filter((x) => x.id !== editing.id));
+      setMode('search');
+      setEditing(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== Busca em tempo real sem hook (debounce via ref) =====
+  const runSearch = async (query: string) => {
+    const txt = query.trim();
+    const digits = onlyDigits(query);
+
+    if (txt.length < 2 && digits.length < 3) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+
     setSearching(true);
     try {
+      const orParts = [`name.ilike.%${txt}%`];
+      if (digits) orParts.push(`cpf.ilike.%${digits}%`);
+
       const { data, error } = await supabase
         .from('patients')
         .select('*')
-        .or(`name.ilike.%${q}%,cpf.ilike.%${onlyDigits(q)}%`)
+        .or(orParts.join(','))
         .order('name')
         .limit(50);
       if (error) throw error;
@@ -245,6 +319,12 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     } finally {
       setSearching(false);
     }
+  };
+
+  const onQueryChange = (value: string) => {
+    setQ(value);
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => runSearch(value), 280);
   };
 
   return (
@@ -259,20 +339,23 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           </button>
         </div>
 
-        <div className="mb-4 grid grid-cols-2 gap-2">
-          <button
-            className={`rounded-lg px-4 py-2 ${mode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-            onClick={() => setMode('create')}
-          >
-            Cadastrar
-          </button>
-          <button
-            className={`rounded-lg px-4 py-2 ${mode === 'search' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-            onClick={() => setMode('search')}
-          >
-            Buscar / Editar
-          </button>
-        </div>
+        {/* Esconde abas no modo EDIT */}
+        {mode !== 'edit' && (
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              className={`rounded-lg px-4 py-2 ${mode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              onClick={() => setMode('create')}
+            >
+              Cadastrar
+            </button>
+            <button
+              className={`rounded-lg px-4 py-2 ${mode === 'search' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              onClick={() => setMode('search')}
+            >
+              Buscar / Editar
+            </button>
+          </div>
+        )}
 
         {errors._global && (
           <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="polite">
@@ -334,6 +417,27 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
               )}
             </div>
 
+            {/* Data de Nascimento — OBRIGATÓRIA */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Data de Nascimento *</label>
+              <input
+                value={formatBRDate(birthDate)}
+                onChange={(e) => {
+                  setBirthDate(formatBRDate(e.target.value));
+                  if (errors.birthDate) setErrors(s => ({ ...s, birthDate: '' }));
+                }}
+                onBlur={() => setTouched(t => ({ ...t, birthDate: true }))}
+                placeholder="DD/MM/AAAA"
+                inputMode="numeric"
+                maxLength={10}
+                aria-invalid={!!(touched.birthDate && errors.birthDate)}
+                className={`${inputClass(!!(touched.birthDate && errors.birthDate))} ${(shake && errors.birthDate) ? 'animate-input-shake' : ''}`}
+              />
+              {touched.birthDate && errors.birthDate && (
+                <p className="mt-1 text-xs text-red-600">{errors.birthDate}</p>
+              )}
+            </div>
+
             {/* Telefone — OBRIGATÓRIO */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Telefone *</label>
@@ -384,56 +488,68 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           <div className="space-y-4">
             {mode === 'search' && (
               <>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <input
-                      value={q}
-                      onChange={(e) => setQ(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                      className="w-full rounded-lg border border-gray-300 px-9 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                      placeholder="Buscar por nome ou CPF"
-                    />
-                  </div>
-                  <button onClick={runSearch} className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
-                    Buscar
-                  </button>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={q}
+                    onChange={(e) => onQueryChange(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-9 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="Buscar por nome ou CPF"
+                  />
                 </div>
 
                 {searching && <p className="text-sm text-gray-500">Buscando…</p>}
 
                 <ul className="divide-y divide-gray-100 rounded-lg border">
                   {results.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between px-3 py-2">
+                    <li
+                      key={p.id}
+                      className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-gray-50"
+                      onClick={() => {
+                        setEditing(p);
+                        setName(p.name);
+                        setCPF(p.cpf);
+                        setPhone(p.phone || '');
+                        setEmail(p.email || '');
+                        setBirthDate(isoToBRDate(p.birth_date));
+                        setErrors({});
+                        setTouched({});
+                        setMode('edit');
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.currentTarget as any).click()}
+                    >
                       <div>
                         <div className="font-medium text-gray-900">{p.name}</div>
                         <div className="text-xs text-gray-500">
                           {formatCPF(p.cpf)} {p.phone ? `· ${formatBRCell(p.phone)}` : ''}
                         </div>
                       </div>
-                      <button
-                        className="rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
-                        onClick={() => {
-                          setEditing(p);
-                          setName(p.name);
-                          setPhone(p.phone || '');
-                          setEmail(p.email || '');
-                          setMode('edit');
-                        }}
-                      >
-                        Editar
-                      </button>
                     </li>
                   ))}
                   {results.length === 0 && !searching && (
-                    <li className="px-3 py-4 text-sm text-gray-500">Nenhum resultado.</li>
+                    <li className="px-3 py-4 text-sm text-gray-500">
+                      {q.trim().length === 0 ? 'Digite para buscar.' : 'Nenhum resultado.'}
+                    </li>
                   )}
                 </ul>
               </>
             )}
 
             {mode === 'edit' && editing && (
-              <form onSubmit={onSubmitEdit} className="space-y-4">
+              <form onSubmit={onSubmitEdit} className="space-y-4" noValidate>
+                {/* CPF (somente leitura) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">CPF</label>
+                  <input
+                    value={formatCPF(editing.cpf)}
+                    disabled
+                    className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-gray-600"
+                  />
+                </div>
+
+                {/* Nome */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Nome *</label>
                   <input
@@ -446,6 +562,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                   {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
                 </div>
 
+                {/* Telefone */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Telefone</label>
                   <input
@@ -459,6 +576,20 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                   {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
                 </div>
 
+                {/* Data de Nascimento (editar) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Data de Nascimento</label>
+                  <input
+                    value={formatBRDate(birthDate)}
+                    onChange={(e) => setBirthDate(formatBRDate(e.target.value))}
+                    placeholder="DD/MM/AAAA"
+                    inputMode="numeric"
+                    maxLength={10}
+                    className={inputClass(false)}
+                  />
+                </div>
+
+                {/* E-mail */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">E-mail (opcional)</label>
                   <input
@@ -471,23 +602,52 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                   {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
                 </div>
 
-                <div className="flex gap-2 pt-2">
-                  <button type="button" onClick={() => setMode('search')} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
-                    Cancelar
-                  </button>
+                <div className="flex items-center justify-between pt-2">
                   <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+                    type="button"
+                    onClick={() => { setMode('search'); setEditing(null); }}
+                    className="rounded-lg border px-4 py-2 hover:bg-gray-50"
                   >
-                    {loading ? 'Salvando…' : 'Salvar'}
+                    Voltar
                   </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={onDelete}
+                      disabled={loading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-60"
+                      title="Excluir paciente"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Excluir
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {loading ? 'Salvando…' : 'Salvar'}
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
           </div>
         )}
       </div>
+
+      {/* Shake apenas no input quando houver erro (sem mexer no Tailwind config) */}
+      <style>{`
+        @keyframes input-shake {
+          0% { transform: translateX(0); }
+          25% { transform: translateX(-2px); }
+          50% { transform: translateX(2px); }
+          75% { transform: translateX(-2px); }
+          100% { transform: translateX(0); }
+        }
+        .animate-input-shake { animation: input-shake 0.2s linear 1; }
+      `}</style>
     </div>
   );
 }
