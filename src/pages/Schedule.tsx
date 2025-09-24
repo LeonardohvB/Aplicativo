@@ -127,8 +127,21 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:filter', handler as EventListener);
   }, []);
 
+  useEffect(() => {
+  const openHistory = () => setIsHistoryModalOpen(true);
+  window.addEventListener('agenda:history', openHistory as EventListener);
+  return () => window.removeEventListener('agenda:history', openHistory as EventListener);
+}, []);
+
+
   const todayStr = localISODate(new Date());
   const { start, end } = startEndOfThisWeek();
+
+  // Semana: queremos começar a contar a partir de AMANHÃ (excluir hoje)
+const startTomorrow = new Date();
+startTomorrow.setHours(0, 0, 0, 0);
+startTomorrow.setDate(startTomorrow.getDate() + 1);
+
 
   // slots já filtrados conforme dashboardFilter (ou todos se sem filtro)
  const filteredSlots = useMemo(() => {
@@ -145,13 +158,15 @@ const Schedule: React.FC = () => {
   if (dashboardFilter === 'today') {
     return base.filter((s) => s.date === todayStr);
   }
-  if (dashboardFilter === 'week') {
-    // usar T12:00 para não sofrer com fuso
-    return base.filter((s) => {
-      const d = new Date(`${s.date}T12:00:00`);
-      return d >= start && d <= end;
-    });
-  }
+ if (dashboardFilter === 'week') {
+  // usar T12:00 para não sofrer com fuso
+  return base.filter((s) => {
+    const d = new Date(`${s.date}T12:00:00`);
+    // 👉 começa amanhã e vai até o fim da semana atual
+    return d >= startTomorrow && d <= end;
+  });
+}
+
 
   // sem filtro extra: retorna só os “ativos” (inclui disponíveis)
   return base;
