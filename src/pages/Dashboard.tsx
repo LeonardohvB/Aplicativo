@@ -3,6 +3,7 @@ import { Users, DollarSign, Calendar, UserCircle2, Eye, EyeOff } from 'lucide-re
 import StatCard from '../components/Dashboard/StatCard';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
+import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -67,16 +68,14 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
     .reduce((sum, t) => sum + t.amount, 0);
 
   // Visibilidade (persiste)
-  const [revenueVisible, setRevenueVisible] = React.useState<boolean>(() => {
-    return localStorage.getItem('dash_revenue_visible') !== '0';
+ const [revenueVisible, setRevenueVisible] = React.useState<boolean>(() => getMoneyVisible());
+const toggleRevenue = () => {
+  setRevenueVisible(v => {
+    const nv = !v;
+    setMoneyVisible(nv);   // persiste na mesma chave
+    return nv;
   });
-  const toggleRevenue = () => {
-    setRevenueVisible((v) => {
-      const nv = !v;
-      localStorage.setItem('dash_revenue_visible', nv ? '1' : '0');
-      return nv;
-    });
-  };
+};
 
   // Valor formatado (sempre string)
   const revenueStr = `R$ ${monthlyRevenue.toLocaleString('pt-BR', {

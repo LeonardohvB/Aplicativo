@@ -18,6 +18,7 @@ import EditTransactionModal from '../components/Finance/EditTransactionModal';
 import TransactionDetails from '../components/Finance/TransactionDetails';
 import { useTransactions } from '../hooks/useTransactions';
 import { Transaction, TxStatus } from '../types';
+import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 
 /* ====================== SPARKLINE ====================== */
 type Pt = { x: number; y: number };
@@ -73,9 +74,9 @@ function useAnimatedNumber(
 /* ====================== Datas ====================== */
 function parseBrDate(d?: string): number {
   if (!d) return Date.now();
-  const m = d.match?.(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const m = d?.match?.(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return new Date(+m[3], +m[2] - 1, +m[1]).getTime();
-  const t = Date.parse(d);
+  const t = Date.parse(d ?? '');
   return Number.isFinite(t) ? t : Date.now();
 }
 function isoLocalDate(d = new Date()): string {
@@ -88,12 +89,11 @@ function formatBr(d: Date): string {
 function dayKey(dateStr?: string): string {
   const t = parseBrDate(dateStr);
   const d = new Date(t);
-  // normaliza para meia-noite
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
 }
 
-/* ====================== Swipe Row (sem libs) ====================== */
+/* ====================== Swipe Row ====================== */
 type SwipeRowProps = {
   rowId: string;
   isOpen: boolean;
@@ -158,7 +158,6 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
 
   return (
     <div ref={containerRef} className="relative select-none">
-      {/* Painel de ações (direita) */}
       <div className="absolute right-0 top-0 h-full w-24 pr-2 pl-2 flex items-center justify-center">
         <div className="h-[0px] w-[0px] rounded-2xl bg-white shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-3">
           <button
@@ -182,7 +181,6 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
         </div>
       </div>
 
-      {/* Conteúdo deslizável */}
       <div
         className="bg-transparent"
         style={{ transform: `translateX(${tx}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
@@ -204,7 +202,16 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
 const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const [showBalance, setShowBalance] = useState(true);
+
+  // preferência persistida
+  const [showBalance, setShowBalance] = useState<boolean>(() => getMoneyVisible());
+  const toggleShowBalance = () => {
+    setShowBalance((v) => {
+      const nv = !v;
+      setMoneyVisible(nv);
+      return nv;
+    });
+  };
 
   const [detailsOpenId, setDetailsOpenId] = useState<string | null>(null);
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
@@ -230,7 +237,7 @@ const Finance: React.FC = () => {
     return base;
   }, [transactions, txFilter, customEnabled, dateFrom, dateTo]);
 
-  /* Helpers de extração para o card */
+  /* Helpers do card */
   const extractProfessional = (t: any): string | undefined => {
     if (t?.professionalName) return t.professionalName;
     if (t?.professional) return t.professional;
@@ -265,13 +272,28 @@ const Finance: React.FC = () => {
     .filter((t) => t.type === 'expense')
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const balance = totalRevenue - totalExpenses;
-  const moneyBR = (n: number) => `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const masked = (n: number) => (showBalance ? moneyBR(n) : '••••••');
+
+  const MASK = '•'.repeat(6);
+
   const isNegative = balance < 0, isPositive = balance > 0;
 
-  const animatedBalance = useAnimatedNumber(showBalance ? balance : 0, {
+  // animação (saldo total)
+  const animatedBalance = useAnimatedNumber(balance, {
     duration: 900,
     onFinish: () => { setPulse(true); setTimeout(() => setPulse(false), 180); },
+  });
+
+  // animação para receitas e despesas (pulso individual)
+  const [revPulse, setRevPulse] = useState(false);
+  const [expPulse, setExpPulse] = useState(false);
+
+  const animatedRevenue = useAnimatedNumber(totalRevenue, {
+    duration: 900,
+    onFinish: () => { setRevPulse(true); setTimeout(() => setRevPulse(false), 180); },
+  });
+  const animatedExpenses = useAnimatedNumber(totalExpenses, {
+    duration: 900,
+    onFinish: () => { setExpPulse(true); setTimeout(() => setExpPulse(false), 180); },
   });
 
   const sparkPathD = useMemo(() => {
@@ -302,7 +324,6 @@ const Finance: React.FC = () => {
       if (g) g.items.push(t);
       else map.set(k, { key: k, label: formatBr(new Date(k)), items: [t] });
     }
-    // ordena por data desc e dentro do dia mantém a ordem original (ou ordena por hora se tiver)
     const out = Array.from(map.values()).sort((a, b) => +new Date(b.key) - +new Date(a.key));
     for (const g of out) {
       g.items.sort((a, b) => parseBrDate(b.date) - parseBrDate(a.date));
@@ -336,7 +357,7 @@ const Finance: React.FC = () => {
   return (
     <div className="pb-24 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       {/* Header */}
-       <div className=" p-5 md:p-6 bg-gradient-to-br from-slate-900 to-indigo-900 text-white shadow-xl">
+      <div className=" p-5 md:p-6 bg-gradient-to-br from-slate-900 to-indigo-900 text-white shadow-xl">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-white">Financeiro</h1>
           <button onClick={() => setIsModalOpen(true)} className="p-3 bg-white/20 backdrop-blur-sm text-white rounded-2xl hover:bg-white/30 transition-all shadow-lg hover:shadow-xl">
@@ -357,24 +378,34 @@ const Finance: React.FC = () => {
               <div className="p-2 bg-white/15 rounded-xl"><Wallet className="w-5 h-5 text-white" /></div>
               <span className="text-white/90 font-medium text-sm sm:text-base">Saldo Total</span>
             </div>
-            <button onClick={() => setShowBalance(!showBalance)} className="p-2 bg-white/15 rounded-xl hover:bg-white/25 transition-colors" title={showBalance ? 'Ocultar valores' : 'Mostrar valores'}>
+            <button onClick={toggleShowBalance} className="p-2 bg-white/15 rounded-xl hover:bg-white/25 transition-colors" title={showBalance ? 'Ocultar valores' : 'Mostrar valores'}>
               {showBalance ? <Eye className="w-4 h-4 text-white" /> : <EyeOff className="w-4 h-4 text-white" />}
             </button>
           </div>
 
           <div className="text-center relative z-10">
-            <div className={['inline-flex items-center justify-center px-5 py-2.5 rounded-2xl backdrop-blur transition-transform duration-250 will-change-transform', pulse ? 'scale-110' : 'scale-100', neutralMode ? 'bg-transparent shadow-none ring-0' : 'bg-white/92 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-0'].join(' ')}>
-              <span className={['text-2xl sm:text-4xl font-bold tabular-nums tracking-tight', neutralMode ? 'text-white' : isNegative ? 'text-red-600' : isPositive ? 'text-green-600' : 'text-slate-900'].join(' ')}>
-                {showBalance ? `R$ ${animatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••'}
+            <div className={[
+              'inline-flex items-center justify-center px-5 py-2.5 rounded-2xl backdrop-blur transition-transform duration-250 will-change-transform',
+              pulse ? 'scale-110' : 'scale-100',
+              neutralMode ? 'bg-transparent shadow-none ring-0' : 'bg-white/92 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-0'
+            ].join(' ')}>
+              <span className={[
+                'text-2xl sm:text-4xl font-bold tabular-nums tracking-tight',
+                neutralMode ? 'text-white' : isNegative ? 'text-red-600' : isPositive ? 'text-green-600' : 'text-slate-900'
+              ].join(' ')}>
+                {showBalance
+                  ? `R$ ${animatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : `R$ ${MASK}`}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Resumo (cards viram filtros de tipo) */}
+      {/* Resumo */}
       <div className="px-6 mt-10 md:mt-20 lg:mt-24 mb-6 relative z-10">
         <div className="grid grid-cols-2 gap-4">
+          {/* Receitas */}
           <button
             onClick={() => setTxFilter((f) => (f === 'income' ? 'all' : 'income'))}
             className={`text-left bg-white rounded-2xl p-5 shadow-lg border transition-all ${txFilter === 'income' ? 'border-green-400 ring-2 ring-green-200' : 'border-gray-100/50 hover:shadow-xl'}`}
@@ -385,14 +416,21 @@ const Finance: React.FC = () => {
               <div className="p-2 bg-green-50 rounded-xl"><TrendingUp className="w-5 h-5 text-green-600" /></div>
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Receitas</span>
             </div>
-            <p className="text-lg sm:text-2xl font-bold text-green-600 break-all">
-              {masked(totalRevenue)}
+            <p className={[
+              'inline-flex items-center justify-center px-1 py-0.5 rounded-md transition-transform duration-250 will-change-transform',
+              revPulse ? 'scale-110' : 'scale-100',
+              'text-lg sm:text-2xl font-bold text-green-600 break-all'
+            ].join(' ')}>
+              {showBalance
+                ? `R$ ${animatedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : `R$ ${MASK}`}
             </p>
             <div className="mt-2 w-full bg-green-100 rounded-full h-1.5">
               <div className="bg-green-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalRevenue > 0 ? '100%' : '0%' }} />
             </div>
           </button>
 
+          {/* Despesas */}
           <button
             onClick={() => setTxFilter((f) => (f === 'expense' ? 'all' : 'expense'))}
             className={`text-left bg-white rounded-2xl p-5 shadow-lg border transition-all ${txFilter === 'expense' ? 'border-red-400 ring-2 ring-red-200' : 'border-gray-100/50 hover:shadow-xl'}`}
@@ -403,8 +441,14 @@ const Finance: React.FC = () => {
               <div className="p-2 bg-red-50 rounded-xl"><TrendingDown className="w-5 h-5 text-red-600" /></div>
               <span className="text-gray-700 font-medium text-xs sm:text-sm">Despesas</span>
             </div>
-            <p className="text-lg sm:text-2xl font-bold text-red-600 break-all">
-              {masked(totalExpenses)}
+            <p className={[
+              'inline-flex items-center justify-center px-1 py-0.5 rounded-md transition-transform duration-250 will-change-transform',
+              expPulse ? 'scale-110' : 'scale-100',
+              'text-lg sm:text-2xl font-bold text-red-600 break-all'
+            ].join(' ')}>
+              {showBalance
+                ? `R$ ${animatedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : `R$ ${MASK}`}
             </p>
             <div className="mt-2 w-full bg-red-100 rounded-full h-1.5">
               <div className="bg-red-500 h-1.5 rounded-full transition-all duration-500" style={{ width: totalExpenses > 0 ? '100%' : '0%' }} />
@@ -449,7 +493,7 @@ const Finance: React.FC = () => {
           </div>
         </div>
 
-        {/* Intervalo de datas (só quando personalizado estiver ativo) */}
+        {/* Intervalo de datas */}
         {customEnabled && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div>
@@ -517,9 +561,9 @@ const Finance: React.FC = () => {
                         onEdit={() => handleEdit(t.id)}
                         onDelete={() => handleDelete(t.id)}
                       >
-                        {/* CARD ÚNICO: header + detalhes no mesmo contêiner */}
+                        {/* CARD ÚNICO */}
                         <div className={`bg-white rounded-2xl border border-gray-100/50 shadow-lg transition-all ${isDetailsOpen ? 'ring-2 ring-blue-300/60' : ''}`}>
-                          {/* Header (TransactionCard sem moldura) */}
+                          {/* Header */}
                           <div
                             role="button"
                             tabIndex={0}
@@ -540,7 +584,7 @@ const Finance: React.FC = () => {
                             />
                           </div>
 
-                          {/* Expand colado */}
+                          {/* Expand */}
                           <div
                             className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
                               isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
