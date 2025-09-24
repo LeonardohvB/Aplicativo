@@ -1,3 +1,4 @@
+// src/components/Patients/AddPatientModal.tsx
 import React, { useEffect, useState, useRef } from 'react';
 import { X, Search, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -102,7 +103,7 @@ function titleCaseNameBRLive(input: string) {
   const words = core.split(' ').filter(Boolean).map((w, i) =>
     w.includes('-')
       ? w.split('-').map((p, j) => capPart(p, i === 0 || j > 0)).join('-')
-      : capPart(w, i === 0)
+      : capPart(w, i === 0),
   );
   const out = words.join(' ');
   return hadTrailing ? out + ' ' : out;
@@ -135,9 +136,8 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
   // ⚠️ sem useEffect de busca: só um timer ref
   const searchTimer = useRef<number | null>(null);
 
-  // reset ao abrir
-  useEffect(() => {
-    if (!isOpen) return;
+  /** Reset geral — usamos ao abrir, ao trocar para a aba "Cadastrar" e ao fechar */
+  const resetAll = () => {
     setMode('create');
     setEditing(null);
     setName('');
@@ -151,7 +151,18 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
     setLoading(false);
     setQ('');
     setResults([]);
-  }, [isOpen]);
+  };
+
+  const handleClose = () => {
+    resetAll();
+    onClose();
+  };
+
+  // reset ao abrir
+  useEffect(() => {
+    if (!isOpen) return;
+    resetAll();
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // limpar timers no unmount
   useEffect(() => {
@@ -233,7 +244,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
       }
 
       onCreated?.(data);
-      onClose();
+      handleClose(); // fecha limpando tudo
     } finally {
       setLoading(false);
     }
@@ -262,7 +273,16 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
         .single();
       if (error) { setErrors((s) => ({ ...s, _global: 'Não foi possível salvar. Tente novamente.' })); shakeNow(); return; }
       onCreated?.(data);
-      setMode('search'); setEditing(null);
+      // volta para buscar (campo vazio para evitar “eco” quando voltar a cadastrar)
+      setMode('search');
+      setEditing(null);
+      setName('');
+      setCPF('');
+      setPhone('');
+      setEmail('');
+      setBirthDate('');
+      setErrors({});
+      setTouched({});
     } finally {
       setLoading(false);
     }
@@ -334,7 +354,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           <h2 className="text-xl font-bold text-gray-900">
             {mode === 'create' ? 'Cadastrar Paciente' : mode === 'search' ? 'Buscar / Editar Paciente' : 'Editar Paciente'}
           </h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+          <button onClick={handleClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -344,13 +364,22 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           <div className="mb-4 grid grid-cols-2 gap-2">
             <button
               className={`rounded-lg px-4 py-2 ${mode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setMode('create')}
+              onClick={() => {
+                // 👉 ao ir para "Cadastrar", zera tudo para não herdar nada do modo Buscar/Editar
+                resetAll();
+              }}
             >
               Cadastrar
             </button>
             <button
               className={`rounded-lg px-4 py-2 ${mode === 'search' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setMode('search')}
+              onClick={() => {
+                // troca para buscar limpando seleção/erros do formulário de edição
+                setMode('search');
+                setEditing(null);
+                setErrors({});
+                setTouched({});
+              }}
             >
               Buscar / Editar
             </button>
@@ -392,7 +421,6 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
 
                   if (cpfTimer.current) window.clearTimeout(cpfTimer.current);
                   cpfTimer.current = window.setTimeout(async () => {
-                    if (mode !== 'create') return;
                     if (digits.length === 11 && isValidCPF(digits)) {
                       try {
                         setCpfCheckLoading(true);
@@ -469,7 +497,7 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={onClose} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
+              <button type="button" onClick={handleClose} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
                 Cancelar
               </button>
               <button
@@ -559,7 +587,6 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                     className={inputClass(!!errors.name)}
                     aria-invalid={!!errors.name}
                   />
-                  {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
                 </div>
 
                 {/* Telefone */}
@@ -573,7 +600,6 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                     inputMode="numeric"
                     maxLength={17}
                   />
-                  {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
                 </div>
 
                 {/* Data de Nascimento (editar) */}
@@ -599,7 +625,6 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
                     aria-invalid={!!errors.email}
                     type="email"
                   />
-                  {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
