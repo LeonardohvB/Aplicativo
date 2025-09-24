@@ -5,9 +5,22 @@ import { supabase } from '../lib/supabase'
 
 type Mode = 'login' | 'signup'
 
+// chaves do localStorage
+const LS_REMEMBER = 'auth:remember_email'
+const LS_EMAIL = 'auth:saved_email'
+
 export default function Login() {
   const [mode, setMode] = useState<Mode>('login')
-  const [email, setEmail] = useState('')
+
+  // valores iniciais vindos do localStorage (se existir)
+  const remembered =
+    typeof window !== 'undefined' && window.localStorage.getItem(LS_REMEMBER) === '1'
+  const initialEmail =
+    typeof window !== 'undefined' && remembered ? window.localStorage.getItem(LS_EMAIL) ?? '' : ''
+
+  const [email, setEmail] = useState(initialEmail)
+  const [rememberEmail, setRememberEmail] = useState<boolean>(remembered)
+
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -18,10 +31,12 @@ export default function Login() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setMessage(null); setError(null)
+    setMessage(null)
+    setError(null)
 
     if (!isValidEmail(email)) return setError('Informe um e-mail válido.')
-    if (!password || password.length < 6) return setError('A senha deve ter pelo menos 6 caracteres.')
+    if (!password || password.length < 6)
+      return setError('A senha deve ter pelo menos 6 caracteres.')
 
     try {
       setLoading(true)
@@ -34,6 +49,15 @@ export default function Login() {
         if (error) throw error
         setMessage('Conta criada! Verifique seu e-mail se a confirmação estiver ativada.')
       }
+
+      // persiste/limpa o e-mail conforme a preferência
+      if (rememberEmail) {
+        localStorage.setItem(LS_REMEMBER, '1')
+        localStorage.setItem(LS_EMAIL, email.trim())
+      } else {
+        localStorage.removeItem(LS_REMEMBER)
+        localStorage.removeItem(LS_EMAIL)
+      }
     } catch (err: any) {
       setError(err?.message ?? 'Algo deu errado. Tente novamente.')
     } finally {
@@ -42,8 +66,10 @@ export default function Login() {
   }
 
   async function handleResetPassword() {
-    setMessage(null); setError(null)
-    if (!isValidEmail(email)) return setError('Digite seu e-mail acima para receber o link de redefinição.')
+    setMessage(null)
+    setError(null)
+    if (!isValidEmail(email))
+      return setError('Digite seu e-mail acima para receber o link de redefinição.')
     try {
       setLoading(true)
       await supabase.auth.resetPasswordForEmail(email, {
@@ -117,7 +143,10 @@ export default function Login() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    if (rememberEmail) localStorage.setItem(LS_EMAIL, e.target.value)
+                  }}
                   autoComplete="email"
                   className="w-full rounded-xl border border-slate-200 bg-white px-10 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400"
                   placeholder="voce@exemplo.com"
@@ -147,8 +176,29 @@ export default function Login() {
                 </button>
               </div>
 
-              {mode === 'login' && (
-                <div className="mt-2 text-right">
+              {/* linha: lembrar usuário + esqueci senha */}
+              <div className="mt-2 flex items-center justify-between">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberEmail}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setRememberEmail(v)
+                      if (!v) {
+                        localStorage.removeItem(LS_REMEMBER)
+                        localStorage.removeItem(LS_EMAIL)
+                      } else {
+                        localStorage.setItem(LS_REMEMBER, '1')
+                        localStorage.setItem(LS_EMAIL, email.trim())
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                  />
+                  Lembrar usuário
+                </label>
+
+                {mode === 'login' && (
                   <button
                     type="button"
                     onClick={handleResetPassword}
@@ -156,8 +206,8 @@ export default function Login() {
                   >
                     Esqueci minha senha
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             <button
@@ -177,7 +227,6 @@ export default function Login() {
               )}
             </button>
           </form>
-        
         </div>
       </div>
     </div>
