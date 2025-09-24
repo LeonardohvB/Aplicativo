@@ -62,9 +62,17 @@ const sortJourneysByDateTime = (a: AppointmentJourney, b: AppointmentJourney) =>
 };
 
 // ===== helpers de filtro (dashboard -> agenda) =====
-function isApptStatusOk(status: string) {
-  return ['agendado', 'em_andamento', 'concluido'].includes(status);
-}
+const statusVisibleDefault = (status?: string) => {
+  const s = (status || '').toLowerCase();
+  // visão padrão: mostra "disponível" + "agendado" + "em_andamento"
+  return s === 'disponivel' || s === 'available' || s === 'agendado' || s === 'em_andamento';
+};
+
+const statusVisiblePeriod = (status?: string) => {
+  const s = (status || '').toLowerCase();
+  // filtros Hoje/Semana: só o que pode Iniciar/Cancelar
+  return s === 'agendado' || s === 'em_andamento';
+};
 function startEndOfThisWeek() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -123,19 +131,32 @@ const Schedule: React.FC = () => {
   const { start, end } = startEndOfThisWeek();
 
   // slots já filtrados conforme dashboardFilter (ou todos se sem filtro)
-  const filteredSlots = useMemo(() => {
-    if (!Array.isArray(slots)) return [];
-    if (dashboardFilter === 'today') {
-      return slots.filter((s) => s.date === todayStr && isApptStatusOk(s.status));
-    }
-    if (dashboardFilter === 'week') {
-      return slots.filter((s) => {
-        const d = new Date(s.date);
-        return d >= start && d <= end && isApptStatusOk(s.status);
-      });
-    }
-    return slots;
-  }, [slots, dashboardFilter, todayStr, start, end]);
+ const filteredSlots = useMemo(() => {
+  if (!Array.isArray(slots)) return [];
+
+  // base por status:
+  // - Hoje/Semana: agendado + em_andamento
+  // - Padrão (sem filtro): disponivel + agendado + em_andamento
+  const base =
+    (dashboardFilter === 'today' || dashboardFilter === 'week')
+      ? slots.filter((s) => statusVisiblePeriod(s.status))
+      : slots.filter((s) => statusVisibleDefault(s.status));
+
+  if (dashboardFilter === 'today') {
+    return base.filter((s) => s.date === todayStr);
+  }
+  if (dashboardFilter === 'week') {
+    // usar T12:00 para não sofrer com fuso
+    return base.filter((s) => {
+      const d = new Date(`${s.date}T12:00:00`);
+      return d >= start && d <= end;
+    });
+  }
+
+  // sem filtro extra: retorna só os “ativos” (inclui disponíveis)
+  return base;
+}, [slots, dashboardFilter, todayStr, start, end]);
+
 
   // renderizamos apenas jornadas que têm ao menos 1 slot visível
   const visibleJourneys = useMemo(() => {

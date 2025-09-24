@@ -13,6 +13,26 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
   onEdit,
   onDelete,
 }) => {
+  // 👇 Detecta “concluído” sem quebrar tipos (compatível com vários campos)
+  const isConcluded = (() => {
+    const a = appointment as any;
+    const s = (a.status || a.state || a.situacao || a.situation || a.etapa || '')
+      .toString()
+      .toLowerCase();
+    return (
+      a.concluded === true ||
+      a.isConcluded === true ||
+      a.is_concluded === true ||
+      !!a.finishedAt ||
+      !!a.finished_at ||
+      s === 'concluido' ||
+      s === 'concluído' ||
+      s === 'done' ||
+      s === 'concluded' ||
+      s === 'completed'
+    );
+  })();
+
   return (
     <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
@@ -30,16 +50,24 @@ const AppointmentCard: React.FC<AppointmentCardProps> = ({
             <p className="text-gray-600 text-sm">{appointment.specialty}</p>
           </div>
         </div>
+
         <div className="flex space-x-2">
-          <button
-            onClick={() => onEdit(appointment.id)}
-            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
+          {/* ✨ Quando concluído, esconde o botão de editar (só permite excluir) */}
+          {!isConcluded && (
+            <button
+              onClick={() => onEdit(appointment.id)}
+              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              aria-label="Editar"
+              title="Editar"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={() => onDelete(appointment.id)}
             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            aria-label="Excluir"
+            title="Excluir"
           >
             <Trash2 className="w-4 h-4" />
           </button>
