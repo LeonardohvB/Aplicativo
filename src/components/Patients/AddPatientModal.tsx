@@ -363,35 +363,30 @@ export default function AddPatientModal({ isOpen, onClose, onCreated }: Props) {
           </button>
         </div>
 
-        {/* Abas (somem no modo edit/view) */}
-        {(mode !== 'edit' && mode !== 'view') && (
-          <div className="mb-4 grid grid-cols-3 gap-2">
-            <button
-              className={`rounded-lg px-4 py-2 ${mode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setMode('create')}
-            >
-              Cadastrar
-            </button>
-            <button
-              className={`rounded-lg px-4 py-2 ${mode === 'search' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setMode('search')}
-            >
-              Buscar / Editar
-            </button>
-            <button
-              className={`relative rounded-lg px-4 py-2 ${mode === 'list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => setMode('list')}
-            >
-              Lista
-              {typeof listCount === 'number' && (
-                <span className={`ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full text-xs
-                                   ${mode === 'list' ? 'bg-white/20' : 'bg-gray-200 text-gray-600'} px-1`}>
-                  {listCount}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
+       {/* Abas (somem no modo edit/view) */}
+{(mode !== 'edit' && mode !== 'view') && (
+  <div className="mb-4 grid grid-cols-3 gap-2">
+    <button
+      className={`rounded-lg px-4 py-2 ${mode === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+      onClick={() => setMode('create')}
+    >
+      Cadastrar
+    </button>
+    <button
+      className={`rounded-lg px-4 py-2 ${mode === 'search' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+      onClick={() => setMode('search')}
+    >
+      Buscar / Editar
+    </button>
+    <button
+      className={`rounded-lg px-4 py-2 ${mode === 'list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+      onClick={() => setMode('list')}
+    >
+      Lista
+    </button>
+  </div>
+)}
+
 
         {errors._global && (
           <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="polite">

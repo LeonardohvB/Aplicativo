@@ -375,14 +375,14 @@ startTomorrow.setDate(startTomorrow.getDate() + 1);
         {visibleJourneys.length === 0 && (
           <div className="text-center py-12">
             <p className="text-gray-500 mb-4">
-              {dashboardFilter ? 'Nenhum atendimento para este filtro.' : 'Nenhuma jornada de atendimento criada ainda.'}
+              {dashboardFilter ? 'Nenhum atendimento para este filtro.' : 'Nenhum agendamento criado ainda.'}
             </p>
             {!dashboardFilter && (
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Criar Primeira Jornada
+                Criar agendamento
               </button>
             )}
           </div>
