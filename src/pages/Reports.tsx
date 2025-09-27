@@ -40,32 +40,20 @@ const isDone = (s?: string) => (s ?? '').toLowerCase() === 'concluido';
 const currency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 /* ===== Helpers de valores e datas ===== */
-// Parser robusto pt-BR: aceita number, "R$ 1.234,56", "-100,00", "100,00-", "(100,00)", "−100,00"
+// Parser robusto pt-BR
 function parseAmountBR(input: any): number {
   if (typeof input === 'number') return Number.isFinite(input) ? input : 0;
   if (input == null) return 0;
-
-  // normaliza e troca sinais unicode por '-'
   let raw = String(input).normalize('NFKD').replace(/[\u2212\u2013\u2014]/g, '-').trim();
-
-  // negativo por parênteses
   let negative = /^\(.*\)$/.test(raw);
-  // sinal em qualquer lugar (início/meio/fim) conta como negativo (ex.: "100,00-")
   if (/-/.test(raw)) negative = true;
-
-  // mantém só dígitos, vírgula, ponto e hífen
   let cleaned = raw.replace(/[^\d,.\-]/g, '');
-  // tira hífens para parsear, aplicaremos sinal depois
   cleaned = cleaned.replace(/-/g, '');
-
-  // pt-BR: vírgula é decimal
   if (cleaned.includes(',')) cleaned = cleaned.replace(/\./g, '').replace(/,/g, '.');
-
   let n = parseFloat(cleaned);
   if (!Number.isFinite(n)) n = 0;
   return negative ? -Math.abs(n) : n;
 }
-
 // aceita 'YYYY-MM-DD', ISO, ou 'DD/MM/AAAA'
 const parseStrDate = (s?: string | null): Date | null => {
   if (!s) return null;
@@ -86,16 +74,19 @@ const isWithin = (d: Date, fromISO: string, toISO: string) => {
 /* ======================================================================
    Mini input de data
 ====================================================================== */
-const DateInput: React.FC<{label: string; value: string; onChange: (v: string) => void;}> = ({ label, value, onChange }) => (
-  <div className="flex flex-col min-w-[160px] print:min-w-[200px]">
-    <span className="text-xs text-gray-500 mb-1">{label}</span>
+// Mini input de data (responsivo)
+const DateInput: React.FC<{ label: string; value: string; onChange: (v: string) => void; }> = ({
+  label, value, onChange
+}) => (
+  <div className="w-full min-w-0">
+    <span className="block text-xs text-gray-600 mb-1">{label}</span>
     <div className="relative">
       <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full pr-2.5 pl-8 py-1.5 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full pl-8 pr-2.5 py-2 rounded-lg border bg-white border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
     </div>
   </div>
@@ -409,7 +400,8 @@ const Pill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: 
     {...rest}
     className={[
       "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all",
-      active ? "bg-white text-gray-900 border-white shadow" : "bg-white/10 text-white border-white/30 hover:bg-white/20"
+      active ? "bg-white text-gray-900 border-white shadow"
+             : "bg-transparent text-white border-white/20 hover:bg-white/10"
     ].join(' ') + (className ? ` ${className}` : '')}
   >
     {children}
@@ -455,21 +447,28 @@ const HeroReportsCard: React.FC<HeroProps> = ({
       <Pill active={rangeMode==='day'} onClick={() => setRangeMode('day')}><CalendarDays size={14}/> Dia</Pill>
       <Pill active={rangeMode==='week'} onClick={() => setRangeMode('week')}><CalendarRange size={14}/> Semana</Pill>
       <Pill active={rangeMode==='month'} onClick={() => setRangeMode('month')}><Calendar size={14}/> Mês</Pill>
-      <Pill active={rangeMode==='custom'} onClick={() => setRangeMode('custom')}><FilterIcon size={14}/> Personalizado</Pill>
-      {rangeMode==='custom' && (
-        <div className="flex items-end gap-2 text-slate-900">
-          <div className="bg-white rounded-lg px-2 py-1">
-            <DateInput label="De" value={from} onChange={setFrom}/>
-          </div>
-          <div className="bg-white rounded-lg px-2 py-1">
-            <DateInput label="Até" value={to} onChange={setTo}/>
-          </div>
-        </div>
-      )}
+      <Pill
+        active={rangeMode==='custom'}
+        onClick={() => setRangeMode('custom')}
+      >
+        <FilterIcon size={14}/> Personalizado
+      </Pill>
+
+     {rangeMode === 'custom' && (
+  <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 text-slate-900">
+    <div className="bg-white/95 rounded-lg p-2">
+      <DateInput label="De" value={from} onChange={setFrom} />
+    </div>
+    <div className="bg-white/95 rounded-lg p-2">
+      <DateInput label="Até" value={to} onChange={setTo} />
+    </div>
+  </div>
+)}
+
     </div>
 
     <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <KpiTile title="Receita Total"   value={currency(Number(revenue.toFixed(2)))} icon={TrendingUp}/>
+      <KpiTile title="Faturamento Bruto"   value={currency(Number(revenue.toFixed(2)))} icon={TrendingUp}/>
       <KpiTile title="Despesas Totais" value={currency(Number(expenses.toFixed(2)))} icon={TrendingDown}/>
       <KpiTile title="Margem de Lucro" value={`${marginPct}%`} icon={Percent}/>
     </div>
@@ -604,10 +603,16 @@ const Reports: React.FC = () => {
   const myHistory      = useMemo(() => byOwner(history, uid),      [history, uid]);
   const myTransactions = useMemo(() => byOwner(transactions, uid), [transactions, uid]);
 
-  // período
-  const [rangeMode, setRangeMode] = useState<RangeMode>('day');
-  const [from, setFrom] = useState(todayLocalISO());
-  const [to, setTo] = useState(todayLocalISO());
+  // período — INICIAR em MÊS
+  const [rangeMode, setRangeMode] = useState<RangeMode>('month');
+  const [from, setFrom] = useState(() => {
+    const now = new Date();
+    return toLocalISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+  });
+  const [to, setTo] = useState(() => {
+    const now = new Date();
+    return toLocalISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  });
   const periodLabel = useMemo(() => periodLabelFor(rangeMode, from, to), [rangeMode, from, to]);
 
   useEffect(() => {
@@ -637,51 +642,62 @@ const Reports: React.FC = () => {
     () => rangeHistory.filter(h => isDone(h.status)), [rangeHistory]
   );
 
-/* ======= Transações do período (MESMA REGRA DO FINANCEIRO) ======= */
-const rangeTransactionsAll = useMemo(() => {
-  return myTransactions.filter((t) => {
-    const dateStr =
-      (t as any)?.date ??
-      (t as any)?.created_at ??
-      (t as any)?.createdAt;
-    const d = parseStrDate(dateStr);
-    return !!d && isWithin(d, from, to);
-  });
-}, [myTransactions, from, to]);
+  /* ======= Transações do período (MESMA REGRA DO FINANCEIRO) ======= */
+  const rangeTransactionsAll = useMemo(() => {
+    return myTransactions.filter((t) => {
+      const dateStr =
+        (t as any)?.date ??
+        (t as any)?.created_at ??
+        (t as any)?.createdAt;
+      const d = parseStrDate(dateStr);
+      return !!d && isWithin(d, from, to);
+    });
+  }, [myTransactions, from, to]);
 
-// REGRA: prioriza 'type' (igual ao Financeiro). Se não houver 'type', usa o sinal.
-const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
-  let revenue = 0;
-  let expenses = 0;
+  const { revenue: totalRevenueFromFinance, expenses: totalExpenses } = useMemo(() => {
+    let revenue = 0;
+    let expenses = 0;
 
-  for (const t of rangeTransactionsAll) {
-    const raw = (t as any)?.amount;
-    const val = parseAmountBR(raw);
-    const type = String((t as any)?.type || '').toLowerCase();
+    for (const t of rangeTransactionsAll) {
+      const raw = (t as any)?.amount;
+      const val = parseAmountBR(raw);
+      const type = String((t as any)?.type || '').toLowerCase();
 
-    if (type === 'income') {
-      if (val >= 0) revenue += val;     // receita normal
-      else expenses += Math.abs(val);   // estorno de receita conta como despesa
-      continue;
+      if (type === 'income') {
+        if (val >= 0) revenue += val; else expenses += Math.abs(val);
+        continue;
+      }
+      if (type === 'expense') {
+        expenses += Math.abs(val);
+        continue;
+      }
+      if (val > 0) revenue += val;
+      else if (val < 0) expenses += Math.abs(val);
     }
 
-    if (type === 'expense') {
-      expenses += Math.abs(val);        // despesa sempre soma no módulo (mesmo se positivo)
-      continue;
-    }
+    return { revenue, expenses };
+  }, [rangeTransactionsAll]);
 
-    // Sem 'type': classifica pelo sinal
-    if (val > 0) revenue += val;
-    else if (val < 0) expenses += Math.abs(val);
-  }
+  // ======= NOVO: faturamento bruto (histórico concluído) =======
+  const grossBilling = useMemo(
+    () => completedRangeHistory.reduce((s, h) => s + (Number((h as any).price) || 0), 0),
+    [completedRangeHistory]
+  );
+  // Receita da clínica (apenas atendimentos concluídos)
+  const clinicRevenue = useMemo(
+    () => completedRangeHistory.reduce((s, h) => {
+      const price = Number((h as any).price) || 0;
+      const pct   = Number((h as any).clinicPercentage) || 0;
+      return s + (price * (pct / 100));
+    }, 0),
+    [completedRangeHistory]
+  );
 
-  return { revenue, expenses };
-}, [rangeTransactionsAll]);
-
-
-  const profitMargin = useMemo(() =>
-    totalRevenue > 0 ? (((totalRevenue - totalExpenses) / totalRevenue) * 100).toFixed(1) : '0.0'
-  , [totalRevenue, totalExpenses]);
+  const profitMargin = useMemo(() => {
+    if (clinicRevenue <= 0) return '0.0';
+    const m = ((clinicRevenue - totalExpenses) / clinicRevenue) * 100;
+    return m.toFixed(1);
+  }, [clinicRevenue, totalExpenses]);
 
   const uniquePatients = useMemo(() =>
     new Set(rangeHistory.map(h => (h.patientName ?? '').toString().toLowerCase())).size
@@ -692,9 +708,9 @@ const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
     return total > 0 ? ((done / total) * 100).toFixed(1) : '0.0';
   }, [rangeHistory, completedRangeHistory]);
 
-  // comissões e resumo por profissional
+  // comissões e resumo por profissional (apenas concluídos)
   const commissionsForClinic = useMemo(() =>
-    completedRangeHistory.reduce((s, h) => s + (Number(h.price)||0) * ((Number(h.clinicPercentage)||0)/100), 0)
+    completedRangeHistory.reduce((s, h) => s + (Number((h as any).price)||0) * ((Number((h as any).clinicPercentage)||0)/100), 0)
   , [completedRangeHistory]);
 
   const professionalReports = useMemo(() => {
@@ -733,7 +749,7 @@ const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
     }));
   }, [completedRangeHistory, professionals]);
 
-  // pacientes agregados
+  // pacientes agregados (para modal/lista)
   const patientsAgg: PatientAgg[] = useMemo(() => {
     const map = new Map<string, PatientAgg>();
     for (const h of rangeHistory) {
@@ -837,7 +853,7 @@ const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
         setRangeMode={setRangeMode}
         from={from} to={to}
         setFrom={setFrom} setTo={setTo}
-        revenue={totalRevenue}
+        revenue={grossBilling}            // mostra Faturamento Bruto
         expenses={totalExpenses}
         marginPct={profitMargin}
         onPdf={handleExportPdf}
@@ -850,7 +866,7 @@ const { revenue: totalRevenue, expenses: totalExpenses } = useMemo(() => {
         </button>
       </div>
 
-      {/* CARDS – sem repetir Receita/Despesas/Margem (estão no Hero) */}
+      {/* CARDS */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 mb-8">
         <GlassStatCard
           title="Atendimentos no Período"
