@@ -226,16 +226,38 @@ const Finance: React.FC = () => {
   const [dateFrom, setDateFrom] = useState<string>(isoLocalDate());
   const [dateTo, setDateTo] = useState<string>(isoLocalDate());
 
+  // ✅ filtro "Não pagos"
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const unpaidCount = useMemo(
+    () => transactions.filter(t => t.type === 'income' && ((t.status ?? 'pending') !== 'paid')).length,
+    [transactions]
+  );
+  const toggleUnpaidOnly = () => {
+    setUnpaidOnly((v) => {
+      const nv = !v;
+      // se ativar e estiver em "Despesas", muda para "Receitas"
+      if (nv && txFilter === 'expense') setTxFilter('income');
+      return nv;
+    });
+  };
+
   const visibleTxs = useMemo(() => {
     let base = [...transactions];
+
     if (txFilter !== 'all') base = base.filter((t) => t.type === txFilter);
+
+    // 🔎 aplica filtro de não pagos (apenas receitas pendentes)
+    if (unpaidOnly) {
+      base = base.filter((t) => t.type === 'income' && ((t.status ?? 'pending') !== 'paid'));
+    }
+
     if (customEnabled) {
       const min = new Date(`${dateFrom}T00:00:00`).getTime();
       const max = new Date(`${dateTo}T23:59:59`).getTime();
       base = base.filter((t) => { const tt = parseBrDate(t.date); return tt >= min && tt <= max; });
     }
     return base;
-  }, [transactions, txFilter, customEnabled, dateFrom, dateTo]);
+  }, [transactions, txFilter, customEnabled, dateFrom, dateTo, unpaidOnly]);
 
   /* Helpers do card */
   const extractProfessional = (t: any): string | undefined => {
@@ -472,6 +494,25 @@ const Finance: React.FC = () => {
               <span className="inline-flex items-center gap-2">
                 <Filter className="w-4 h-4" />
                 Personalizado
+              </span>
+            </button>
+
+            {/* ✅ Não pagos */}
+            <button
+              onClick={toggleUnpaidOnly}
+              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                unpaidOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 border-gray-200'
+              }`}
+              title="Mostrar apenas recebimentos pendentes"
+            >
+              <span className="inline-flex items-center gap-2">
+                Não pagos
+                {unpaidCount > 0 && !unpaidOnly && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700">{unpaidCount}</span>
+                )}
+                {unpaidOnly && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/30 text-white/90">{unpaidCount}</span>
+                )}
               </span>
             </button>
 
