@@ -1,3 +1,4 @@
+// src/pages/Schedule.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, History } from 'lucide-react';
 import { UserPlus } from 'lucide-react';
@@ -14,13 +15,12 @@ import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
 import KanbanAgenda from '../components/Schedule/KanbanAgenda';
 
-// ===== helpers de data/hora (fuso LOCAL) =====
+/* ===== Helpers (datas no fuso LOCAL) ===== */
 const localISODate = (d = new Date()) => {
   const dd = new Date(d);
   dd.setMinutes(dd.getMinutes() - dd.getTimezoneOffset());
   return dd.toISOString().slice(0, 10);
 };
-
 const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
   const [hh, mm] = timeHHMM.split(':').map(Number);
   const d = new Date(`${dateISO}T00:00:00`);
@@ -28,9 +28,8 @@ const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
   return d;
 };
 
+/* Ordenações */
 type SlotLite = Pick<AppointmentSlot, 'date' | 'startTime' | 'endTime'> & { id: string };
-
-// ordenação
 const sortSlotsByTime = (a: SlotLite, b: SlotLite) => {
   const now = new Date();
   const ta = toLocalDateTime(a.date, a.startTime);
@@ -42,12 +41,13 @@ const sortSlotsByTime = (a: SlotLite, b: SlotLite) => {
 const sortJourneysByDateTime = (a: AppointmentJourney, b: AppointmentJourney) => {
   const ta = toLocalDateTime(a.date, a.startTime);
   const tb = toLocalDateTime(b.date, b.startTime);
-  const aPast = ta < new Date(), bPast = tb < new Date();
+  const now = new Date();
+  const aPast = ta < now, bPast = tb < now;
   if (aPast !== bPast) return aPast ? 1 : -1;
   return ta.getTime() - tb.getTime();
 };
 
-// filtros vindos do dashboard
+/* Filtros vindos do Dashboard */
 const statusVisibleDefault = (status?: string) => {
   const s = (status || '').toLowerCase();
   return s === 'disponivel' || s === 'available' || s === 'agendado' || s === 'em_andamento';
@@ -66,8 +66,9 @@ function startEndOfThisWeek() {
   return { start, end };
 }
 
+/* =========================== Página =========================== */
 const Schedule: React.FC = () => {
-  // modais
+  // Modais e seleções
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -77,7 +78,6 @@ const Schedule: React.FC = () => {
 
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
   const [selectedJourney, setSelectedJourney] = useState<AppointmentJourney | null>(null);
-
   const [finishingSlot, setFinishingSlot] = useState<string | null>(null);
 
   const {
@@ -88,7 +88,7 @@ const Schedule: React.FC = () => {
 
   const { professionals } = useProfessionals();
 
-  // filtro vindo do Dashboard
+  // Filtro vindo do Dashboard (Hoje/Semana)
   const [dashboardFilter, setDashboardFilter] = useState<'today' | 'week' | null>(null);
   useEffect(() => {
     const handler = (e: Event) => {
@@ -112,7 +112,7 @@ const Schedule: React.FC = () => {
   startTomorrow.setHours(0, 0, 0, 0);
   startTomorrow.setDate(startTomorrow.getDate() + 1);
 
-  // slots visíveis conforme filtro
+  // Slots visíveis conforme filtro geral
   const filteredSlots = useMemo(() => {
     if (!Array.isArray(slots)) return [];
     const base = (dashboardFilter === 'today' || dashboardFilter === 'week')
@@ -131,13 +131,13 @@ const Schedule: React.FC = () => {
     return base;
   }, [slots, dashboardFilter, todayStr, end]);
 
-  // jornadas que têm slots visíveis
+  // Jornadas que têm slots visíveis
   const visibleJourneys = useMemo(() => {
     const ids = new Set(filteredSlots.map(s => s.journeyId));
     return [...journeys].filter(j => ids.has(j.id)).sort(sortJourneysByDateTime);
   }, [journeys, filteredSlots]);
 
-  // ações
+  /* ===== Ações ===== */
   const handleEditJourney = (journeyId: string) => {
     const j = journeys.find(x => x.id === journeyId);
     if (j) { setSelectedJourney(j); setIsEditModalOpen(true); }
@@ -194,8 +194,8 @@ const Schedule: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* Cabeçalho (sem seletor) */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Cabeçalho com botões (SEM barra de busca/datas aqui) */}
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
         <div className="flex space-x-3">
           <button
@@ -222,7 +222,7 @@ const Schedule: React.FC = () => {
         </div>
       </div>
 
-      {/* === KANBAN por registro/seção === */}
+      {/* ÚNICO componente com busca + datas + agrupamento por registro */}
       <KanbanAgenda
         professionals={professionals as any}
         journeys={visibleJourneys}
@@ -245,7 +245,6 @@ const Schedule: React.FC = () => {
         onCreate={createJourney}
         professionals={professionals}
       />
-
       <EditJourneyModal
         isOpen={isEditModalOpen}
         onClose={() => { setIsEditModalOpen(false); setSelectedJourney(null); }}
@@ -253,7 +252,6 @@ const Schedule: React.FC = () => {
         journey={selectedJourney}
         professionals={professionals}
       />
-
       <SchedulePatientModal
         isOpen={isScheduleModalOpen}
         onClose={() => { setIsScheduleModalOpen(false); setSelectedSlot(null); }}
@@ -261,7 +259,6 @@ const Schedule: React.FC = () => {
         slot={selectedSlot}
         patients={patients}
       />
-
       <EditPatientModal
         isOpen={isEditPatientModalOpen}
         onClose={() => { setIsEditPatientModalOpen(false); setSelectedSlot(null); }}
@@ -269,12 +266,10 @@ const Schedule: React.FC = () => {
         slot={selectedSlot}
         patients={patients}
       />
-
       <AppointmentHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
       />
-
       <AddPatientModal
         isOpen={isAddPatientOpen}
         onClose={() => setIsAddPatientOpen(false)}
