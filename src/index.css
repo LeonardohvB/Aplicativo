@@ -125,6 +125,19 @@ body::before {
   pointer-events: none;
 }
 
+/* esconde scrollbars em todos os navegadores */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none;    /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;            /* Chrome/Safari */
+  background: transparent;
+}
+
+
 /* (opcional) se quiser uniformizar também a bottom safe area:
 body::after {
   content: "";

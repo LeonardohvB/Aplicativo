@@ -73,6 +73,9 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
   const [found, setFound] = useState<null | { name: string; phone?: string }>(null);
   const [searching, setSearching] = useState(false);
 
+  // <<< NOVO: modalidade (presencial/online)
+  const [modality, setModality] = useState<'local' | 'online'>('local');
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shake, setShake] = useState(false);
 
@@ -91,7 +94,12 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
     setErrors({});
     setShake(false);
 
+    // serviço padrão do slot
     setService(slot?.service || 'Consulta');
+
+    // modalidade padrão: tenta inferir do serviço do slot
+    const svc = String(slot?.service || '').toLowerCase();
+    setModality(/online|on-line|vídeo|video|remoto/.test(svc) ? 'online' : 'local');
   }, [isOpen, slot?.id]);
 
   // limpa o timer quando o componente desmontar
@@ -170,15 +178,19 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
       return;
     }
 
-    // ✅ Narrowing explícito
     if (!slot) return;
 
     const { id, price } = slot;
 
+    // normaliza o texto do serviço removendo sufixos antigos e acrescentando a modalidade
+    const cleaned = service.replace(/\s*\((online|local)\)\s*$/i, '').trim();
+    const serviceWithMode =
+      modality === 'online' ? `${cleaned} (online)` : `${cleaned} (local)`;
+
     onSchedule(id, {
       patientName: patientName.trim(),
       patientPhone: onlyDigits(patientPhone),
-      service: service.trim(),
+      service: serviceWithMode, // <<< aqui vai a modalidade embutida
       price,
       notes: notes.trim() || undefined,
     });
@@ -187,18 +199,22 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
     setCPF(''); setPatientName(''); setPatientPhone(''); setNotes(''); setFound(null);
   }
 
+  // helpers visuais
+  const hh = (slot.startTime || '').slice(0, 5);
+  const he = (slot.endTime || '').slice(0, 5);
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className={`bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto ${shake ? 'animate-shake' : ''}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900">Agendar Paciente</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100" aria-label="Fechar">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="mb-4 rounded-lg bg-indigo-50 text-indigo-700 text-sm px-3 py-2 font-medium">
-          Horário: {slot.startTime} - {slot.endTime}
+          Horário: {hh} - {he}
         </div>
 
         <form onSubmit={submit} className="space-y-4">
@@ -276,6 +292,41 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
               aria-invalid={!!errors.service}
             />
             {errors.service && <p className="mt-1 text-xs text-red-600">{errors.service}</p>}
+          </div>
+
+          {/* <<< NOVO: Modalidade */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Modalidade</label>
+            <div className="flex gap-2">
+              <label className={`flex-1 cursor-pointer select-none rounded-xl border px-3 py-2 text-sm ${modality === 'local' ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+                <input
+                  type="radio"
+                  name="modality"
+                  className="hidden"
+                  checked={modality === 'local'}
+                  onChange={() => setModality('local')}
+                />
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-gray-600">📍</span> Presencial
+                </span>
+              </label>
+
+              <label className={`flex-1 cursor-pointer select-none rounded-xl border px-3 py-2 text-sm ${modality === 'online' ? 'border-sky-300 bg-sky-50' : 'border-gray-200 bg-white'}`}>
+                <input
+                  type="radio"
+                  name="modality"
+                  className="hidden"
+                  checked={modality === 'online'}
+                  onChange={() => setModality('online')}
+                />
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-gray-600">🎥</span> Online
+                </span>
+              </label>
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500">
+              Se escolher <b>Online</b>, o cartão do horário mostrará o ícone de câmera.
+            </p>
           </div>
 
           {/* Observações */}

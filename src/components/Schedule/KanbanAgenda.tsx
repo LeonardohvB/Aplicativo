@@ -1,9 +1,21 @@
 // src/components/Schedule/KanbanAgenda.tsx
-import React, { useMemo, useState } from 'react';
-import { Edit2 as Edit, Trash2 } from 'lucide-react';
-import SlotCard from './SlotCard';
+import React, { useMemo, useState, useEffect } from 'react';
+import {
+  Edit2 as Edit,
+  Trash2,
+  MapPin,
+  BadgeCheck,
+  Star,
+  Video,
+  Clock,
+  Play as StartIcon,
+  StopCircle as StopIcon,
+  XCircle as CancelIcon,
+  Phone,
+} from 'lucide-react';
 import { AppointmentSlot, AppointmentJourney } from '../../types';
 
+/* ======================= Tipos utilitários ======================= */
 type Pro = {
   id: string;
   name: string;
@@ -14,173 +26,447 @@ type Pro = {
   document?: string;
   documentType?: string;
   reg_type?: string;
+  avatarUrl?: string;
+  photoUrl?: string;
+  address?: string;
+  rating?: number;
+  reviewsCount?: number;
 };
 
+type Maybe<T> = T | undefined | null;
+
+/* ======================= Helpers ======================= */
 const toLocalISO = (d: Date) => {
   const x = new Date(d);
   x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
   return x.toISOString().slice(0, 10);
 };
-const fmtDateLong = (iso: string) =>
-  new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+const normISO = (s?: string) => String(s || '').slice(0, 10);
 
-/* =================== Categorização =================== */
-const REGISTRY_CATEGORY: Record<string, { label: string; order: number }> = {
-  CRM: { label: 'Médicos', order: 1 },
-  CRP: { label: 'Psicólogos', order: 2 },
-  CRO: { label: 'Dentistas', order: 3 },
-  COREN: { label: 'Enfermeiros', order: 4 },
-  CREFITO: { label: 'Fisioterapeutas / TO', order: 5 },
-  CRF: { label: 'Farmacêuticos', order: 6 },
-  CRFA: { label: 'Fonoaudiólogos', order: 7 },
-  CRN: { label: 'Nutricionistas', order: 8 },
-  CREF: { label: 'Prof. Ed. Física', order: 9 },
-  CRESS: { label: 'Assistentes Sociais', order: 10 },
-  CREA: { label: 'Engenharia (CREA)', order: 99 },
+const fmtDateLong = (iso: string) => {
+  try {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+  } catch {
+    return iso;
+  }
 };
 
-const KNOWN_CODES = Object.keys(REGISTRY_CATEGORY);
+const isHHMM = (s?: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s || ''));
+const safeHHMM = (s?: string, fb = '00:00') => (isHHMM(s) ? String(s) : fb);
+const hhmmToMin = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+const hhmmToMinSafe = (hhmm?: string, fb = 0) =>
+  (isHHMM(hhmm) ? hhmmToMin(String(hhmm)) : fb);
 
-/** extrai só a sigla (ex.: "CRP" de "CRP - 26465 / SP") */
-function normalizeSigla(input?: string): string | undefined {
-  if (!input) return undefined;
-  const m = input.toUpperCase().match(/[A-Z]+/);
-  return m?.[0];
-}
+const SOON_BEFORE_MIN = 20;
+const SOON_AFTER_MIN = 10;
 
-/** tenta achar a sigla varrendo todos os campos string do profissional */
-function getRegistrySigla(pro?: Pro): string | undefined {
-  if (!pro) return undefined;
+const onlyDigits = (v?: string) => String(v || '').replace(/\D+/g, '');
+const maskCPF = (v?: string) => {
+  const d = onlyDigits(v).slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+};
+const maskPhone = (v?: string) => {
+  const d = onlyDigits(v).slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  if (d.length <= 3) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
+};
 
-  // 1) candidatos diretos
-  const directCandidates = [
-    pro.registrationType,
-    pro.registryType,
-    pro.reg_type,
-    pro.documentType,
-    pro.document,
-    pro.registration,
-  ]
-    .map(normalizeSigla)
-    .filter(Boolean) as string[];
-
-  for (const sig of directCandidates) {
-    if (KNOWN_CODES.includes(sig)) return sig;
-  }
-
-  // 2) varre quaisquer campos string do objeto
-  for (const [, v] of Object.entries(pro)) {
-    if (typeof v === 'string') {
-      const sig = normalizeSigla(v);
-      if (sig && KNOWN_CODES.includes(sig)) return sig;
-    }
-  }
-
-  return undefined;
-}
-
-function typeToCategory(sigla?: string, specialty?: string): { key: string; label: string } {
-  if (sigla && REGISTRY_CATEGORY[sigla]) {
-    return { key: sigla, label: REGISTRY_CATEGORY[sigla].label };
-  }
-
+/* Categoria por registro */
+function typeToCategory(
+  raw?: string,
+  specialty?: string
+): { key: string; label: string } {
+  const s = (raw || '').toUpperCase().trim();
+  const direct: Record<string, string> = {
+    CRM: 'Médicos',
+    CRP: 'Psicólogos',
+    COREN: 'Enfermeiros',
+    CREFITO: 'Fisioterapeutas',
+    CRO: 'Dentistas',
+    CRF: 'Farmacêuticos',
+    CRN: 'Nutricionistas',
+    CRESS: 'Assistentes Sociais',
+    CREF: 'Prof. Ed. Física',
+    CREA: 'Engenharia',
+  };
+  if (direct[s]) return { key: s, label: direct[s] };
   const sp = (specialty || '').toLowerCase();
-  if (/psicol/.test(sp)) return { key: 'CRP', label: REGISTRY_CATEGORY.CRP.label };
-  if (/m[eé]dic/.test(sp)) return { key: 'CRM', label: REGISTRY_CATEGORY.CRM.label };
-  if (/odont|dent/.test(sp)) return { key: 'CRO', label: REGISTRY_CATEGORY.CRO.label };
-  if (/enferm/.test(sp)) return { key: 'COREN', label: REGISTRY_CATEGORY.COREN.label };
-  if (/fisiot|terapia ocup/.test(sp)) return { key: 'CREFITO', label: REGISTRY_CATEGORY.CREFITO.label };
-  if (/farmac/.test(sp)) return { key: 'CRF', label: REGISTRY_CATEGORY.CRF.label };
-  if (/fono/.test(sp)) return { key: 'CRFA', label: REGISTRY_CATEGORY.CRFA.label };
-  if (/nutric/.test(sp)) return { key: 'CRN', label: REGISTRY_CATEGORY.CRN.label };
-  if (/educa(ç|c)[aã]o f(í|i)s|ed\.?\s*f(í|i)s/.test(sp)) return { key: 'CREF', label: REGISTRY_CATEGORY.CREF.label };
-  if (/servi[cç]o social|assistente social/.test(sp))
-    return { key: 'CRESS', label: REGISTRY_CATEGORY.CRESS.label };
-
+  if (/psicol/.test(sp)) return { key: 'CRP', label: 'Psicólogos' };
+  if (/m[eé]dic/.test(sp)) return { key: 'CRM', label: 'Médicos' };
   return { key: 'OUTROS', label: 'Outros Profissionais' };
 }
-
 function resolveCategory(pro?: Pro): { key: string; label: string } {
   if (!pro) return { key: 'OUTROS', label: 'Outros Profissionais' };
-  const sigla = getRegistrySigla(pro);
-  return typeToCategory(sigla, pro.specialty);
+  const guess =
+    pro.registrationType ||
+    pro.registryType ||
+    pro.reg_type ||
+    pro.documentType ||
+    pro.document ||
+    pro.registration;
+  return typeToCategory(guess, pro.specialty);
 }
 
-/* =================== Toolbar (busca + dias) =================== */
+/* ======================= Toolbar ======================= */
 type ToolbarProps = {
   query: string;
   onQueryChange: (q: string) => void;
   activeDay: string;
   onDayChange: (d: string) => void;
   days: string[];
+  prosCount: number;
 };
-const Toolbar: React.FC<ToolbarProps> = ({ query, onQueryChange, activeDay, onDayChange, days }) => {
-  return (
-    <div className="mb-4 space-y-3">
+const Toolbar: React.FC<ToolbarProps> = ({
+  query,
+  onQueryChange,
+  activeDay,
+  onDayChange,
+  days,
+  prosCount,
+}) => (
+  <div className="mb-4 space-y-3">
+    <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+      <span className="text-gray-400">🔎</span>
       <input
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
-        placeholder="Buscar profissional ou especialidade..."
-        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Buscar psicólogo..."
+        className="w-full bg-transparent text-[15px] outline-none placeholder:text-gray-400"
       />
-      <div className="flex gap-2 overflow-x-auto no-scrollbar">
-        {days.map((d) => {
-          const dt = new Date(`${d}T12:00:00`);
-          const wd = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
-          const dd = String(dt.getDate()).padStart(2, '0');
-          return (
+    </div>
+    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+      {days.map((d) => {
+        const dt = new Date(`${d}T12:00:00`);
+        const wd = dt
+          .toLocaleDateString('pt-BR', { weekday: 'short' })
+          .replace('.', '');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const active = d === activeDay;
+        return (
+          <button
+            key={d}
+            onClick={() => onDayChange(d)}
+            className={[
+              'min-w-[66px] rounded-2xl px-3 py-2 text-center border shadow-sm transition-colors',
+              active
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50',
+            ].join(' ')}
+          >
+            <div className="text-[11px] opacity-90">{wd}</div>
+            <div className="text-[15px] font-semibold leading-none">{dd}</div>
+          </button>
+        );
+      })}
+    </div>
+    <div className="text-sm text-gray-500">
+      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} disponível
+      {prosCount === 1 ? '' : 'is'}
+    </div>
+  </div>
+);
+
+/* ======================= Slot Card ======================= */
+type MiniSlotProps = {
+  slot: AppointmentSlot;
+  isPast: boolean;
+  isSoon: boolean;
+  isRunning: boolean;
+  elapsedMin?: number;
+  onSchedule: (slotId: string) => void;
+  onEdit: (slotId: string) => void;
+  onStart?: (slotId: string) => void;
+  onFinish: (slotId: string) => void;
+  onCancel?: (slotId: string) => void;
+  onNoShow?: (slotId: string) => void;
+  onDelete: () => void;
+};
+
+const MiniSlotCard: React.FC<MiniSlotProps> = ({
+  slot,
+  isPast,
+  isSoon,
+  isRunning,
+  elapsedMin,
+  onSchedule,
+  onEdit,
+  onStart,
+  onFinish,
+  onCancel,
+  onDelete,
+}) => {
+  const st = String(slot?.status || '').toLowerCase();
+  const startTime = safeHHMM(slot?.startTime, '00:00');
+  const endTime = safeHHMM(slot?.endTime, startTime);
+  const mins = Math.max(15, hhmmToMinSafe(endTime) - hhmmToMinSafe(startTime));
+
+  const isAvailable = st === 'disponivel' || st === 'available' || st === '';
+  const isEditing = st === 'agendado';
+
+  // dados do paciente (múltiplas formas)
+  const patientObj: Maybe<{ name?: string; cpf?: string; phone?: string }> =
+    (slot as any)?.patient || null;
+  const patientName =
+    (slot as any)?.patientName ||
+    patientObj?.name ||
+    (slot as any)?.patient_name ||
+    '';
+  const patientCPF =
+    (slot as any)?.patientCPF ||
+    (slot as any)?.patient_cpf ||
+    patientObj?.cpf ||
+    '';
+  const patientPhone =
+    (slot as any)?.patientPhone ||
+    (slot as any)?.patient_phone ||
+    patientObj?.phone ||
+    '';
+
+  // largura/altura
+  const wClass = isEditing || isRunning ? 'w-[260px]' : 'w-[144px]';
+  const cardH = isEditing || isRunning ? 'h-[136px]' : 'h-[116px]';
+
+  // clique
+  let onCardClick: (() => void) | undefined;
+  if (!isPast && !isRunning) {
+    if (isAvailable) onCardClick = () => onSchedule(slot.id);
+    else if (isEditing) onCardClick = () => onEdit(slot.id);
+  }
+  const CardWrapper: any = onCardClick ? 'button' : 'div';
+
+  // modo remoto/local
+  const isRemote = /online|on-line|tele|vídeo|video|remoto/i.test(
+    String(slot?.service || '')
+  );
+  const ModeIcon = isRemote ? Video : MapPin;
+
+  // estilos por estado
+  const stateBorder = isRunning
+    ? 'border-sky-300'
+    : isPast
+    ? 'border-gray-200'
+    : isEditing
+    ? 'border-emerald-300'
+    : 'border-emerald-300';
+  const stateBg = isRunning
+    ? 'bg-sky-50'
+    : isPast
+    ? 'bg-gray-100'
+    : isEditing
+    ? 'bg-emerald-50'
+    : 'bg-emerald-50';
+
+  return (
+    <div className={`snap-start flex-shrink-0 ${wClass}`}>
+      <CardWrapper
+        onClick={onCardClick}
+        className={[
+          'relative rounded-xl border px-3 py-2 transition w-full text-left',
+          cardH,
+          stateBg,
+          stateBorder,
+          onCardClick ? 'hover:shadow-sm' : 'opacity-90',
+          'focus-visible:outline-none focus-visible:ring-0',
+          isPast && !onCardClick ? 'cursor-not-allowed' : '',
+        ].join(' ')}
+        aria-label="slot"
+      >
+        {/* header: modo + hora */}
+        <div className="absolute left-2 top-2 text-gray-700">
+          <ModeIcon className="w-3.5 h-3.5" />
+        </div>
+        <div className="absolute right-2 top-2 text-[11px] text-gray-600 flex items-center gap-1 tabular-nums">
+          <Clock className="w-3.5 h-3.5" />
+          {startTime}
+        </div>
+
+        {/* corpo */}
+        <div
+          className={`h-full ${
+            isEditing || isRunning ? 'pt-2 pb-8' : 'pt-4 pb-7'
+          } flex flex-col items-stretch justify-center`}
+        >
+          {/* Disponível → mostra somente preço */}
+          {isAvailable && !isRunning && (
+            <div className="text-center">
+              <div className="text-[16px] font-semibold leading-none text-gray-900 tabular-nums">
+                {/* preço visível somente quando disponível */}
+                {(Number(slot?.price) || 0).toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                  maximumFractionDigits: 0,
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Agendado ou Em andamento → mostra paciente e (se em andamento) CPF/Telefone */}
+          {!isAvailable && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 px-2 py-[4px] rounded-lg bg-white/70 border border-emerald-200 overflow-hidden">
+                <span className="text-[12px] text-gray-600 shrink-0">Paciente:</span>
+                <span
+                  className="text-[12px] font-medium text-gray-800 truncate"
+                  title={patientName}
+                >
+                  {patientName || '—'}
+                </span>
+              </div>
+
+              {isRunning && (
+                <div className="grid grid-cols-1 gap-1">
+                  <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
+                    
+                    <span className="text-[12px] text-gray-700 truncate">
+                      CPF: {maskCPF(patientCPF) || '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
+                    <Phone className="w-3.5 h-3.5 text-gray-600" />
+                    <span className="text-[12px] text-gray-700 truncate">
+                      {maskPhone(patientPhone) || '—'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* rodapé: duração / cronômetro */}
+        {!isRunning ? (
+          <div className="absolute bottom-2 left-2 text-[10px] text-gray-600 tabular-nums">
+            {mins}min
+          </div>
+        ) : (
+          <div className="absolute bottom-2 left-2 px-2 py-[2px] rounded-full text-[10px] font-semibold text-sky-800 bg-sky-100 border border-sky-200">
+            ⏱ {Math.max(0, elapsedMin ?? 0)}min
+          </div>
+        )}
+
+        {/* ações no card */}
+        {isRunning && (
+          <div className="absolute bottom-1 right-1">
             <button
-              key={d}
-              onClick={() => onDayChange(d)}
-              className={[
-                'min-w-[64px] rounded-xl px-3 py-2 text-center border',
-                d === activeDay ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-800 border-gray-200',
-              ].join(' ')}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onFinish(slot.id);
+              }}
+              className="px-2 py-[4px] rounded-full border border-sky-300 text-sky-700 bg-white hover:bg-sky-50 text-[11px] font-medium"
+              title="Finalizar consulta"
             >
-              <div className="text-[11px] opacity-90">{wd}</div>
-              <div className="text-base font-semibold">{dd}</div>
+              <span className="inline-flex items-center gap-1">
+                <StopIcon className="w-3.5 h-3.5" /> Finalizar
+              </span>
             </button>
-          );
-        })}
-      </div>
+          </div>
+        )}
+
+        {/* ações pequenas (editar/excluir) para horários livres/passados */}
+        {!isRunning && isAvailable && (
+          <div className="absolute bottom-1 right-1 flex gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(slot.id);
+              }}
+              className="p-1 rounded-full border border-blue-200 text-blue-600 hover:bg-blue-50"
+              title="Editar horário"
+              aria-label="Editar"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1 rounded-full border border-red-200 text-red-600 hover:bg-red-50"
+              title="Excluir horário"
+              aria-label="Excluir"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </CardWrapper>
+
+      {/* ações abaixo do card (apenas quando agendado e ainda não iniciado) */}
+      {!isRunning && !isAvailable && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => (onStart ?? onEdit)(slot.id)}
+            disabled={!isSoon}
+            className={[
+              'px-3 py-2 rounded-full text-[12px] font-medium border inline-flex items-center justify-center gap-1',
+              isSoon
+                ? 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed',
+            ].join(' ')}
+            title={isSoon ? 'Começar consulta' : 'Disponível 20min antes'}
+          >
+            <StartIcon className="w-4 h-4" /> Começar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => (onCancel ? onCancel(slot.id) : onDelete())}
+            className="px-3 py-2 rounded-full text-[12px] font-medium border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 inline-flex items-center justify-center gap-1"
+            title="Cancelar agendamento"
+          >
+            <CancelIcon className="w-4 h-4" /> Cancelar
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
-/* =================== Componente principal =================== */
+/* ======================= Kanban ======================= */
 type Props = {
-  professionals: Pro[];
-  journeys: AppointmentJourney[];
-  slots: AppointmentSlot[];
-
+  professionals?: Pro[];
+  journeys?: AppointmentJourney[];
+  slots?: AppointmentSlot[];
   onSchedulePatient: (slotId: string) => void;
   onEditPatient: (slotId: string) => void;
-  onStartAppointment: (slotId: string) => void;
   onFinishAppointment: (slotId: string) => void;
-  onCancel: (slotId: string) => void;
-  onNoShow: (slotId: string) => void;
-
+  onStartAppointment?: (slotId: string) => void;
+  onCancel?: (slotId: string) => void;
+  onNoShow?: (slotId: string) => void;
   onEditJourney: (journeyId: string) => void;
   onDeleteJourney: (journeyId: string) => void;
-
-  sortSlotsByTime: (
+  sortSlotsByTime?: (
     a: { id: string; date: string; startTime: string; endTime: string },
     b: { id: string; date: string; startTime: string; endTime: string }
   ) => number;
 };
 
 const KanbanAgenda: React.FC<Props> = ({
-  professionals,
-  journeys,
-  slots,
+  professionals = [],
+  journeys = [],
+  slots = [],
   onSchedulePatient,
   onEditPatient,
-  onStartAppointment,
   onFinishAppointment,
+  onStartAppointment,
   onCancel,
   onNoShow,
   onEditJourney,
@@ -188,34 +474,69 @@ const KanbanAgenda: React.FC<Props> = ({
   sortSlotsByTime,
 }) => {
   const [query, setQuery] = useState('');
-  const today = toLocalISO(new Date());
-  const days = useMemo(() => {
+  const [todayISO, setTodayISO] = useState<string>('');
+  const [nowMin, setNowMin] = useState<number>(0);
+  const [days, setDays] = useState<string[]>([]);
+  const [activeDay, setActiveDay] = useState<string>('');
+  const [, setTick] = useState<number>(Date.now());
+
+  // startedAt local para mostrar cronômetro imediatamente
+  const [startedAtMap, setStartedAtMap] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const now = new Date();
+    const today = toLocalISO(now);
+    setTodayISO(today);
+    setNowMin(
+      hhmmToMin(
+        `${String(now.getHours()).padStart(2, '0')}:${String(
+          now.getMinutes()
+        ).padStart(2, '0')}`
+      )
+    );
     const arr: string[] = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
       arr.push(toLocalISO(d));
     }
-    return arr;
+    setDays(arr);
+    setActiveDay((prev) => prev || today);
   }, []);
-  const [activeDay, setActiveDay] = useState<string>(today);
+
+  // atualiza a cada 30s para cronômetro
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const defaultSort =
+    sortSlotsByTime ||
+    ((a, b) => {
+      const da = normISO(a.date);
+      const db = normISO(b.date);
+      if (da !== db) return da.localeCompare(db);
+      return hhmmToMinSafe(a.startTime) - hhmmToMinSafe(b.startTime);
+    });
 
   const proById = useMemo(() => {
     const m = new Map<string, Pro>();
-    professionals.forEach((p) => m.set(p.id, p));
+    professionals.forEach((p) => p?.id && m.set(p.id, p));
     return m;
   }, [professionals]);
 
   const jById = useMemo(() => {
     const m = new Map<string, AppointmentJourney>();
-    journeys.forEach((j) => m.set(j.id, j));
+    journeys.forEach((j) => j?.id && m.set(j.id, j));
     return m;
   }, [journeys]);
 
   const daySlots = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    if (!activeDay) return [] as AppointmentSlot[];
+    const q = query.trim().toLowerCase();
+
     const filterByQuery = (p?: Pro) => {
-      if (!normalizedQuery) return true;
+      if (!q) return true;
       const hay = [
         p?.name ?? '',
         p?.specialty ?? '',
@@ -229,123 +550,272 @@ const KanbanAgenda: React.FC<Props> = ({
       ]
         .join(' ')
         .toLowerCase();
-      return hay.includes(normalizedQuery);
+      return hay.includes(q);
     };
 
-    return slots
-      .filter((s) => s.date === activeDay)
-      .filter((s) => filterByQuery(proById.get(jById.get(s.journeyId || '')?.professionalId || '')))
-      .sort(sortSlotsByTime);
-  }, [slots, activeDay, query, proById, jById, sortSlotsByTime]);
+    return (slots || [])
+      .filter((s) => normISO(s?.date) === activeDay)
+      .filter((s) => {
+        const proId =
+          jById.get(String(s?.journeyId || ''))?.professionalId || '';
+        return filterByQuery(proById.get(proId));
+      })
+      .sort(defaultSort);
+  }, [slots, activeDay, query, proById, jById, defaultSort]);
 
   const sections = useMemo(() => {
-    type SlotGroup = { pro: Pro | undefined; journey: AppointmentJourney | undefined; slots: AppointmentSlot[] };
+    type SlotGroup = {
+      pro?: Pro;
+      journey?: AppointmentJourney;
+      slots: AppointmentSlot[];
+    };
     const byPro = new Map<string, SlotGroup>();
-
     for (const s of daySlots) {
-      const j = jById.get(s.journeyId || '');
+      const j = jById.get(String(s?.journeyId || ''));
       const pid = j?.professionalId || '';
       const key = pid || `__np__:${j?.id || s.id}`;
-      if (!byPro.has(key)) byPro.set(key, { pro: proById.get(pid), journey: j, slots: [] });
+      if (!byPro.has(key))
+        byPro.set(key, { pro: proById.get(pid), journey: j, slots: [] });
       byPro.get(key)!.slots.push(s);
     }
-
     const byCat = new Map<string, { label: string; items: SlotGroup[] }>();
-    for (const g of byPro.values()) {
-      const cat = resolveCategory(g.pro);
-      if (!byCat.has(cat.key)) byCat.set(cat.key, { label: cat.label, items: [] });
-      byCat.get(cat.key)!.items.push(g);
+    for (const group of byPro.values()) {
+      const cat = resolveCategory(group.pro);
+      const entry = byCat.get(cat.key) ?? { label: cat.label, items: [] };
+      entry.items.push(group);
+      byCat.set(cat.key, entry);
     }
-
-    for (const v of byCat.values()) {
-      v.items.sort((a, b) => (a.pro?.name || '').localeCompare(b.pro?.name || '', 'pt-BR'));
-      v.items.forEach((it) => it.slots.sort(sortSlotsByTime));
+    for (const entry of byCat.values()) {
+      entry.items.sort((a, b) =>
+        (a.pro?.name || '').localeCompare(b.pro?.name || '', 'pt-BR')
+      );
+      entry.items.forEach((it) => it.slots.sort(defaultSort));
     }
-
+    const order = ['CRP', 'CRM'];
     return Array.from(byCat.entries())
       .sort((a, b) => {
-        const aOrder = REGISTRY_CATEGORY[a[0]]?.order ?? 1000;
-        const bOrder = REGISTRY_CATEGORY[b[0]]?.order ?? 1000;
-        if (aOrder !== bOrder) return aOrder - bOrder;
-        const aLabel = REGISTRY_CATEGORY[a[0]]?.label ?? a[1].label;
-        const bLabel = REGISTRY_CATEGORY[b[0]]?.label ?? b[1].label;
-        return aLabel.localeCompare(bLabel, 'pt-BR');
+        const ia = order.indexOf(a[0]);
+        const ib = order.indexOf(b[0]);
+        if (ia === -1 && ib === -1)
+          return a[1].label.localeCompare(b[1].label, 'pt-BR');
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
       })
-      .map(([key, val]) => ({
-        key,
-        label: REGISTRY_CATEGORY[key]?.label ?? val.label,
-        groups: val.items,
-      }));
-  }, [daySlots, jById, proById, sortSlotsByTime]);
+      .map(([key, val]) => ({ key, label: val.label, groups: val.items }));
+  }, [daySlots, jById, proById, defaultSort]);
+
+  const prosCountForDay = useMemo(
+    () =>
+      new Set(
+        daySlots
+          .map((s) => jById.get(String(s?.journeyId || ''))?.professionalId)
+          .filter(Boolean)
+      ).size,
+    [daySlots, jById]
+  );
+
+  // start wrapper: grava hora de início localmente para cronômetro
+  const handleStartLocal = (slotId: string) => {
+    setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
+    onStartAppointment?.(slotId);
+  };
+
+  // elapsed para em_andamento
+  const getElapsedMin = (s: AppointmentSlot) => {
+    const apiStarted = (s as any)?.startedAt
+      ? new Date((s as any).startedAt).getTime()
+      : undefined;
+    const localStarted = startedAtMap[s.id];
+    const scheduled = new Date(
+      `${s.date}T${safeHHMM(s.startTime)}:00`
+    ).getTime();
+    const startedTs = apiStarted ?? localStarted ?? scheduled;
+    return Math.floor((Date.now() - startedTs) / 60000);
+  };
 
   return (
-    <div className="space-y-4">
-      <Toolbar query={query} onQueryChange={setQuery} activeDay={activeDay} onDayChange={setActiveDay} days={days} />
+    <div className="space-y-5">
+      <Toolbar
+        query={query}
+        onQueryChange={setQuery}
+        activeDay={activeDay}
+        onDayChange={setActiveDay}
+        days={days}
+        prosCount={prosCountForDay}
+      />
 
       {sections.length === 0 && (
-        <div className="text-center text-gray-500 py-16">Nenhum horário para o dia selecionado.</div>
+        <div className="text-center text-gray-500 py-16">
+          Nenhum horário para o dia selecionado.
+        </div>
       )}
 
       {sections.map((section) => {
         const total = section.groups.reduce((s, g) => s + g.slots.length, 0);
         return (
-          <div key={section.key} className="bg-white border border-gray-100 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="text-gray-900 font-semibold">{section.label}</div>
-                <div className="text-xs text-emerald-700 bg-emerald-50 inline-block px-2 py-0.5 rounded mt-1">
-                  {total} {total === 1 ? 'horário' : 'horários'}
-                </div>
+          <div
+            key={section.key}
+            className="bg-white border border-gray-100 rounded-3xl p-4 shadow-sm"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-gray-900 font-semibold text-[15px]">
+                {section.label}
+              </div>
+              <div className="text-xs text-emerald-700 bg-emerald-50 inline-block px-2 py-0.5 rounded">
+                {total} {total === 1 ? 'horário' : 'horários'}
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-0">
               {section.groups.map((g, idx) => {
                 const pro = g.pro;
                 const j = g.journey;
-                const dateLabel = j ? fmtDateLong(j.date) : fmtDateLong(activeDay);
+                const dateLabel = fmtDateLong(normISO(j?.date) || activeDay);
+                const address = pro?.address;
+
+                const availableCount = g.slots.filter((s) => {
+                  const st = String(s?.status || '').toLowerCase().trim();
+                  return st === '' || st === 'disponivel' || st === 'available';
+                }).length;
+
+                const avatar = pro?.avatarUrl || pro?.photoUrl || undefined;
+                const initials =
+                  (pro?.name || 'P')
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((p) => p[0])
+                    .join('')
+                    .toUpperCase() || 'P';
 
                 return (
-                  <div key={idx} className="rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-gray-900 truncate">{pro?.name || 'Profissional'}</div>
-                        <div className="text-xs text-gray-500">{dateLabel}</div>
+                  <div
+                    key={idx}
+                    className="-mx-4 px-4 py-4 bg-transparent border-t border-gray-100 first:border-t-0"
+                  >
+                    {/* Cabeçalho do profissional */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          {avatar ? (
+                            <img
+                              src={avatar}
+                              alt={pro?.name || 'Profissional'}
+                              className="w-12 h-12 rounded-full object-cover border"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full bg-gray-200 grid place-items-center text-sm font-semibold text-gray-700">
+                              {initials}
+                            </div>
+                          )}
+                          {(pro?.registration ||
+                            pro?.registrationType ||
+                            pro?.registryType ||
+                            pro?.document ||
+                            pro?.documentType) && (
+                            <BadgeCheck className="w-4 h-4 text-emerald-600 absolute -right-1 -bottom-1 bg-white rounded-full" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">
+                            {pro?.name || 'Profissional'}
+                          </div>
+                          {pro?.specialty && (
+                            <div className="text-sm text-gray-700 truncate">
+                              {pro.specialty}
+                            </div>
+                          )}
+                          <div className="text-xs text-gray-500 capitalize truncate">
+                            {dateLabel}
+                          </div>
+                          {(pro?.rating || pro?.reviewsCount) && (
+                            <div className="mt-1 flex items-center gap-1 text-sm text-gray-700">
+                              <Star className="w-4 h-4 text-amber-500" />
+                              <span className="font-medium">
+                                {(pro?.rating ?? 4.9).toFixed(1)}
+                              </span>
+                              {typeof pro?.reviewsCount === 'number' && (
+                                <span className="text-gray-500">
+                                  ({pro.reviewsCount})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {j && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => onEditJourney(j.id)}
-                            className="p-2 rounded-lg text-blue-600 hover:bg-blue-50"
-                            title="Editar jornada"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => onDeleteJourney(j.id)}
-                            className="p-2 rounded-lg text-red-600 hover:bg-red-50"
-                            title="Excluir jornada"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+
+                      {!!availableCount && (
+                        <div className="ml-auto shrink-0 text-[11px] font-semibold text-orange-800 bg-orange-100 border border-orange-200 rounded-full px-2 py-[2px] leading-none whitespace-nowrap">
+                          {availableCount} {availableCount === 1 ? 'vaga' : 'vagas'}
                         </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {g.slots.map((s) => (
-                        <SlotCard
-                          key={s.id}
-                          slot={s}
-                          onSchedulePatient={onSchedulePatient}
-                          onEditPatient={onEditPatient}
-                          onStartAppointment={onStartAppointment}
-                          onFinishAppointment={onFinishAppointment}
-                          onCancelAppointment={onCancel}
-                          onMarkNoShow={onNoShow}
-                        />
-                      ))}
+                    {/* Carrossel de slots */}
+                    <div className="mt-2 -mx-1 overflow-x-auto no-scrollbar">
+                      <div className="flex items-stretch gap-3 px-1 pr-3 snap-x snap-mandatory">
+                        {(g.slots || []).map((s) => {
+                          const jId = s?.journeyId || j?.id;
+                          const st = String(s?.status || '').toLowerCase();
+                          const isAvailable =
+                            st === 'disponivel' || st === 'available' || st === '';
+                          const isRunning = st === 'em_andamento';
+
+                          const slotDay = normISO(s?.date);
+                          const startMin = hhmmToMinSafe(s?.startTime, 0);
+                          const todayISO = toLocalISO(new Date());
+                          const nowMin = hhmmToMin(
+                            `${String(new Date().getHours()).padStart(2, '0')}:${String(
+                              new Date().getMinutes()
+                            ).padStart(2, '0')}`
+                          );
+
+                          const isPast =
+                            slotDay < todayISO ||
+                            (slotDay === todayISO && startMin <= nowMin);
+                          const isSoon =
+                            slotDay === todayISO &&
+                            startMin - SOON_BEFORE_MIN <= nowMin &&
+                            nowMin <= startMin + SOON_AFTER_MIN;
+
+                          const elapsed = isRunning ? getElapsedMin(s) : undefined;
+
+                          return (
+                            <MiniSlotCard
+                              key={s.id}
+                              slot={s}
+                              isPast={isPast}
+                              isSoon={isSoon}
+                              isRunning={isRunning}
+                              elapsedMin={elapsed}
+                              onSchedule={onSchedulePatient}
+                              onEdit={() => {
+                                if (isAvailable) {
+                                  if (jId) onEditJourney(jId);
+                                } else {
+                                  onEditPatient(s.id);
+                                }
+                              }}
+                              onStart={handleStartLocal}
+                              onFinish={onFinishAppointment}
+                              onCancel={onCancel}
+                              onNoShow={onNoShow}
+                              onDelete={() => {
+                                if (jId) onDeleteJourney(jId);
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
                     </div>
+
+                    {address && (
+                      <div className="mt-3 text-sm text-gray-600 flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        <span className="line-clamp-1">{address}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
