@@ -235,7 +235,6 @@ const Finance: React.FC = () => {
   const toggleUnpaidOnly = () => {
     setUnpaidOnly((v) => {
       const nv = !v;
-      // se ativar e estiver em "Despesas", muda para "Receitas"
       if (nv && txFilter === 'expense') setTxFilter('income');
       return nv;
     });
@@ -246,7 +245,6 @@ const Finance: React.FC = () => {
 
     if (txFilter !== 'all') base = base.filter((t) => t.type === txFilter);
 
-    // 🔎 aplica filtro de não pagos (apenas receitas pendentes)
     if (unpaidOnly) {
       base = base.filter((t) => t.type === 'income' && ((t.status ?? 'pending') !== 'paid'));
     }
@@ -484,50 +482,52 @@ const Finance: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
           <h2 className="text-xl font-bold text-gray-900">Transações Recentes</h2>
 
-          <div className="flex items-center gap-2">
-            {/* Personalizado */}
-            <button
-              onClick={() => setCustomEnabled((v) => !v)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${customEnabled ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'}`}
-              title="Filtrar por intervalo de datas"
-            >
-              <span className="inline-flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                Personalizado
-              </span>
-            </button>
-
-            {/* ✅ Não pagos */}
-            <button
-              onClick={toggleUnpaidOnly}
-              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                unpaidOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 border-gray-200'
-              }`}
-              title="Mostrar apenas recebimentos pendentes"
-            >
-              <span className="inline-flex items-center gap-2">
-                Não pagos
-                {unpaidCount > 0 && !unpaidOnly && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700">{unpaidCount}</span>
-                )}
-                {unpaidOnly && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/30 text-white/90">{unpaidCount}</span>
-                )}
-              </span>
-            </button>
-
-            {/* Limpar tipo */}
-            {txFilter !== 'all' && (
+          {/* 🔧 grupo com wrap e contador fixo à direita */}
+          <div className="flex w-full sm:w-auto items-center gap-2 flex-wrap">
+            {/* Botões (podem quebrar linha) */}
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setTxFilter('all')}
-                className="px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50"
-                title="Mostrar todas as transações"
+                onClick={() => setCustomEnabled((v) => !v)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${customEnabled ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'}`}
+                title="Filtrar por intervalo de datas"
               >
-                Todos
+                <span className="inline-flex items-center gap-2">
+                  <Filter className="w-4 h-4" />
+                  Personalizado
+                </span>
               </button>
-            )}
 
-            <div className="flex items-center space-x-2 text-gray-500">
+              <button
+                onClick={toggleUnpaidOnly}
+                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                  unpaidOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 border-gray-200'
+                }`}
+                title="Mostrar apenas recebimentos pendentes"
+              >
+                <span className="inline-flex items-center gap-2">
+                  Não pagos
+                  {unpaidCount > 0 && !unpaidOnly && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700">{unpaidCount}</span>
+                  )}
+                  {unpaidOnly && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/30 text-white/90">{unpaidCount}</span>
+                  )}
+                </span>
+              </button>
+
+              {txFilter !== 'all' && (
+                <button
+                  onClick={() => setTxFilter('all')}
+                  className="px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50"
+                  title="Mostrar todas as transações"
+                >
+                  Todos
+                </button>
+              )}
+            </div>
+
+            {/* Contador — fica sempre à direita e não quebra */}
+            <div className="ml-auto flex items-center gap-2 text-gray-500 shrink-0 whitespace-nowrap">
               <CreditCard className="w-5 h-5" />
               <span className="text-xs sm:text-sm">{visibleTxs.length} transações</span>
             </div>
