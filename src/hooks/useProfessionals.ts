@@ -8,14 +8,15 @@ import { deleteAllAvatarsForProfessional } from '../lib/avatars';
 type DbProfessional = {
   id: string;
   name: string;
-  specialty: string;
+  specialty: string | null;
   commission_rate: number | null;
   patients: number | null;
   is_active: boolean;
   avatar_path: string | null;       // URL pública ou caminho
   avatar_updated_at: string | null; // timestamp para bust de cache
   phone: string | null;
-  registration_code: string;        // NOT NULL (migration nova)
+  registration_code: string;        // NOT NULL
+  created_at?: string;              // (opcional) apenas se quiser selecionar também
 };
 
 // --- Input para criar/atualizar ---
@@ -42,15 +43,19 @@ type UpdatePayload = Partial<{
 
 // --- Mapper DB → App (camelCase) ---
 function mapDbProfessional(p: DbProfessional): Professional {
+  // se avatar_path já for URL pública, apenas acrescenta bust de cache
+  const avatar =
+    p.avatar_path
+      ? `${p.avatar_path}${p.avatar_updated_at ? `?v=${encodeURIComponent(p.avatar_updated_at)}` : ''}`
+      : null;
+
   return {
     id: p.id,
     name: p.name,
-    specialty: p.specialty,
-    // se você salva URL pública em avatar_path, funciona direto; se for apenas o caminho,
-    // substitua aqui por um helper que gere a URL pública.
-    avatar: p.avatar_path,
+    specialty: p.specialty ?? '',
+    avatar,                                // <- pronto para usar na agenda
     avatarUpdatedAt: p.avatar_updated_at ?? undefined,
-    commissionRate: p.commission_rate ?? 20, // default 20% se vier null
+    commissionRate: p.commission_rate ?? 20,
     patients: p.patients ?? 0,
     isActive: p.is_active,
     phone: p.phone ?? '',
@@ -80,6 +85,8 @@ export const useProfessionals = () => {
           phone,
           registration_code
         `)
+        // você pode ordenar por created_at mesmo sem selecioná-lo,
+        // mas se quiser pode incluí-lo no select acima.
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -111,7 +118,7 @@ export const useProfessionals = () => {
         avatar_path: null,
         avatar_updated_at: null,
         phone: professional.phone ?? null,
-        registration_code: professional.registrationCode, // obrigatório
+        registration_code: professional.registrationCode,
       };
 
       const { data, error } = await supabase
@@ -160,7 +167,6 @@ export const useProfessionals = () => {
   // ---- UPDATE ----
   const updateProfessional = async (id: string, updates: UpdatePayload) => {
     try {
-      // Monta payload para o DB somente com campos presentes
       const toDb: Record<string, any> = {};
       if (updates.name !== undefined) toDb.name = updates.name;
       if (updates.specialty !== undefined) toDb.specialty = updates.specialty;
@@ -172,7 +178,7 @@ export const useProfessionals = () => {
       if (updates.phone !== undefined) toDb.phone = updates.phone;
       if (updates.registrationCode !== undefined) toDb.registration_code = updates.registrationCode;
 
-      // (Opcional) se vier "avatar" direto (URL pública) e você salva no avatar_path:
+      // Se vier "avatar" (URL pública) sem avatar_path explicitado, salva em avatar_path
       if (updates.avatar !== undefined && updates.avatar_path === undefined) {
         toDb.avatar_path = updates.avatar;
       }
@@ -182,7 +188,6 @@ export const useProfessionals = () => {
       const { error } = await supabase.from('professionals').update(toDb).eq('id', id);
       if (error) throw error;
 
-      // Atualiza estado local em camelCase
       setProfessionals((prev) =>
         prev.map((p) =>
           p.id === id
@@ -190,7 +195,10 @@ export const useProfessionals = () => {
                 ...p,
                 name: updates.name ?? p.name,
                 specialty: updates.specialty ?? p.specialty,
-                avatar: updates.avatar_path ?? updates.avatar ?? p.avatar,
+                avatar:
+                  updates.avatar_path != null
+                    ? `${updates.avatar_path}${updates.avatar_updated_at ? `?v=${encodeURIComponent(updates.avatar_updated_at)}` : ''}`
+                    : updates.avatar ?? p.avatar,
                 avatarUpdatedAt: updates.avatar_updated_at ?? p.avatarUpdatedAt,
                 isActive: updates.isActive ?? p.isActive,
                 commissionRate: updates.commissionRate ?? p.commissionRate,
@@ -203,7 +211,6 @@ export const useProfessionals = () => {
       );
     } catch (err) {
       console.warn('Error updating professional, applying locally:', err);
-      // Fallback local
       setProfessionals((prev) =>
         prev.map((p) =>
           p.id === id
@@ -216,7 +223,9 @@ export const useProfessionals = () => {
                   if (updates.commissionRate !== undefined) local.commissionRate = updates.commissionRate;
                   if (updates.patients !== undefined) local.patients = updates.patients;
                   if (updates.isActive !== undefined) local.isActive = updates.isActive;
-                  if (updates.avatar_path !== undefined) local.avatar = updates.avatar_path;
+                  if (updates.avatar_path !== undefined) {
+                    local.avatar = `${updates.avatar_path}${updates.avatar_updated_at ? `?v=${encodeURIComponent(updates.avatar_updated_at)}` : ''}`;
+                  }
                   if (updates.avatar !== undefined) local.avatar = updates.avatar;
                   if (updates.avatar_updated_at !== undefined) local.avatarUpdatedAt = updates.avatar_updated_at;
                   if (updates.phone !== undefined) local.phone = updates.phone;
@@ -253,24 +262,18 @@ export const useProfessionals = () => {
     }
   };
 
- // ---- DELETE ----
-const deleteProfessional = async (id: string) => {
-  try {
-    // Remove todos os arquivos do prefixo do profissional (se você usa essa estrutura)
-    await deleteAllAvatarsForProfessional(id);
-
-    // Remove o profissional do DB
-    const { error } = await supabase.from('professionals').delete().eq('id', id);
-    if (error) throw error;
-
-    setProfessionals((prev) => prev.filter((p) => p.id !== id));
-  } catch (err) {
-    console.error('Error deleting professional:', err);
-    throw err;
-  }
-};
-
-
+  // ---- DELETE ----
+  const deleteProfessional = async (id: string) => {
+    try {
+      await deleteAllAvatarsForProfessional(id);
+      const { error } = await supabase.from('professionals').delete().eq('id', id);
+      if (error) throw error;
+      setProfessionals((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error('Error deleting professional:', err);
+      throw err;
+    }
+  };
 
   useEffect(() => {
     fetchProfessionals();

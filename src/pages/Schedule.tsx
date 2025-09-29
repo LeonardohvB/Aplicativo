@@ -88,6 +88,18 @@ const Schedule: React.FC = () => {
 
   const { professionals } = useProfessionals();
 
+  // 🔁 Normaliza profissionais para o Kanban (garante avatar/versão)
+  const professionalsForKanban = useMemo(
+    () =>
+      (professionals ?? []).map(p => ({
+        ...p,
+        // aliases aceitos pelo Kanban
+        avatarUrl: p.avatar || undefined,
+        avatarUpdatedAt: p.avatarUpdatedAt || undefined,
+      })),
+    [professionals]
+  );
+
   // Filtro vindo do Dashboard (Hoje/Semana)
   const [dashboardFilter, setDashboardFilter] = useState<'today' | 'week' | null>(null);
   useEffect(() => {
@@ -224,7 +236,7 @@ const Schedule: React.FC = () => {
 
       {/* ÚNICO componente com busca + datas + agrupamento por registro */}
       <KanbanAgenda
-        professionals={professionals as any}
+        professionals={professionalsForKanban as any}
         journeys={visibleJourneys}
         slots={filteredSlots}
         onSchedulePatient={handleSchedulePatient}

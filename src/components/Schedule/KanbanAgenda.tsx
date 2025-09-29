@@ -14,6 +14,7 @@ import {
   Phone,
 } from 'lucide-react';
 import { AppointmentSlot, AppointmentJourney } from '../../types';
+import { publicUrlFromPath } from '../../lib/avatars';
 
 /* ======================= Tipos utilitários ======================= */
 type Pro = {
@@ -26,8 +27,18 @@ type Pro = {
   document?: string;
   documentType?: string;
   reg_type?: string;
-  avatarUrl?: string;
-  photoUrl?: string;
+  registrationCode?: string;
+
+  // possíveis campos de avatar que podem vir do hook:
+  avatar?: string | null;          // pode ser URL completa OU path do bucket
+  avatar_path?: string | null;     // path do bucket
+  avatarUpdatedAt?: string | null; // cache-busting (camel)
+  avatar_updated_at?: string | null; // cache-busting (snake)
+
+  // usados pelo Kanban anteriormente
+  avatarUrl?: string | null;
+  photoUrl?: string | null;
+
   address?: string;
   rating?: number;
   reviewsCount?: number;
@@ -78,12 +89,46 @@ const maskPhone = (v?: string) => {
   return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
 };
 
-/* Categoria por registro */
-function typeToCategory(
-  raw?: string,
-  specialty?: string
-): { key: string; label: string } {
-  const s = (raw || '').toUpperCase().trim();
+/* ======== Avatar helpers (iguais ao ProfessionalCard) ======== */
+const placeholder = 'https://placehold.co/96x96?text=Foto';
+const withCacheBust = (url: string, v?: string | null) =>
+  v ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}` : url;
+
+function toDisplayUrl(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed; // já é URL
+  return publicUrlFromPath(trimmed) || null;         // path do Storage → URL pública
+}
+
+function resolveProAvatarBaseUrl(p?: Pro): string {
+  if (!p) return placeholder;
+  // ordem de preferência: avatarUrl/photoUrl (se já veio pronto) → avatar (url ou path) → avatar_path (path)
+  const direct = toDisplayUrl(p.avatarUrl || p.photoUrl || undefined);
+  const camel = toDisplayUrl(p.avatar || undefined);
+  const snake = toDisplayUrl(p.avatar_path || undefined);
+  return direct || camel || snake || placeholder;
+}
+function resolveProAvatarVersion(p?: Pro): string | undefined {
+  if (!p) return undefined;
+  return (p.avatarUpdatedAt as any) ?? (p.avatar_updated_at as any) ?? undefined;
+}
+
+// normaliza e extrai prefixo de uma string de registro (ex.: "CRP - 25461")
+const extractRegPrefix = (v?: string) => {
+  if (!v) return '';
+  // pega tudo antes de " - " ou primeiro bloco de letras
+  const raw = String(v).toUpperCase().trim();
+  const fromDash = raw.split(' - ')[0]?.trim();
+  const m = (fromDash || raw).match(/[A-ZÀ-Ü]{2,6}/);
+  return (m?.[0] || fromDash || '').normalize('NFD').replace(/\p{Diacritic}/gu, '');
+};
+
+// categoria por registro
+function typeToCategory(raw?: string, specialty?: string): { key: string; label: string } {
+  const s = extractRegPrefix(raw);
+
   const direct: Record<string, string> = {
     CRM: 'Médicos',
     CRP: 'Psicólogos',
@@ -97,22 +142,31 @@ function typeToCategory(
     CREA: 'Engenharia',
   };
   if (direct[s]) return { key: s, label: direct[s] };
+
+  // fallback por especialidade
   const sp = (specialty || '').toLowerCase();
   if (/psicol/.test(sp)) return { key: 'CRP', label: 'Psicólogos' };
   if (/m[eé]dic/.test(sp)) return { key: 'CRM', label: 'Médicos' };
+
   return { key: 'OUTROS', label: 'Outros Profissionais' };
 }
+
 function resolveCategory(pro?: Pro): { key: string; label: string } {
   if (!pro) return { key: 'OUTROS', label: 'Outros Profissionais' };
+
+  // considera diversos campos + registrationCode
   const guess =
+    pro.registrationCode ||                  // ⬅️ novo (ex.: "CRP - 25461")
     pro.registrationType ||
     pro.registryType ||
     pro.reg_type ||
     pro.documentType ||
     pro.document ||
     pro.registration;
+
   return typeToCategory(guess, pro.specialty);
 }
+
 
 /* ======================= Toolbar ======================= */
 type ToolbarProps = {
@@ -137,7 +191,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <input
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
-        placeholder="Buscar psicólogo..."
+        placeholder="Buscar profissional..."
         className="w-full bg-transparent text-[15px] outline-none placeholder:text-gray-400"
       />
     </div>
@@ -167,8 +221,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       })}
     </div>
     <div className="text-sm text-gray-500">
-      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} disponível
-      {prosCount === 1 ? '' : 'is'}
+      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} disponível{prosCount === 1 ? '' : 'eis'}
     </div>
   </div>
 );
@@ -211,22 +264,21 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   const isAvailable = st === 'disponivel' || st === 'available' || st === '';
   const isEditing = st === 'agendado';
 
- // dados do paciente (múltiplas formas)
-const patientObj: Maybe<{ name?: string; phone?: string; document?: string; documentNumber?: string }> =
-  (slot as any)?.patient || null;
+  // dados do paciente (múltiplas formas)
+  const patientObj: Maybe<{ name?: string; phone?: string; document?: string; documentNumber?: string }> =
+    (slot as any)?.patient || null;
 
-const patientName =
-  (slot as any)?.patientName ||
-  patientObj?.name ||
-  (slot as any)?.patient_name ||
-  '';
+  const patientName =
+    (slot as any)?.patientName ||
+    patientObj?.name ||
+    (slot as any)?.patient_name ||
+    '';
 
-const patientPhone =
-  (slot as any)?.patientPhone ||
-  (slot as any)?.patient_phone ||
-  patientObj?.phone ||
-  '';
-
+  const patientPhone =
+    (slot as any)?.patientPhone ||
+    (slot as any)?.patient_phone ||
+    patientObj?.phone ||
+    '';
 
   // largura/altura
   const wClass = isEditing || isRunning ? 'w-[280px]' : 'w-[160px]';
@@ -281,13 +333,13 @@ const patientPhone =
         <div className="absolute left-2 top-2 text-gray-700">
           <ModeIcon className="w-3.5 h-3.5" />
         </div>
-       <div
-  className="absolute right-2 top-2 text-[11px] text-gray-600 flex items-center gap-1 tabular-nums"
-  title={`${startTime} - ${endTime}`}
->
-  <Clock className="w-3.5 h-3.5" />
-  <span>{startTime} - {endTime}</span>
-</div>
+        <div
+          className="absolute right-2 top-2 text-[11px] text-gray-600 flex items-center gap-1 tabular-nums"
+          title={`${startTime} - ${endTime}`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span>{startTime} - {endTime}</span>
+        </div>
 
         {/* corpo */}
         <div
@@ -299,7 +351,6 @@ const patientPhone =
           {isAvailable && !isRunning && (
             <div className="text-center">
               <div className="text-[16px] font-semibold leading-none text-gray-900 tabular-nums">
-                {/* preço visível somente quando disponível */}
                 {(Number(slot?.price) || 0).toLocaleString('pt-BR', {
                   style: 'currency',
                   currency: 'BRL',
@@ -324,7 +375,7 @@ const patientPhone =
 
               {isRunning && (
                 <div className="grid grid-cols-1 gap-1">
-                <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
+                  <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
                     <Phone className="w-3.5 h-3.5 text-gray-600" />
                     <span className="text-[12px] text-gray-700 truncate">
                       {maskPhone(patientPhone) || '—'}
@@ -347,44 +398,40 @@ const patientPhone =
           </div>
         )}
 
- {/* ações no card (em atendimento) */}
-{isRunning && (
-  <div className="absolute bottom-1 right-1 flex gap-2">
-    {/* Faltou (laranja) */}
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onNoShow?.(slot.id);
-      }}
-      className="px-3 py-[6px] rounded-full border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 text-[11px] font-semibold"
-      title="Marcar paciente como faltou"
-      aria-label="Faltou"
-    >
-      <span className="inline-flex items-center gap-1">
-        <CancelIcon className="w-3.5 h-3.5" /> Faltou
-      </span>
-    </button>
+        {/* ações no card (em atendimento) */}
+        {isRunning && (
+          <div className="absolute bottom-1 right-1 flex gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNoShow?.(slot.id);
+              }}
+              className="px-3 py-[6px] rounded-full border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 text-[11px] font-semibold"
+              title="Marcar paciente como faltou"
+              aria-label="Faltou"
+            >
+              <span className="inline-flex items-center gap-1">
+                <CancelIcon className="w-3.5 h-3.5" /> Faltou
+              </span>
+            </button>
 
-    {/* Finalizar (vermelho) */}
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onFinish(slot.id);
-      }}
-      className="px-3 py-[6px] rounded-full bg-red-600 text-white hover:bg-red-700 text-[11px] font-semibold"
-      title="Finalizar consulta"
-      aria-label="Finalizar"
-    >
-      <span className="inline-flex items-center gap-1">
-        <StopIcon className="w-3.5 h-3.5" /> Finalizar
-      </span>
-    </button>
-  </div>
-)}
-
-
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onFinish(slot.id);
+              }}
+              className="px-3 py-[6px] rounded-full bg-red-600 text-white hover:bg-red-700 text-[11px] font-semibold"
+              title="Finalizar consulta"
+              aria-label="Finalizar"
+            >
+              <span className="inline-flex items-center gap-1">
+                <StopIcon className="w-3.5 h-3.5" /> Finalizar
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* ações pequenas (editar/excluir) para horários livres/passados */}
         {!isRunning && isAvailable && (
@@ -688,7 +735,11 @@ const KanbanAgenda: React.FC<Props> = ({
                   return st === '' || st === 'disponivel' || st === 'available';
                 }).length;
 
-                const avatar = pro?.avatarUrl || pro?.photoUrl || undefined;
+                // 🔁 FOTO do profissional (mesma estratégia do ProfessionalCard)
+                const baseAvatar = resolveProAvatarBaseUrl(pro);
+                const version = resolveProAvatarVersion(pro);
+                const avatar = withCacheBust(baseAvatar, version);
+
                 const initials =
                   (pro?.name || 'P')
                     .split(/\s+/)
@@ -711,6 +762,9 @@ const KanbanAgenda: React.FC<Props> = ({
                               src={avatar}
                               alt={pro?.name || 'Profissional'}
                               className="w-12 h-12 rounded-full object-cover border"
+                              onError={(e) => ((e.currentTarget as HTMLImageElement).src = placeholder)}
+                              loading="lazy"
+                              decoding="async"
                             />
                           ) : (
                             <div className="w-12 h-12 rounded-full bg-gray-200 grid place-items-center text-sm font-semibold text-gray-700">
@@ -779,19 +833,18 @@ const KanbanAgenda: React.FC<Props> = ({
                               new Date().getMinutes()
                             ).padStart(2, '0')}`
                           );
-                           
+
                           // ⏳ tolerância para bloquear o card somente 10 min após o início
-const BLOCK_GRACE_MIN = 10;
+                          const BLOCK_GRACE_MIN = 10;
 
-const isPast =
-  slotDay < todayISO ||
-  (slotDay === todayISO && nowMin > startMin + BLOCK_GRACE_MIN);
+                          const isPast =
+                            slotDay < todayISO ||
+                            (slotDay === todayISO && nowMin > startMin + BLOCK_GRACE_MIN);
 
-const isSoon =
-  slotDay === todayISO &&
-  startMin - SOON_BEFORE_MIN <= nowMin &&
-  nowMin <= startMin + SOON_AFTER_MIN;
-
+                          const isSoon =
+                            slotDay === todayISO &&
+                            startMin - SOON_BEFORE_MIN <= nowMin &&
+                            nowMin <= startMin + SOON_AFTER_MIN;
 
                           const elapsed = isRunning ? getElapsedMin(s) : undefined;
 

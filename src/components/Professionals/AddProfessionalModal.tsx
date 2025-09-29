@@ -8,8 +8,8 @@ interface AddProfessionalModalProps {
   onClose: () => void;
   onAdd: (professional: {
     name: string;
-    cpf: string;               // <- NOVO (apenas dígitos)
-    specialty: string;
+    cpf: string;               // <- apenas dígitos
+    specialty: string;         // <- preenchido automaticamente, input travado
     phone: string;             // apenas dígitos
     registrationCode: string;  // "SIGLA - número"
     commissionRate?: number;
@@ -50,9 +50,7 @@ function isValidCPF(cpfStr: string) {
 
   const calcCheck = (base: string, factor: number) => {
     let sum = 0;
-    for (let i = 0; i < base.length; i++) {
-      sum += Number(base[i]) * (factor - i);
-    }
+    for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (factor - i);
     const mod = (sum * 10) % 11;
     return mod === 10 ? 0 : mod;
   };
@@ -71,8 +69,25 @@ function hasFirstAndLastName(full: string) {
   return strong.length >= 2;
 }
 
-/* Conselhos */
-const COUNCILS = ['CRM','CREA','CREFITO','CRP','CRO','COREN','CRF','CRFa','CRN','CRESS','CREF'];
+/* ===== Conselhos ===== */
+const COUNCILS = ['CRM','CREA','CREFITO','CRP','CRO','COREN','CRF','CRFa','CRN','CRESS','CREF','OUTRO'];
+
+/* ===== Mapeamento Conselho -> Profissão (auto-preenchimento) ===== */
+const COUNCIL_TO_PROFESSION: Record<string, string> = {
+  CRM: 'Médico(a)',
+  CRP: 'Psicólogo(a)',
+  CRO: 'Dentista',
+  CREFITO: 'Fisioterapeuta',
+  CRFa: 'Fonoaudiólogo(a)',
+  CRN: 'Nutricionista',
+  COREN: 'Enfermeiro(a)',
+  CRESS: 'Assistente Social',
+  CREF: 'Profissional de Educação Física',
+  CRF: 'Farmacêutico(a)',
+  CRMV: 'Médico(a) Veterinário(a)',
+  CRBM: 'Biomédico(a)',
+  CREA: 'Engenheiro(a)',
+};
 
 export default function AddProfessionalModal({
   isOpen,
@@ -81,7 +96,7 @@ export default function AddProfessionalModal({
 }: AddProfessionalModalProps) {
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState(''); // <- NOVO
-  const [specialty, setSpecialty] = useState('');
+  const [specialty, setSpecialty] = useState(''); // <- preenchido automaticamente
   const [phone, setPhone] = useState('');
 
   // Registro (sigla + número)
@@ -93,17 +108,24 @@ export default function AddProfessionalModal({
   const [errors, setErrors] = useState<{
     name?: string;
     cpf?: string;
-    specialty?: string;
     phone?: string;
     regNumber?: string;
     customCouncil?: string;
   }>({});
   const [shake, setShake] = useState(false);
 
+  // sempre que mudar o conselho, atualiza automaticamente a profissão/especialidade
+  useEffect(() => {
+    const auto = COUNCIL_TO_PROFESSION[council] ?? '';
+    setSpecialty(auto); // input travado reflete aqui
+  }, [council]);
+
   // Reset ao abrir/fechar
   useEffect(() => {
     if (!isOpen) {
-      setName(''); setCpf(''); setSpecialty(''); setPhone('');
+      setName(''); setCpf('');
+      setSpecialty(COUNCIL_TO_PROFESSION['CRM'] ?? '');
+      setPhone('');
       setCouncil('CRM'); setCustomCouncil(''); setRegNumber('');
       setCommissionRate(''); setErrors({}); setShake(false);
     }
@@ -123,9 +145,6 @@ export default function AddProfessionalModal({
     if (!cpf.trim()) nextErrors.cpf = 'Informe o CPF.';
     else if (onlyDigits(cpf).length !== 11) nextErrors.cpf = 'CPF deve ter 11 dígitos.';
     else if (!isValidCPF(cpf)) nextErrors.cpf = 'CPF inválido.';
-
-    // Especialidade
-    if (!specialty.trim()) nextErrors.specialty = 'Informe a profissão/especialidade.';
 
     // Telefone
     const phoneDigits = onlyDigits(phone);
@@ -151,7 +170,7 @@ export default function AddProfessionalModal({
     onAdd({
       name: name.trim(),
       cpf: onlyDigits(cpf),          // envia apenas dígitos
-      specialty: specialty.trim(),
+      specialty: specialty,          // vem do conselho (travado)
       phone: phoneDigits,            // só dígitos
       registrationCode,
       commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
@@ -216,25 +235,19 @@ export default function AddProfessionalModal({
             </p>
           </div>
 
-          {/* Especialidade */}
+          {/* Profissão/Especialidade — TRAVADO (auto) */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
               value={specialty}
-              onChange={(e) => {
-                setSpecialty(titleAllWordsLive(e.target.value));
-                if (errors.specialty) setErrors(s => ({ ...s, specialty: undefined }));
-              }}
-              onBlur={() => setSpecialty((v) => titleAllWordsFinal(v))}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
-                errors.specialty
-                  ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
-                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
-              }`}
-              placeholder="Profissão/Especialidade"
-              aria-invalid={!!errors.specialty}
+              readOnly
+              disabled
+              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
+              placeholder="Preencha o registro profissional para definir automaticamente"
             />
-            {errors.specialty && <p className="mt-1 text-xs text-red-600">{errors.specialty}</p>}
+            <p className="mt-1 text-xs text-gray-400">
+              Este campo é preenchido automaticamente pelo registro profissional.
+            </p>
           </div>
 
           {/* Telefone */}
@@ -275,7 +288,6 @@ export default function AddProfessionalModal({
                 className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               >
                 {COUNCILS.map(c => <option key={c} value={c}>{c}</option>)}
-                <option value="OUTRO">Outro…</option>
               </select>
 
               {council === 'OUTRO' && (
