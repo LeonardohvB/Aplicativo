@@ -21,16 +21,33 @@ interface CreateJourneyModalProps {
   professionals: Professional[];
 }
 
-/* Helpers */
+/* ===== Helpers (LOCAL, sem UTC) ===== */
 const isTime = (t: string) => /^\d{2}:\d{2}$/.test(t);
 const toMinutes = (t: string) => {
   const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
+  return (h || 0) * 60 + (m || 0);
 };
-const todayISO = () => new Date().toISOString().split('T')[0];
+const toYmdLocal = (d: Date = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 const nowHHmm = () => {
   const n = new Date();
   return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+};
+const parseYmd = (ymd: string) => {
+  const [y, m, d] = String(ymd || '').slice(0, 10).split('-').map(Number);
+  return { y, m: (m ?? 1) - 1, d: d ?? 1 };
+};
+const isSameLocalDay = (ymd: string, d: Date = new Date()) => {
+  const { y, m, d: day } = parseYmd(ymd);
+  return (
+    y === d.getFullYear() &&
+    m === d.getMonth() &&
+    day === d.getDate()
+  );
 };
 
 const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
@@ -83,12 +100,14 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       }
     }
 
-    // se a data é hoje, a hora inicial não pode estar no passado
-    if (formData.date === todayISO() && isTime(formData.startTime)) {
-      if (formData.startTime < nowHHmm()) e.startTime = 'Não é possível iniciar no passado (hoje).';
+    // se a data é HOJE (local), a hora inicial não pode estar no passado
+    if (formData.date && isSameLocalDay(formData.date) && isTime(formData.startTime)) {
+      if (formData.startTime < nowHHmm()) {
+        e.startTime = 'Não é possível iniciar no passado (hoje).';
+      }
     }
 
-    const price = Number(formData.defaultPrice.replace(',', '.'));
+    const price = Number(String(formData.defaultPrice).replace(',', '.'));
     if (!(price > 0)) e.defaultPrice = 'Preço deve ser maior que zero.';
 
     const cp = Number(formData.clinicPercentage);
@@ -122,7 +141,7 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       endTime: formData.endTime,
       consultationDuration: parseInt(formData.consultationDuration, 10), // 40
       bufferDuration: parseInt(formData.bufferDuration, 10),             // 10
-      defaultPrice: Number(formData.defaultPrice.replace(',', '.')),
+      defaultPrice: Number(String(formData.defaultPrice).replace(',', '.')),
       defaultService: formData.defaultService,
       clinicPercentage: Number(formData.clinicPercentage),
     });
@@ -152,7 +171,7 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
         : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'
     }`;
 
-   return (
+  return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className={`bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto ${shake ? 'animate-shake' : ''}`}>
         <div className="flex items-center justify-between mb-6">
@@ -195,6 +214,7 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
               name="date"
               value={formData.date}
               onChange={setField('date')}
+              min={toYmdLocal(new Date())}  
               className={inputClass(err('date'))}
               aria-invalid={err('date')}
             />
