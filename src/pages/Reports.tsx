@@ -71,6 +71,13 @@ const isWithin = (d: Date, fromISO: string, toISO: string) => {
   return d >= fromD && d <= toD;
 };
 
+// Tradução de status para exibição no PDF
+const STATUS_LABEL_PT: Record<string, string> = {
+  concluido: 'Concluído',
+  cancelado: 'Cancelado',
+  no_show:   'Faltou',
+};
+
 /* ======================================================================
    Mini input de data
 ====================================================================== */
@@ -825,7 +832,7 @@ const Reports: React.FC = () => {
               ?? 'Profissional removido')
           : ((h as any).professionalName ?? undefined),
         patient: h.patientName || undefined,
-        status: (h.status ?? '').toLowerCase(),
+        status: STATUS_LABEL_PT[(h.status ?? '').toLowerCase()] ?? (h.status ?? ''),
         price: Number(h.price) || null,
       }));
 

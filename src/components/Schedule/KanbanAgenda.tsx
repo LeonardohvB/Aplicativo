@@ -68,14 +68,7 @@ const SOON_BEFORE_MIN = 20;
 const SOON_AFTER_MIN = 10;
 
 const onlyDigits = (v?: string) => String(v || '').replace(/\D+/g, '');
-const maskCPF = (v?: string) => {
-  const d = onlyDigits(v).slice(0, 11);
-  if (!d) return '';
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-};
+
 const maskPhone = (v?: string) => {
   const d = onlyDigits(v).slice(0, 11);
   if (!d) return '';
@@ -207,6 +200,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   onStart,
   onFinish,
   onCancel,
+  onNoShow,
   onDelete,
 }) => {
   const st = String(slot?.status || '').toLowerCase();
@@ -217,28 +211,26 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   const isAvailable = st === 'disponivel' || st === 'available' || st === '';
   const isEditing = st === 'agendado';
 
-  // dados do paciente (múltiplas formas)
-  const patientObj: Maybe<{ name?: string; cpf?: string; phone?: string }> =
-    (slot as any)?.patient || null;
-  const patientName =
-    (slot as any)?.patientName ||
-    patientObj?.name ||
-    (slot as any)?.patient_name ||
-    '';
-  const patientCPF =
-    (slot as any)?.patientCPF ||
-    (slot as any)?.patient_cpf ||
-    patientObj?.cpf ||
-    '';
-  const patientPhone =
-    (slot as any)?.patientPhone ||
-    (slot as any)?.patient_phone ||
-    patientObj?.phone ||
-    '';
+ // dados do paciente (múltiplas formas)
+const patientObj: Maybe<{ name?: string; phone?: string; document?: string; documentNumber?: string }> =
+  (slot as any)?.patient || null;
+
+const patientName =
+  (slot as any)?.patientName ||
+  patientObj?.name ||
+  (slot as any)?.patient_name ||
+  '';
+
+const patientPhone =
+  (slot as any)?.patientPhone ||
+  (slot as any)?.patient_phone ||
+  patientObj?.phone ||
+  '';
+
 
   // largura/altura
-  const wClass = isEditing || isRunning ? 'w-[260px]' : 'w-[144px]';
-  const cardH = isEditing || isRunning ? 'h-[136px]' : 'h-[116px]';
+  const wClass = isEditing || isRunning ? 'w-[280px]' : 'w-[160px]';
+  const cardH = isEditing || isRunning ? 'h-[180px]' : 'h-[116px]';
 
   // clique
   let onCardClick: (() => void) | undefined;
@@ -289,10 +281,13 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
         <div className="absolute left-2 top-2 text-gray-700">
           <ModeIcon className="w-3.5 h-3.5" />
         </div>
-        <div className="absolute right-2 top-2 text-[11px] text-gray-600 flex items-center gap-1 tabular-nums">
-          <Clock className="w-3.5 h-3.5" />
-          {startTime}
-        </div>
+       <div
+  className="absolute right-2 top-2 text-[11px] text-gray-600 flex items-center gap-1 tabular-nums"
+  title={`${startTime} - ${endTime}`}
+>
+  <Clock className="w-3.5 h-3.5" />
+  <span>{startTime} - {endTime}</span>
+</div>
 
         {/* corpo */}
         <div
@@ -314,7 +309,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             </div>
           )}
 
-          {/* Agendado ou Em andamento → mostra paciente e (se em andamento) CPF/Telefone */}
+          {/* Agendado ou Em andamento → mostra paciente e (se em andamento) Telefone */}
           {!isAvailable && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 px-2 py-[4px] rounded-lg bg-white/70 border border-emerald-200 overflow-hidden">
@@ -329,13 +324,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
 
               {isRunning && (
                 <div className="grid grid-cols-1 gap-1">
-                  <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
-                    
-                    <span className="text-[12px] text-gray-700 truncate">
-                      CPF: {maskCPF(patientCPF) || '—'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
+                <div className="flex items-center gap-2 px-2 py-[3px] rounded-lg bg-white/60 border border-sky-200">
                     <Phone className="w-3.5 h-3.5 text-gray-600" />
                     <span className="text-[12px] text-gray-700 truncate">
                       {maskPhone(patientPhone) || '—'}
@@ -358,24 +347,44 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
           </div>
         )}
 
-        {/* ações no card */}
-        {isRunning && (
-          <div className="absolute bottom-1 right-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onFinish(slot.id);
-              }}
-              className="px-2 py-[4px] rounded-full border border-sky-300 text-sky-700 bg-white hover:bg-sky-50 text-[11px] font-medium"
-              title="Finalizar consulta"
-            >
-              <span className="inline-flex items-center gap-1">
-                <StopIcon className="w-3.5 h-3.5" /> Finalizar
-              </span>
-            </button>
-          </div>
-        )}
+ {/* ações no card (em atendimento) */}
+{isRunning && (
+  <div className="absolute bottom-1 right-1 flex gap-2">
+    {/* Faltou (laranja) */}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onNoShow?.(slot.id);
+      }}
+      className="px-3 py-[6px] rounded-full border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 text-[11px] font-semibold"
+      title="Marcar paciente como faltou"
+      aria-label="Faltou"
+    >
+      <span className="inline-flex items-center gap-1">
+        <CancelIcon className="w-3.5 h-3.5" /> Faltou
+      </span>
+    </button>
+
+    {/* Finalizar (vermelho) */}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onFinish(slot.id);
+      }}
+      className="px-3 py-[6px] rounded-full bg-red-600 text-white hover:bg-red-700 text-[11px] font-semibold"
+      title="Finalizar consulta"
+      aria-label="Finalizar"
+    >
+      <span className="inline-flex items-center gap-1">
+        <StopIcon className="w-3.5 h-3.5" /> Finalizar
+      </span>
+    </button>
+  </div>
+)}
+
+
 
         {/* ações pequenas (editar/excluir) para horários livres/passados */}
         {!isRunning && isAvailable && (
@@ -770,14 +779,19 @@ const KanbanAgenda: React.FC<Props> = ({
                               new Date().getMinutes()
                             ).padStart(2, '0')}`
                           );
+                           
+                          // ⏳ tolerância para bloquear o card somente 10 min após o início
+const BLOCK_GRACE_MIN = 10;
 
-                          const isPast =
-                            slotDay < todayISO ||
-                            (slotDay === todayISO && startMin <= nowMin);
-                          const isSoon =
-                            slotDay === todayISO &&
-                            startMin - SOON_BEFORE_MIN <= nowMin &&
-                            nowMin <= startMin + SOON_AFTER_MIN;
+const isPast =
+  slotDay < todayISO ||
+  (slotDay === todayISO && nowMin > startMin + BLOCK_GRACE_MIN);
+
+const isSoon =
+  slotDay === todayISO &&
+  startMin - SOON_BEFORE_MIN <= nowMin &&
+  nowMin <= startMin + SOON_AFTER_MIN;
+
 
                           const elapsed = isRunning ? getElapsedMin(s) : undefined;
 
