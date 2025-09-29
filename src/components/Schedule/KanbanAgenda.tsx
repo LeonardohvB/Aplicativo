@@ -30,10 +30,10 @@ type Pro = {
   registrationCode?: string;
 
   // possíveis campos de avatar que podem vir do hook:
-  avatar?: string | null;          // pode ser URL completa OU path do bucket
-  avatar_path?: string | null;     // path do bucket
-  avatarUpdatedAt?: string | null; // cache-busting (camel)
-  avatar_updated_at?: string | null; // cache-busting (snake)
+  avatar?: string | null;
+  avatar_path?: string | null;
+  avatarUpdatedAt?: string | null;
+  avatar_updated_at?: string | null;
 
   // usados pelo Kanban anteriormente
   avatarUrl?: string | null;
@@ -98,13 +98,11 @@ function toDisplayUrl(value?: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed; // já é URL
-  return publicUrlFromPath(trimmed) || null;         // path do Storage → URL pública
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return publicUrlFromPath(trimmed) || null;
 }
-
 function resolveProAvatarBaseUrl(p?: Pro): string {
   if (!p) return placeholder;
-  // ordem de preferência: avatarUrl/photoUrl (se já veio pronto) → avatar (url ou path) → avatar_path (path)
   const direct = toDisplayUrl(p.avatarUrl || p.photoUrl || undefined);
   const camel = toDisplayUrl(p.avatar || undefined);
   const snake = toDisplayUrl(p.avatar_path || undefined);
@@ -118,7 +116,6 @@ function resolveProAvatarVersion(p?: Pro): string | undefined {
 // normaliza e extrai prefixo de uma string de registro (ex.: "CRP - 25461")
 const extractRegPrefix = (v?: string) => {
   if (!v) return '';
-  // pega tudo antes de " - " ou primeiro bloco de letras
   const raw = String(v).toUpperCase().trim();
   const fromDash = raw.split(' - ')[0]?.trim();
   const m = (fromDash || raw).match(/[A-ZÀ-Ü]{2,6}/);
@@ -128,7 +125,6 @@ const extractRegPrefix = (v?: string) => {
 // categoria por registro
 function typeToCategory(raw?: string, specialty?: string): { key: string; label: string } {
   const s = extractRegPrefix(raw);
-
   const direct: Record<string, string> = {
     CRM: 'Médicos',
     CRP: 'Psicólogos',
@@ -142,31 +138,23 @@ function typeToCategory(raw?: string, specialty?: string): { key: string; label:
     CREA: 'Engenharia',
   };
   if (direct[s]) return { key: s, label: direct[s] };
-
-  // fallback por especialidade
   const sp = (specialty || '').toLowerCase();
   if (/psicol/.test(sp)) return { key: 'CRP', label: 'Psicólogos' };
   if (/m[eé]dic/.test(sp)) return { key: 'CRM', label: 'Médicos' };
-
   return { key: 'OUTROS', label: 'Outros Profissionais' };
 }
-
 function resolveCategory(pro?: Pro): { key: string; label: string } {
   if (!pro) return { key: 'OUTROS', label: 'Outros Profissionais' };
-
-  // considera diversos campos + registrationCode
   const guess =
-    pro.registrationCode ||                  // ⬅️ novo (ex.: "CRP - 25461")
+    pro.registrationCode ||
     pro.registrationType ||
     pro.registryType ||
     pro.reg_type ||
     pro.documentType ||
     pro.document ||
     pro.registration;
-
   return typeToCategory(guess, pro.specialty);
 }
-
 
 /* ======================= Toolbar ======================= */
 type ToolbarProps = {
@@ -198,9 +186,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
     <div className="flex gap-2 overflow-x-auto no-scrollbar">
       {days.map((d) => {
         const dt = new Date(`${d}T12:00:00`);
-        const wd = dt
-          .toLocaleDateString('pt-BR', { weekday: 'short' })
-          .replace('.', '');
+        const wd = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
         const dd = String(dt.getDate()).padStart(2, '0');
         const active = d === activeDay;
         return (
@@ -221,7 +207,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       })}
     </div>
     <div className="text-sm text-gray-500">
-      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} disponível{prosCount === 1 ? '' : 'eis'}
+      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} {prosCount === 1 ? 'disponível' : 'disponíveis'}
     </div>
   </div>
 );
@@ -264,7 +250,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   const isAvailable = st === 'disponivel' || st === 'available' || st === '';
   const isEditing = st === 'agendado';
 
-  // dados do paciente (múltiplas formas)
+  // dados do paciente
   const patientObj: Maybe<{ name?: string; phone?: string; document?: string; documentNumber?: string }> =
     (slot as any)?.patient || null;
 
@@ -290,12 +276,9 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
     if (isAvailable) onCardClick = () => onSchedule(slot.id);
     else if (isEditing) onCardClick = () => onEdit(slot.id);
   }
-  const CardWrapper: any = onCardClick ? 'button' : 'div';
 
   // modo remoto/local
-  const isRemote = /online|on-line|tele|vídeo|video|remoto/i.test(
-    String(slot?.service || '')
-  );
+  const isRemote = /online|on-line|tele|vídeo|video|remoto/i.test(String(slot?.service || ''));
   const ModeIcon = isRemote ? Video : MapPin;
 
   // estilos por estado
@@ -316,14 +299,24 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
 
   return (
     <div className={`snap-start flex-shrink-0 ${wClass}`}>
-      <CardWrapper
+      {/* Wrapper sempre <div> para evitar <button> dentro de <button> */}
+      <div
+        role={onCardClick ? 'button' : undefined}
+        tabIndex={onCardClick ? 0 : undefined}
         onClick={onCardClick}
+        onKeyDown={(e) => {
+          if (!onCardClick) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onCardClick();
+          }
+        }}
         className={[
           'relative rounded-xl border px-3 py-2 transition w-full text-left',
           cardH,
           stateBg,
           stateBorder,
-          onCardClick ? 'hover:shadow-sm' : 'opacity-90',
+          onCardClick ? 'hover:shadow-sm cursor-pointer' : 'opacity-90',
           'focus-visible:outline-none focus-visible:ring-0',
           isPast && !onCardClick ? 'cursor-not-allowed' : '',
         ].join(' ')}
@@ -360,7 +353,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             </div>
           )}
 
-          {/* Agendado ou Em andamento → mostra paciente e (se em andamento) Telefone */}
+          {/* Agendado ou Em andamento */}
           {!isAvailable && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 px-2 py-[4px] rounded-lg bg-white/70 border border-emerald-200 overflow-hidden">
@@ -462,7 +455,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             </button>
           </div>
         )}
-      </CardWrapper>
+      </div>
 
       {/* ações abaixo do card (apenas quando agendado e ainda não iniciado) */}
       {!isRunning && !isAvailable && (
@@ -735,7 +728,7 @@ const KanbanAgenda: React.FC<Props> = ({
                   return st === '' || st === 'disponivel' || st === 'available';
                 }).length;
 
-                // 🔁 FOTO do profissional (mesma estratégia do ProfessionalCard)
+                // FOTO do profissional
                 const baseAvatar = resolveProAvatarBaseUrl(pro);
                 const version = resolveProAvatarVersion(pro);
                 const avatar = withCacheBust(baseAvatar, version);
@@ -834,7 +827,7 @@ const KanbanAgenda: React.FC<Props> = ({
                             ).padStart(2, '0')}`
                           );
 
-                          // ⏳ tolerância para bloquear o card somente 10 min após o início
+                          // tolerância para bloquear o card somente 10 min após o início
                           const BLOCK_GRACE_MIN = 10;
 
                           const isPast =
