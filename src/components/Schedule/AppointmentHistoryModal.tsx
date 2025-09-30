@@ -35,22 +35,40 @@ const isNoShow = (s?: string) => (s ?? '').toLowerCase() === 'no_show';
 const currency = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+/* =================== Data utils (LOCAL-DATE) =================== */
+/** Converte ISO/Date/string para YYYY-MM-DD **no fuso local**. */
+function toLocalYMD(input?: string | Date | null): string {
+  if (!input) return '';
+  try {
+    // se já vier "YYYY-MM-DD", mantém
+    const s = String(input);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // senão, cria Date e converte para local Y-M-D
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  } catch {
+    return '';
+  }
+}
+
 const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
   isOpen,
   onClose,
 }) => {
   const { history, loading } = useAppointmentHistory();
 
-  // ===== Filtros existentes =====
+  // ===== Filtros =====
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // ===== Novo: filtro de período =====
   const [rangeMode, setRangeMode] = useState<RangeMode>('day');
   const [from, setFrom] = useState(todayLocalISO());
   const [to, setTo] = useState(todayLocalISO());
 
-  // define from/to automaticamente quando não for "custom"
   useEffect(() => {
     if (rangeMode === 'custom') return;
 
@@ -62,7 +80,7 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
       return;
     }
     if (rangeMode === 'week') {
-      // semana local domingo–sábado (ajuste se preferir segunda–domingo)
+      // domingo–sábado (ajuste p/ segunda–domingo se quiser)
       const start = new Date(now);
       start.setDate(start.getDate() - start.getDay());
       const end = new Date(start);
@@ -80,10 +98,25 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
     }
   }, [rangeMode]);
 
+  // ===== Data do EVENTO (agora sempre em data local) =====
+  const eventDateYMD = (it: any) => {
+    const s = (it?.status ?? '').toLowerCase();
+    const raw =
+      (s === 'concluido' ? (it?.finishedAt || it?.completedAt) :
+       s === 'cancelado' ? it?.canceledAt :
+       s === 'no_show'   ? it?.noShowAt   :
+       it?.startedAt) || it?.date;
+    return toLocalYMD(raw);
+  };
+
   // ===== Pipeline de filtros =====
-  // 1) período
+  // 1) período (usa data local do evento)
   const byPeriod = useMemo(
-    () => history.filter((it: any) => (it.date ?? '') >= from && (it.date ?? '') <= to),
+    () =>
+      history.filter((it: any) => {
+        const d = eventDateYMD(it); // YYYY-MM-DD local
+        return (d ?? '') >= from && (d ?? '') <= to;
+      }),
     [history, from, to]
   );
 
@@ -98,7 +131,6 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
   const filteredHistory = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return byStatus;
-
     return byStatus.filter((item: any) => {
       const p = (item.patientName ?? '').toLowerCase();
       const prof = (item.professionalName ?? '').toLowerCase();
@@ -117,21 +149,17 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
     totalAppointments > 0 ? (completedAppointments / totalAppointments) * 100 : 0;
 
   const calculateDuration = (item: any): string => {
-    // 1) duração via startedAt/finishedAt
     if (item.startedAt && item.finishedAt) {
       const startTime = new Date(item.startedAt);
       const endTime = new Date(item.finishedAt);
       const durationMinutes = Math.round(
         (endTime.getTime() - startTime.getTime()) / (1000 * 60)
       );
-
       if (durationMinutes < 60) return `${durationMinutes} min`;
       const hours = Math.floor(durationMinutes / 60);
       const minutes = durationMinutes % 60;
       return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
     }
-
-    // 2) duração rastreada manualmente (actualDuration)
     if (item.actualDuration && item.actualDuration > 0) {
       const durationMinutes = item.actualDuration;
       if (durationMinutes < 60) return `${durationMinutes} min`;
@@ -139,8 +167,6 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
       const minutes = durationMinutes % 60;
       return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
     }
-
-    // 3) sem dados
     return 'Não rastreado';
   };
 
@@ -172,262 +198,361 @@ const AppointmentHistoryModal: React.FC<AppointmentHistoryModalProps> = ({
 
   if (!isOpen) return null;
 
+  /* =================== Layout maior (altura) =================== */
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-200">
-          <h2 className="text-lg md:text-xl font-bold text-gray-900">Histórico de Atendimentos</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
-            title="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Estatísticas (apenas do período) */}
-        <div className="p-5 border-b border-gray-200 bg-gray-50">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <p className="text-xl font-bold text-blue-600">{totalAppointments}</p>
-              <p className="text-xs text-gray-600">Total</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-bold text-green-600">{completedAppointments}</p>
-              <p className="text-xs text-gray-600">Concluídos</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-bold text-red-600">{cancelledAppointments}</p>
-              <p className="text-xs text-gray-600">Cancelados</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xl font-bold text-orange-600">{noShowAppointments}</p>
-              <p className="text-xs text-gray-600">Faltaram</p>
-            </div>
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-2 md:p-4">
+      <div
+        className="
+          relative bg-white rounded-2xl shadow-xl w-full
+          max-w-5xl
+          h-[92vh] md:h-[90vh]     /* ocupa quase toda a altura */
+          overflow-hidden
+          pb-[env(safe-area-inset-bottom)]  /* evita bottom-nav cobrir no mobile */
+        "
+      >
+        {/* Cabeçalho fixo */}
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-200 px-5 py-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-800">
+              Histórico de Atendimentos
+            </h2>
+            <button
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              onClick={onClose}
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
-        {/* Filtros: período + busca + status */}
-        <div className="p-5 border-b border-gray-200">
-          <div className="flex flex-col gap-3">
-            {/* Botões de período */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={() => setRangeMode('day')}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm ${
-                  rangeMode === 'day'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Hoje"
-              >
-                <CalendarDays size={14} /> Dia
-              </button>
-              <button
-                onClick={() => setRangeMode('week')}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm ${
-                  rangeMode === 'week'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Semana"
-              >
-                <CalendarRange size={14} /> Semana
-              </button>
-              <button
-                onClick={() => setRangeMode('month')}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm ${
-                  rangeMode === 'month'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Mês"
-              >
-                <CalIcon size={14} /> Mês
-              </button>
-              <button
-                onClick={() => setRangeMode('custom')}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm ${
-                  rangeMode === 'custom'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Personalizado"
-              >
-                <FilterIcon size={14} /> Personalizado
-              </button>
+        {/* Conteúdo rolável */}
+        <div className="h-[calc(92vh-64px)] md:h-[calc(90vh-64px)] overflow-y-auto">
+          {/* Estatísticas rápidas */}
+          <div className="px-5 pt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Total</div>
+              <div className="text-lg font-semibold text-gray-800">{totalAppointments}</div>
+            </div>
+            <div className="rounded-xl bg-green-50 p-3">
+              <div className="text-xs text-green-600">Concluídos</div>
+              <div className="text-lg font-semibold text-green-800">{completedAppointments}</div>
+            </div>
+            <div className="rounded-xl bg-red-50 p-3">
+              <div className="text-xs text-red-600">Cancelados</div>
+              <div className="text-lg font-semibold text-red-800">{cancelledAppointments}</div>
+            </div>
+            <div className="rounded-xl bg-orange-50 p-3">
+              <div className="text-xs text-orange-600">Faltaram</div>
+              <div className="text-lg font-semibold text-orange-800">{noShowAppointments}</div>
+            </div>
+          </div>
+
+          {/* Filtros */}
+          <div className="px-5 py-4 space-y-3">
+            {/* Presets */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(['day','week','month','custom'] as RangeMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  className={`px-3 py-1.5 rounded-lg text-sm border ${
+                    rangeMode === mode
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50'
+                  }`}
+                  onClick={() => setRangeMode(mode)}
+                >
+                  {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : mode === 'month' ? 'Mês' : 'Personalizado'}
+                </button>
+              ))}
             </div>
 
-            {/* Datas quando for personalizado */}
-            {rangeMode === 'custom' && (
-              <div className="flex items-end gap-2">
-                <div className="flex flex-col min-w-[150px]">
-                  <span className="text-xs text-gray-500 mb-1">Data inicial</span>
-                  <div className="relative">
-                    <CalIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="date"
-                      value={from}
-                      onChange={(e) => setFrom(e.target.value)}
-                      className="w-full pr-2.5 pl-8 py-1.5 rounded-lg border border-gray-200 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-col min-w-[150px]">
-                  <span className="text-xs text-gray-500 mb-1">Data final</span>
-                  <div className="relative">
-                    <CalIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="date"
-                      value={to}
-                      onChange={(e) => setTo(e.target.value)}
-                      className="w-full pr-2.5 pl-8 py-1.5 rounded-lg border border-gray-200 text-sm"
-                    />
-                  </div>
+            {/* Datas e status */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">De</label>
+                <div className="relative">
+                  <CalIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="date"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    value={from}
+                    onChange={(e) => {
+                      setFrom(e.target.value);
+                      setRangeMode('custom');
+                    }}
+                  />
                 </div>
               </div>
-            )}
+              <div>
+                <label className="text-xs text-gray-500">Até</label>
+                <div className="relative">
+                  <CalIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="date"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    value={to}
+                    onChange={(e) => {
+                      setTo(e.target.value);
+                      setRangeMode('custom');
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Status</label>
+                <select
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">Todos os Status</option>
+                  <option value="concluido">Concluído</option>
+                  <option value="cancelado">Cancelado</option>
+                  <option value="no_show">Faltou</option>
+                </select>
+              </div>
+            </div>
 
-            {/* Busca + Status */}
-            <div className="flex flex-col md:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            {/* Busca */}
+            <div>
+              <label className="text-xs text-gray-500">Buscar por paciente, profissional ou serviço</label>
+              <div className="relative">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Buscar por paciente, profissional ou serviço..."
+                  placeholder="Buscar..."
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-              >
-                <option value="all">Todos os Status</option>
-                <option value="concluido">Concluídos</option>
-                <option value="cancelado">Cancelados</option>
-                <option value="no_show">Faltaram</option>
-              </select>
             </div>
           </div>
-        </div>
 
-        {/* Lista de Histórico */}
-        <div className="overflow-y-auto max-h-96">
-          {loading ? (
-            <div className="p-6 text-center text-gray-600">Carregando histórico...</div>
-          ) : filteredHistory.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              {searchTerm || statusFilter !== 'all'
-                ? 'Nenhum atendimento encontrado com os filtros aplicados.'
-                : 'Nenhum atendimento no período.'}
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200 pb-32">
-              {filteredHistory.map((item: any) => {
-                const formattedDate = new Date(`${item.date}T12:00:00`).toLocaleDateString('pt-BR', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                });
+          {/* Lista */}
+          <div className="px-5 pb-5">
+            {loading ? (
+              <div className="text-sm text-gray-500">Carregando histórico...</div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="text-sm text-gray-500">Nenhum registro no período.</div>
+            ) : (
+              <ul className="space-y-3">
+                {filteredHistory.map((item: any) => (
+                  <li key={item.id} className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+                    {/* Cabeçalho do item */}
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                          {getStatusText(item.status)}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {(() => {
+                            const d = eventDateYMD(item);
+                            const [y, m, day] = d.split('-').map(Number);
+                            if (!y || !m || !day) return d || '—';
+                            const dt = new Date(y, m - 1, day);
+                            return dt.toLocaleDateString('pt-BR', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            });
+                          })()}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        ID: <span className="font-mono">{item.id}</span>
+                      </div>
+                    </div>
 
-                const completedDate =
-                  item.completedAt
-                    ? new Date(item.completedAt).toLocaleDateString('pt-BR', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : undefined;
-
-                return (
-                  <div key={item.id} className="p-5 hover:bg-gray-50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                    {/* Conteúdo */}
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        {/* Paciente */}
+                        <div className="flex items-center gap-2 text-sm">
                           <User className="w-4 h-4 text-gray-400" />
-                          <h3 className="font-semibold text-gray-900">{item.patientName}</h3>
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}
-                          >
-                            {getStatusText(item.status)}
+                          <span className="font-medium text-gray-800">
+                            {item.patientName ?? '—'}
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <CalIcon className="w-4 h-4" />
-                              <span>Data: {formattedDate}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4" />
-                              <span>
-                                Horário: {item.startTime} {item.endTime ? `- ${item.endTime}` : ''}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4" />
-                              <span>
-                                Duração: {calculateDuration(item)}{' '}
-                                {(item.startedAt && item.finishedAt) ||
-                                (item.actualDuration && item.actualDuration > 0) ? (
-                                  <span className="text-green-600 font-medium"> ⏱️ (rastreado)</span>
-                                ) : (
-                                  <span className="text-orange-500 font-medium"> ⚠️ (não rastreado)</span>
-                                )}
-                              </span>
-                            </div>
-                            {item.patientPhone && <div>Telefone: {item.patientPhone}</div>}
-                          </div>
-
-                          <div className="space-y-1">
-                            <div>
-                              <span className="font-medium">Profissional:</span> {item.professionalName}
-                            </div>
-                            <div>
-                              <span className="font-medium">Serviço:</span> {item.service}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <DollarSign className="w-4 h-4" />
-                              <span>
-                                Valor:{' '}
-                                {currency(Number(item.price ?? 0))}
-                              </span>
-                            </div>
-                            {completedDate && (
-                              <div className="text-xs text-gray-500">Finalizado em: {completedDate}</div>
-                            )}
-                          </div>
+                        {/* Data/horário agendados (originais) */}
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <CalendarDays className="w-4 h-4 text-gray-400" />
+                          <span>
+                            Data:{' '}
+                            {item.date
+                              ? (() => {
+                                  const [y, m, d] = String(item.date).split('-').map(Number);
+                                  if (!y || !m || !d) return item.date;
+                                  const dt = new Date(y, m - 1, d);
+                                  return dt.toLocaleDateString('pt-BR', {
+                                    day: '2-digit',
+                                    month: 'long',
+                                    year: 'numeric',
+                                  });
+                                })()
+                              : '—'}
+                          </span>
                         </div>
 
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <span>
+                            Horário:{' '}
+                            {item.startTime && item.endTime
+                              ? `${item.startTime} - ${item.endTime}`
+                              : '—'}
+                          </span>
+                        </div>
+
+                        {/* Duração */}
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <span>
+                            Duração: {calculateDuration(item)}{' '}
+                            {!item.startedAt && !item.finishedAt && !item.actualDuration ? (
+                              <span className="text-orange-600">(não rastreado)</span>
+                            ) : null}
+                          </span>
+                        </div>
+
+                        {/* Telefone */}
+                        {item.patientPhone && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <User className="w-4 h-4 text-gray-400" />
+                            <span>Telefone: {item.patientPhone}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        {/* Profissional */}
+                        <div className="flex items-center gap-2 text-sm">
+                          <User className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-800">
+                            <span className="text-gray-500">Profissional:</span>{' '}
+                            {item.professionalName ?? '—'}
+                          </span>
+                        </div>
+
+                        {/* Serviço */}
+                        <div className="flex items-center gap-2 text-sm">
+                          <CalendarRange className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-800">
+                            <span className="text-gray-500">Serviço:</span>{' '}
+                            {item.service ?? '—'}{' '}
+                            {item.billingMode === 'clinica' ? '(clínica)' :
+                             item.billingMode === 'profissional' ? '(profissional)' : ''}
+                            {item.isRemote ? ' (online)' : ''}
+                          </span>
+                        </div>
+
+                        {/* Valor */}
+                        <div className="flex items-center gap-2 text-sm">
+                          <DollarSign className="w-4 h-4 text-gray-400" />
+                          <span className="text-gray-800">
+                            <span className="text-gray-500">Valor:</span>{' '}
+                            {typeof item.price === 'number' ? currency(item.price) : '—'}
+                          </span>
+                        </div>
+
+                        {/* Timestamps específicos */}
+                        {(item.finishedAt || item.completedAt) && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <CalendarDays className="w-4 h-4 text-gray-400" />
+                            <span>
+                              Finalizado em:{' '}
+                              {(() => {
+                                const ts = item.finishedAt || item.completedAt;
+                                try {
+                                  const dt = new Date(ts);
+                                  return dt.toLocaleString('pt-BR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                } catch {
+                                  return String(ts);
+                                }
+                              })()}
+                            </span>
+                          </div>
+                        )}
+
+                        {item.canceledAt && (
+                          <div className="flex items-center gap-2 text-xs text-red-600">
+                            <CalendarDays className="w-4 h-4" />
+                            <span>
+                              Cancelado em:{' '}
+                              {(() => {
+                                try {
+                                  const dt = new Date(item.canceledAt);
+                                  return dt.toLocaleString('pt-BR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                } catch {
+                                  return String(item.canceledAt);
+                                }
+                              })()}
+                            </span>
+                          </div>
+                        )}
+
+                        {item.noShowAt && (
+                          <div className="flex items-center gap-2 text-xs text-orange-600">
+                            <CalendarDays className="w-4 h-4" />
+                            <span>
+                              Marcado como falta em:{' '}
+                              {(() => {
+                                try {
+                                  const dt = new Date(item.noShowAt);
+                                  return dt.toLocaleString('pt-BR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                } catch {
+                                  return String(item.noShowAt);
+                                }
+                              })()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Observações */}
+                      <div className="md:col-span-2">
                         {item.notes && (
-                          <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                            <p className="text-sm text-gray-700">
-                              <span className="font-medium">Observações:</span> {item.notes}
-                            </p>
+                          <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700">
+                            <div className="flex items-center gap-2 mb-1">
+                              <FilterIcon className="w-4 h-4 text-gray-400" />
+                              <span className="text-xs text-gray-500">Observações</span>
+                            </div>
+                            <div className="whitespace-pre-wrap">{item.notes}</div>
                           </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-        {/* Rodapé */}
-        <div className="p-5 border-t border-gray-200 bg-gray-50">
-          <div className="flex justify-between items-center text-xs md:text-sm text-gray-600">
-            <span>Total de registros exibidos: {filteredHistory.length}</span>
-            <span>Taxa de conclusão (no período): {completionRate.toFixed(1)}%</span>
+          {/* Rodapé */}
+          <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 sticky bottom-0">
+            <div className="flex justify-between items-center text-xs md:text-sm text-gray-600">
+              <span>Total de registros exibidos: {filteredHistory.length}</span>
+              <span>Taxa de conclusão (no período): {completionRate.toFixed(1)}%</span>
+            </div>
           </div>
         </div>
       </div>

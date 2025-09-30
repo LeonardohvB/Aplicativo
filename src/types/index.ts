@@ -1,3 +1,5 @@
+// src/types/index.ts
+
 export interface Professional {
   id: string;
   name: string;
@@ -23,16 +25,24 @@ export interface AppointmentJourney {
   id: string;
   professionalId: string;
   professionalName: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  consultationDuration: number; // em minutos
-  bufferDuration: number;       // em minutos
+  date: string;                   // YYYY-MM-DD
+  startTime: string;              // HH:MM
+  endTime: string;                // HH:MM
+  consultationDuration: number;   // em minutos
+  bufferDuration: number;         // em minutos
   totalSlots: number;
   defaultPrice: number;
   defaultService: string;
   clinicPercentage: number;
 }
+
+export type AppointmentSlotStatus =
+  | 'disponivel'
+  | 'agendado'
+  | 'em_andamento'
+  | 'concluido'
+  | 'cancelado'
+  | 'no_show';
 
 export interface AppointmentSlot {
   id: string;
@@ -40,10 +50,10 @@ export interface AppointmentSlot {
   professionalId: string;
   patientId?: string;
   slotNumber: number;
-  startTime: string;
-  endTime: string;
-  date: string;
-  status: 'disponivel' | 'agendado' | 'em_andamento' | 'concluido' | 'cancelado' | 'no_show';
+  startTime: string;              // HH:MM
+  endTime: string;                // HH:MM
+  date: string;                   // YYYY-MM-DD
+  status: AppointmentSlotStatus;
   service: string;
   price: number;
   billingMode: 'clinica' | 'profissional';
@@ -51,8 +61,13 @@ export interface AppointmentSlot {
   patientPhone?: string;
   notes?: string;
   clinicPercentage?: number;
-  startedAt?: string;  // quando foi iniciado (ISO)
-  finishedAt?: string; // quando foi finalizado (ISO)
+
+  // timestamps/metrics (opcionais)
+  startedAt?: string | null;      // ISO quando iniciou
+  finishedAt?: string | null;     // ISO quando finalizou
+  actualDuration?: number | null; // minutos rastreados
+  canceledAt?: string | null;     // ISO quando foi cancelado
+  noShowAt?: string | null;       // ISO quando marcado no_show
 }
 
 export interface FinancialEntry {
@@ -64,7 +79,7 @@ export interface FinancialEntry {
   amount: number;
   status: 'pendente' | 'pago' | 'cancelado';
   billingMode: 'clinica' | 'profissional';
-  date: string;
+  date: string;                   // YYYY-MM-DD
 }
 
 export interface Appointment {
@@ -75,7 +90,7 @@ export interface Appointment {
   room: string;
   startTime: string;
   endTime: string;
-  date: string;
+  date: string;                   // YYYY-MM-DD
 }
 
 /* ====== Financeiro ====== */
@@ -87,12 +102,11 @@ export interface Transaction {
   type: 'income' | 'expense';
   description: string;
   amount: number;
-  date: string;                   // ISO (YYYY-MM-DD)
+  date: string;                   // YYYY-MM-DD
   category: string;
-  slotId?: string;            // 👈 vínculo com o atendimento
- 
-  
-  // Relacionamentos (opcionais) — úteis para preencher o card de detalhes:
+  slotId?: string;                // vínculo com o atendimento
+
+  // Relacionamentos (opcionais)
   professionalId?: string;
   professionalName?: string;
   patientId?: string;
@@ -101,11 +115,12 @@ export interface Transaction {
 
   // Pagamento
   status?: TransactionStatus;     // default: 'paid' (se não vier do DB)
-  paymentMethod?: string | null;  // ex: 'pix', 'dinheiro', 'cartao'...
+  paymentMethod?: string | null;  // 'pix', 'dinheiro'...
   paidAt?: string | null;         // ISO datetime quando quitado
-  dueDate?: string | null;        // opcional: data de vencimento
+  dueDate?: string | null;        // opcional
 }
 
+/* ====== Histórico de atendimentos ====== */
 export interface AppointmentHistory {
   owner_id: string | null;
   id: string;
@@ -115,19 +130,27 @@ export interface AppointmentHistory {
   patientName: string;
   patientPhone?: string;
   patientCpf?: string | null;
+
   service: string;
   price: number;
-  date: string;
-  startTime: string;
-  endTime: string;
+
+  date: string;                   // YYYY-MM-DD
+  startTime: string;              // HH:MM
+  endTime: string;                // HH:MM
+
   status: 'concluido' | 'cancelado' | 'no_show';
   billingMode: 'clinica' | 'profissional';
   clinicPercentage: number;
   notes?: string;
-  completedAt: string;
-  actualDuration?: number; // Duração real em minutos
-  startedAt?: string;      // Quando foi iniciado
-  finishedAt?: string;     // Quando foi finalizado
+
+  completedAt: string;            // (legado) pode ser igual a finishedAt
+  actualDuration?: number;        // minutos
+
+  // timestamps detalhados
+  startedAt?: string | null;      // ISO
+  finishedAt?: string | null;     // ISO
+  canceledAt?: string | null;     // ISO — quando foi cancelado
+  noShowAt?: string | null;       // ISO — quando marcado no_show
 }
 
 export interface DashboardStats {
@@ -138,15 +161,3 @@ export interface DashboardStats {
   totalRevenue: number;
   totalExpenses: number;
 }
-// src/types.ts
-export interface Transaction {
-  id: string;
-  type: 'income' | 'expense';
-  description: string;
-  amount: number;
-  date: string;
-  category: string;
-  professionalId?: string;
-
-}
- export type TxStatus = 'pending' | 'paid';

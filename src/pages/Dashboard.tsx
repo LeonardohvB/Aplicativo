@@ -4,7 +4,7 @@ import StatCard from '../components/Dashboard/StatCard';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
-import OverlayMenu from "../components/common/OverlayMenu";
+
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -23,7 +23,7 @@ function parseToDate(s?: string | null) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }) => {
+const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
   const { slots } = useAppointmentJourneys();
   const { transactions } = useTransactions();
 
@@ -99,16 +99,11 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
       </div>
     );
 
-  // handler para o item "Perfil" do menu
-  const handleOpenProfile = () => {
-    if (onOpenProfile) onOpenProfile();
-    else window.dispatchEvent(new CustomEvent('open:profile'));
-  };
+ 
 
   return (
     <div className="p-6 pb-24 min-h-screen bg-slate-50">
-      {/* Ícone/menu suspenso no topo direito (estilo do mockup) */}
-      <OverlayMenu onOpenProfile={handleOpenProfile} />
+      
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -118,7 +113,7 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
             {firstName ? <>Seja bem-vindo <span className="text-blue-700">{firstName}</span></> : <>Seja bem-vindo</>}
           </h1>
         </div>
-        {/* Removido o botão antigo de perfil; agora o acesso é pelo OverlayMenu */}
+       
         <div className="w-10 h-10" />
       </div>
 

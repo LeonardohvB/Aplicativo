@@ -1,3 +1,4 @@
+// src/hooks/useAppointmentHistory.ts
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AppointmentHistory } from '../types';
@@ -44,13 +45,13 @@ export const useAppointmentHistory = () => {
           created_at
         `)
         .eq('owner_id', uid)
-        // ordenação estável: por data, depois hora de início; se não existir, usa completed_at desc
+        // ordenação estável: por data, depois hora de início
         .order('date', { ascending: false })
         .order('start_time', { ascending: false });
 
       if (error) {
         // modo DEV sem supabase
-        if (error.message?.includes('Supabase not configured')) {
+        if (typeof error.message === 'string' && error.message.includes('Supabase not configured')) {
           console.warn('Using mock data for appointment history - Supabase not configured');
           setHistory([]);
           return;
@@ -75,11 +76,12 @@ export const useAppointmentHistory = () => {
         clinicPercentage: Number(item.clinic_percentage) || 0,
         notes: item.notes ?? null,
         completedAt: item.completed_at,
-        actualDuration: item.actual_duration,
-        startedAt: item.started_at,
-        finishedAt: item.finished_at,
-        // opcional no seu tipo; mantém se existir
+        actualDuration: item.actual_duration ?? undefined,
+        startedAt: item.started_at ?? undefined,
+        finishedAt: item.finished_at ?? undefined,
+        // opcionais no tipo; mantidos se existirem na tabela
         owner_id: item.owner_id,
+        // se o seu tipo não tiver created_at, não tem problema: é ignorado no resto do app
         created_at: item.created_at,
       }));
 
@@ -92,6 +94,11 @@ export const useAppointmentHistory = () => {
     }
   };
 
+  /**
+   * Insere um atendimento no histórico.
+   * Aceita `canceledAt` e `noShowAt` no tipo para manter compatibilidade com quem chama,
+   * mas estes **não** são enviados ao banco (evita erro se as colunas não existirem).
+   */
   const addToHistory = async (slot: {
     id: string;
     professionalId: string;
@@ -101,9 +108,9 @@ export const useAppointmentHistory = () => {
     patientPhone?: string;
     service: string;
     price: number;
-    date: string;
-    startTime: string;
-    endTime: string;
+    date: string;       // YYYY-MM-DD
+    startTime: string;  // HH:MM
+    endTime: string;    // HH:MM
     status: 'concluido' | 'cancelado' | 'no_show';
     billingMode: 'clinica' | 'profissional';
     clinicPercentage?: number;
@@ -111,9 +118,12 @@ export const useAppointmentHistory = () => {
     actualDuration?: number;
     startedAt?: string;
     finishedAt?: string;
+    // 👇 apenas para tipagem (não será enviado ao DB aqui)
+    canceledAt?: string;
+    noShowAt?: string;
   }) => {
     try {
-      // 🔐 uid para setar owner_id no insert (além do trigger)
+      // 🔐 uid para setar owner_id no insert (além do trigger, se houver)
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) throw new Error('No authenticated user');
@@ -130,7 +140,8 @@ export const useAppointmentHistory = () => {
         professionalName = professional?.name || 'Profissional não encontrado';
       }
 
-      const payload = {
+      // Só use chaves que com certeza existem na tabela
+      const payload: any = {
         professional_id: slot.professionalId,
         professional_name: professionalName,
         patient_id: slot.patientId ?? null,
@@ -149,8 +160,13 @@ export const useAppointmentHistory = () => {
         actual_duration: slot.actualDuration ?? null,
         started_at: slot.startedAt ?? null,
         finished_at: slot.finishedAt ?? null,
-        owner_id: uid, // 👈 explícito (a trigger também preencheria)
+        owner_id: uid,
       };
+
+      // Remove undefined para não enviar colunas vazias
+      Object.keys(payload).forEach((k) => {
+        if (payload[k] === undefined) delete payload[k];
+      });
 
       const { error } = await supabase.from('appointment_history').insert([payload]);
       if (error) throw error;
@@ -162,30 +178,31 @@ export const useAppointmentHistory = () => {
   };
 
   const getHistoryByProfessional = (professionalId: string) => {
-    return history.filter(item => item.professionalId === professionalId);
+    return history.filter((item) => item.professionalId === professionalId);
   };
 
   const getHistoryByPatient = (patientName: string) => {
-    return history.filter(item =>
+    return history.filter((item) =>
       (item.patientName ?? '').toLowerCase().includes(patientName.toLowerCase())
     );
   };
 
   const getHistoryByDateRange = (startDate: string, endDate: string) => {
-    return history.filter(item =>
-      item.date >= startDate && item.date <= endDate
-    );
+    return history.filter((item) => item.date >= startDate && item.date <= endDate);
   };
 
   const getHistoryStats = () => {
     const totalAppointments = history.length;
-    const completedAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'concluido').length;
-    const cancelledAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'cancelado').length;
-    const noShowAppointments = history.filter(h => (h.status ?? '').toLowerCase() === 'no_show').length;
+    const completedAppointments = history.filter((h) => (h.status ?? '').toLowerCase() === 'concluido').length;
+    const cancelledAppointments = history.filter((h) => (h.status ?? '').toLowerCase() === 'cancelado').length;
+    const noShowAppointments = history.filter((h) => (h.status ?? '').toLowerCase() === 'no_show').length;
 
     const totalRevenue = history
-      .filter(h => (h.status ?? '').toLowerCase() === 'concluido')
-      .reduce((sum, h) => sum + (Number(h.price) || 0) * ((Number(h.clinicPercentage) || 0) / 100), 0);
+      .filter((h) => (h.status ?? '').toLowerCase() === 'concluido')
+      .reduce(
+        (sum, h) => sum + (Number(h.price) || 0) * ((Number(h.clinicPercentage) || 0) / 100),
+        0
+      );
 
     return {
       totalAppointments,
@@ -193,7 +210,7 @@ export const useAppointmentHistory = () => {
       cancelledAppointments,
       noShowAppointments,
       totalRevenue,
-      completionRate: totalAppointments > 0 ? (completedAppointments / totalAppointments * 100) : 0,
+      completionRate: totalAppointments > 0 ? (completedAppointments / totalAppointments) * 100 : 0,
     };
   };
 

@@ -1,15 +1,12 @@
 // src/pages/Schedule.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, History } from 'lucide-react';
-import { UserPlus } from 'lucide-react';
-
+import { Plus } from 'lucide-react';
 import CreateJourneyModal from '../components/Schedule/CreateJourneyModal';
 import EditJourneyModal from '../components/Schedule/EditJourneyModal';
 import SchedulePatientModal from '../components/Schedule/SchedulePatientModal';
 import EditPatientModal from '../components/Schedule/EditPatientModal';
 import AppointmentHistoryModal from '../components/Schedule/AppointmentHistoryModal';
 import AddPatientModal from '../components/Patients/AddPatientModal';
-
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
@@ -74,6 +71,8 @@ const Schedule: React.FC = () => {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isEditPatientModalOpen, setIsEditPatientModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  // Modal de cadastro rápido de paciente (pode abrir via evento 'patient:new')
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
 
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
@@ -112,10 +111,18 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:filter', handler as EventListener);
   }, []);
 
+  // Abrir histórico (via menu suspenso)
   useEffect(() => {
     const openHistory = () => setIsHistoryModalOpen(true);
-    window.addEventListener('agenda:history', openHistory as EventListener);
-    return () => window.removeEventListener('agenda:history', openHistory as EventListener);
+    window.addEventListener('agenda:openHistory', openHistory as EventListener);
+    return () => window.removeEventListener('agenda:openHistory', openHistory as EventListener);
+  }, []);
+
+  // Abrir cadastro rápido de paciente (se algum lugar disparar o evento)
+  useEffect(() => {
+    const openNewPatient = () => setIsAddPatientOpen(true);
+    window.addEventListener('patient:new', openNewPatient as EventListener);
+    return () => window.removeEventListener('patient:new', openNewPatient as EventListener);
   }, []);
 
   const todayStr = localISODate(new Date());
@@ -206,32 +213,19 @@ const Schedule: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* Cabeçalho com botões (SEM barra de busca/datas aqui) */}
+      {/* FAB “+” — alinhado com o menu na mesma linha, mais à esquerda */}
+      <button
+        onClick={() => setIsCreateModalOpen(true)}
+        className="fixed right-20 top-4 z-20 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+        title="Criar jornada"
+        aria-label="Criar jornada"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
+      {/* Cabeçalho sem botões do lado direito */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
-        <div className="flex space-x-3">
-          <button
-            onClick={() => setIsHistoryModalOpen(true)}
-            className="p-3 bg-gray-600 text-white rounded-full hover:bg-gray-700 transition-colors shadow-lg"
-            title="Ver histórico de atendimentos"
-          >
-            <History className="w-6 h-6" />
-          </button>
-          <button
-            onClick={() => setIsAddPatientOpen(true)}
-            className="p-3 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 transition-colors shadow-lg"
-            title="Cadastrar paciente"
-          >
-            <UserPlus className="w-6 h-6" />
-          </button>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
-            title="Criar jornada"
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
       </div>
 
       {/* ÚNICO componente com busca + datas + agrupamento por registro */}

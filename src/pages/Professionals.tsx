@@ -1,19 +1,16 @@
 // src/pages/Professionals.tsx
-import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import ProfessionalCard from '../components/Professionals/ProfessionalCard';
 import AddProfessionalModal from '../components/Professionals/AddProfessionalModal';
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
-import SwipeRow from '../components/common/SwipeRow'; // ⬅️ NOVO
+import SwipeRow from '../components/common/SwipeRow';
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
-
-  // ⬇️ controla qual linha está com as ações abertas
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
 
   const {
@@ -33,12 +30,18 @@ const Professionals: React.FC = () => {
     }
   };
 
-  // ✅ Aceita os campos enviados pelo AddProfessionalModal
+  // Abre cadastro quando o menu dispara o evento global
+  useEffect(() => {
+    const open = () => setIsModalOpen(true);
+    window.addEventListener('professionals:add', open);
+    return () => window.removeEventListener('professionals:add', open);
+  }, []);
+
   const handleAdd = async (newProfessional: {
     name: string;
+    cpf: string;
     specialty: string;
-    value?: number;
-    phone?: string;
+    phone: string;
     registrationCode: string;
     commissionRate?: number;
   }) => {
@@ -46,7 +49,6 @@ const Professionals: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // ✅ Aceita os campos enviados pelo EditProfessionalModal
   const handleUpdate = async (
     id: string,
     updates: {
@@ -69,11 +71,8 @@ const Professionals: React.FC = () => {
     setEditingProfessional(null);
   };
 
-  /**
-   * Callback chamado pelo ProfessionalCard DEPOIS do upload/limpeza ter sido feito por ele.
-   */
   const handlePhotoChange = async (_id: string, _photoFile: File) => {
-    // noop — o card já atualiza visualmente (cache-busting) e no DB.
+    // noop
   };
 
   if (loading) {
@@ -86,14 +85,9 @@ const Professionals: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
+      {/* Header sem botão */}
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Profissionais</h1>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
       </div>
 
       <div className="space-y-4">
@@ -112,8 +106,8 @@ const Professionals: React.FC = () => {
                 <ProfessionalCard
                   professional={p}
                   onToggle={toggleProfessional}
-                  onEdit={openEditById}          // mantido por compat (não é usado dentro do card)
-                  onDelete={handleDelete}        // idem
+                  onEdit={openEditById}
+                  onDelete={handleDelete}
                   onPhotoChange={handlePhotoChange}
                 />
               </SwipeRow>

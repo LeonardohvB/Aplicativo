@@ -10,9 +10,11 @@ import Schedule from './pages/Schedule'
 import Finance from './pages/Finance'
 import Reports from './pages/Reports'
 import LoginGate from './pages/LoginGate'
+import OverlayMenu from './components/common/OverlayMenu'
+import PatientsNew from './pages/PatientsNew' // ⟵ NOVO
 
-// Tipo mais amplo: inclui as abas do BottomNav + 'perfil'
-type AppTab = Tab | 'perfil'
+// Aceita também “rotas” internas de tela cheia
+type AppTab = Tab | 'perfil' | 'patients_new' // ⟵ mantém
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('inicio')
@@ -26,6 +28,7 @@ export default function App() {
   }
   const [firstName, setFirstName] = useState<string | null>(null)
 
+  // ===== sessão / auth =====
   useEffect(() => {
     let unsub = () => {}
 
@@ -52,6 +55,7 @@ export default function App() {
     return () => unsub()
   }, [])
 
+  // ===== nome do usuário =====
   useEffect(() => {
     if (!user) return
 
@@ -78,6 +82,7 @@ export default function App() {
     return () => window.removeEventListener('profile:saved', onSaved)
   }, [])
 
+  // ===== carregando / login =====
   if (checkingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -86,18 +91,25 @@ export default function App() {
     )
   }
 
-  // Sem usuário logado: mostra Splash/Login
   if (!user) return <LoginGate />
 
-  // cast temporário para aceitar a nova prop até atualizarmos Dashboard.tsx
+  // cast temporário para aceitar a prop firstName em Dashboard
   const DashboardComp: any = Dashboard
 
+  // ===== conteúdo por aba =====
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais': return <Professionals />
       case 'agenda':        return <Schedule />
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />
+      case 'patients_new':  // ⟵ tela inteira de cadastro de paciente
+        return (
+          <PatientsNew
+            onBack={() => setActiveTab('agenda')}
+            onCreated={() => setActiveTab('agenda')}
+          />
+        )
       case 'perfil':        return <Profile onBack={() => setActiveTab('inicio')} />
       default:
         return (
@@ -117,14 +129,37 @@ export default function App() {
 
   return (
     <>
-      {/* Wrapper de viewport: rolagem só aqui (a página/viewport está travada no CSS global). */}
-      <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50">
+      {/* Wrapper de viewport: rolagem só aqui */}
+      <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50 relative">
+        {/* Menu suspenso fixo em TODAS as abas */}
+        <div className="fixed right-4 top-4 z-40">
+        <OverlayMenu
+  onOpenProfile={() => setActiveTab('perfil')}
+  onOpenNewPatient={() => setActiveTab('patients_new')}
+  onOpenNewProfessional={() => {
+    setActiveTab('profissionais');
+    setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
+  }}
+  onOpenHistory={() => {                 // ← NOVO
+    setActiveTab('agenda');              // vai para Agenda
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('agenda:openHistory')); // sinal para abrir o modal
+    }, 0);
+  }}
+/>
+
+        </div>
+
         {renderContent()}
 
         {/* BottomNavigation só conhece Tabs “normais”.
-           - Se estiver em 'perfil', mostramos como 'inicio' para não quebrar tipagem. */}
+            Se estiver em 'perfil' ou 'patients_new', mostramos 'inicio' para não quebrar tipagem. */}
         <BottomNavigation
-          activeTab={activeTab === 'perfil' ? 'inicio' : (activeTab as Tab)}
+          activeTab={
+            activeTab === 'perfil' || activeTab === 'patients_new'
+              ? 'inicio'
+              : (activeTab as Tab)
+          }
           onTabChange={(t: Tab) => setActiveTab(t)}
         />
       </div>
