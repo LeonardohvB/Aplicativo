@@ -1,9 +1,10 @@
 import React from 'react';
-import { Users, DollarSign, Calendar, UserCircle2, Eye, EyeOff } from 'lucide-react';
+import { Users, DollarSign, Calendar, Eye, EyeOff } from 'lucide-react';
 import StatCard from '../components/Dashboard/StatCard';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
+import OverlayMenu from "../components/common/OverlayMenu";
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -68,14 +69,14 @@ const Dashboard: React.FC<Props> = ({ onOpenProfile, firstName, onGotoSchedule }
     .reduce((sum, t) => sum + t.amount, 0);
 
   // Visibilidade (persiste)
- const [revenueVisible, setRevenueVisible] = React.useState<boolean>(() => getMoneyVisible());
-const toggleRevenue = () => {
-  setRevenueVisible(v => {
-    const nv = !v;
-    setMoneyVisible(nv);   // persiste na mesma chave
-    return nv;
-  });
-};
+  const [revenueVisible, setRevenueVisible] = React.useState<boolean>(() => getMoneyVisible());
+  const toggleRevenue = () => {
+    setRevenueVisible(v => {
+      const nv = !v;
+      setMoneyVisible(nv);   // persiste na mesma chave
+      return nv;
+    });
+  };
 
   // Valor formatado (sempre string)
   const revenueStr = `R$ ${monthlyRevenue.toLocaleString('pt-BR', {
@@ -98,8 +99,17 @@ const toggleRevenue = () => {
       </div>
     );
 
+  // handler para o item "Perfil" do menu
+  const handleOpenProfile = () => {
+    if (onOpenProfile) onOpenProfile();
+    else window.dispatchEvent(new CustomEvent('open:profile'));
+  };
+
   return (
     <div className="p-6 pb-24 min-h-screen bg-slate-50">
+      {/* Ícone/menu suspenso no topo direito (estilo do mockup) */}
+      <OverlayMenu onOpenProfile={handleOpenProfile} />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -108,10 +118,8 @@ const toggleRevenue = () => {
             {firstName ? <>Seja bem-vindo <span className="text-blue-700">{firstName}</span></> : <>Seja bem-vindo</>}
           </h1>
         </div>
-        <button type="button" onClick={onOpenProfile} aria-label="Abrir perfil" title="Perfil"
-                className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center shadow-sm hover:shadow transition active:scale-95">
-          <UserCircle2 className="w-6 h-6 text-slate-700" />
-        </button>
+        {/* Removido o botão antigo de perfil; agora o acesso é pelo OverlayMenu */}
+        <div className="w-10 h-10" />
       </div>
 
       {/* KPIs topo */}
