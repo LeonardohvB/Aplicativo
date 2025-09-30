@@ -23,21 +23,23 @@ export default function OverlayMenu({
   onOpenHistory,
 }: Props) {
   const [open, setOpen] = useState(false);
+
   const panelRef = useRef<HTMLDivElement>(null);
-  const firstItemRef = useRef<HTMLButtonElement>(null);
   const menuItemsRef = useRef<HTMLButtonElement[]>([]);
 
-  // ---------- teclado (Up/Down/Home/End) ----------
+  // ---------- registrar item para navegação ----------
   const registerItemRef = (el: HTMLButtonElement | null, index: number) => {
     if (!el) return;
     menuItemsRef.current[index] = el;
   };
+
   const focusItem = (index: number) => {
     const items = menuItemsRef.current.filter(Boolean);
     if (!items.length) return;
     const i = ((index % items.length) + items.length) % items.length;
     items[i]?.focus();
   };
+
   const onKeyNav = (e: React.KeyboardEvent) => {
     const items = menuItemsRef.current.filter(Boolean);
     if (!items.length) return;
@@ -80,7 +82,12 @@ export default function OverlayMenu({
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const t = setTimeout(() => firstItemRef.current?.focus(), 80);
+    const t = setTimeout(() => {
+      const firstBtn = panelRef.current?.querySelector<HTMLButtonElement>(
+        'button[role="menuitem"]'
+      );
+      firstBtn?.focus();
+    }, 80);
     return () => {
       document.body.style.overflow = prev;
       clearTimeout(t);
@@ -146,10 +153,7 @@ export default function OverlayMenu({
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => {
-                      firstItemRef.current = el || null;
-                      registerItemRef(el, 0);
-                    }}
+                    ref={(el) => registerItemRef(el, 0)}
                     onClick={() => {
                       setOpen(false);
                       onOpenProfile();
