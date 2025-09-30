@@ -11,10 +11,10 @@ import {
   LogOut,
   Building2,
   MapPin,
-  Image as ImageIcon,
-  Trash2,
-  Upload,
 } from "lucide-react";
+
+// ícones para os botões da Logo
+import { Upload, Trash2 } from "lucide-react";
 
 /* -------------------- Helpers -------------------- */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
@@ -58,32 +58,29 @@ const isValidCPF = (cpfRaw: string) => {
   return d2 === parseInt(c[10]);
 };
 
-/* ----- Title Case preservando espaços digitados ----- */
 const capSingle = (w: string) =>
   w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
-
-const titleAllWordsLive = (input: string) => {
-  if (!input) return "";
-  const hadTrailing = /\s$/.test(input);
-  const core = input.toLowerCase().replace(/\s{2,}/g, " ").trimStart();
-  const words = core
+const titleAllWordsLive = (s: string) =>
+  (s || "")
+    .toLowerCase()
+    .replace(/\s{2,}/g, " ")
+    .trimStart()
     .split(" ")
     .filter(Boolean)
     .map((w) => (w.includes("-") ? w.split("-").map(capSingle).join("-") : capSingle(w)))
     .join(" ");
-  return hadTrailing ? words + " " : words;
-};
-
-const titleAllWordsFinal = (input: string) => titleAllWordsLive(input).trim();
+const titleAllWordsFinal = (s: string) => titleAllWordsLive(s).trim();
 /* -------------------------------------------------- */
 
 type Props = { onBack: () => void };
 
 type Form = {
+  // usuário
   name: string;
   cpf: string;
   phone: string;
   email: string;
+  // clínica
   clinicName: string;
   clinicCnpj: string;
   clinicAddress: string;
@@ -91,10 +88,11 @@ type Form = {
   clinicEmail: string;
 };
 
-const SELECT_COLS =
-  "id, name, cpf, phone, email, clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_key, updated_at";
+const BASE_COLS = "id, name, cpf, phone, email";
+const CLINIC_COLS =
+  "clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_path";
 
-const STORAGE_BUCKET = "clinic-logos";
+const BUCKET = "clinic-logos"; // bucket sugerido
 
 export default function Profile({ onBack }: Props) {
   const [form, setForm] = useState<Form>({
@@ -110,13 +108,28 @@ export default function Profile({ onBack }: Props) {
   });
 
   const [dbRow, setDbRow] = useState<any | null>(null);
+  const [hasRow, setHasRow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; cpf?: string; phone?: string }>({});
+
+  // Logo
+  const [logoPath, setLogoPath] = useState<string | null>(null); // caminho no storage
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);   // URL pública/preview
   const [logoUploading, setLogoUploading] = useState(false);
-  const [logoKey, setLogoKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // URL pública a partir do path
+  const publicUrlFromPath = (path?: string | null) => {
+    if (!path) return null;
+    try {
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      return data.publicUrl || null;
+    } catch {
+      return null;
+    }
+  };
 
   /* ========= carregar ========= */
   useEffect(() => {
@@ -127,26 +140,48 @@ export default function Profile({ onBack }: Props) {
         const uid = auth.user?.id;
         if (!uid) { setLoading(false); return; }
 
-        const { data: base } = await supabase
+        // base
+        const { data: base, error: e1 } = await supabase
           .from("profiles")
-          .select(SELECT_COLS)
+          .select(BASE_COLS)
           .eq("id", uid)
           .maybeSingle();
+        if (e1 && e1.code !== "PGRST116") console.warn("profile base error:", e1);
 
-        if (alive && base) {
-          setDbRow(base);
-          setLogoKey(base?.clinic_logo_key ?? null);
+        // clínica (campos opcionais)
+        let clinic: any = {};
+        const { data: cData, error: e2 } = await supabase
+          .from("profiles")
+          .select(CLINIC_COLS)
+          .eq("id", uid)
+          .maybeSingle();
+        if (!e2) clinic = cData ?? {};
+        else if (e2.code !== "PGRST116" && e2.code !== "42703") {
+          console.warn("clinic cols error:", e2);
+        }
+
+        const merged = { ...(base ?? {}), ...(clinic ?? {}) };
+
+        if (alive) {
+          setHasRow(!!base);
+          setDbRow(merged);
+
           setForm({
-            name: titleAllWordsFinal(base?.name ?? ""),
-            cpf: formatCPF(base?.cpf ?? ""),
-            phone: formatBRCell(base?.phone ?? ""),
-            email: base?.email ?? auth.user?.email ?? "",
-            clinicName: base?.clinic_name ?? "",
-            clinicCnpj: formatCNPJ(base?.clinic_cnpj ?? ""),
-            clinicAddress: base?.clinic_address ?? "",
-            clinicPhone: formatBRCell(base?.clinic_phone ?? ""),
-            clinicEmail: base?.clinic_email ?? "",
+            name: titleAllWordsFinal(merged?.name ?? ""),
+            cpf: formatCPF(merged?.cpf ?? ""),
+            phone: formatBRCell(merged?.phone ?? ""),
+            email: merged?.email ?? auth.user?.email ?? "",
+            clinicName: merged?.clinic_name ?? "",
+            clinicCnpj: formatCNPJ(merged?.clinic_cnpj ?? ""),
+            clinicAddress: merged?.clinic_address ?? "",
+            clinicPhone: formatBRCell(merged?.clinic_phone ?? ""),
+            clinicEmail: merged?.clinic_email ?? "",
           });
+
+          const path = merged?.clinic_logo_path ?? null;
+          const url = publicUrlFromPath(path);
+          setLogoPath(path);
+          setLogoUrl(url);
         }
       } finally {
         if (alive) setLoading(false);
@@ -154,14 +189,6 @@ export default function Profile({ onBack }: Props) {
     })();
     return () => { alive = false; };
   }, []);
-
-  /* ========= URL pública do logo (com cache-bust) ========= */
-  const logoUrl = useMemo(() => {
-    if (!logoKey) return null;
-    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(logoKey);
-    const v = dbRow?.updated_at ? new Date(dbRow.updated_at).getTime() : Date.now();
-    return `${data.publicUrl}?v=${v}`;
-  }, [logoKey, dbRow?.updated_at]);
 
   /* ========= helpers UI ========= */
   const inputClass = (err?: boolean) =>
@@ -177,11 +204,11 @@ export default function Profile({ onBack }: Props) {
       const v = e.target.value;
       setErrors((s) => ({ ...s, [field]: undefined }));
       if (field === "name") setForm((f) => ({ ...f, name: titleAllWordsLive(v) }));
-      else if (field === "clinicName") setForm((f) => ({ ...f, clinicName: titleAllWordsLive(v) }));
-      else if (field === "cpf") setForm((f) => ({ ...f, cpf: formatCPF(v) })); 
+      else if (field === "cpf") setForm((f) => ({ ...f, cpf: formatCPF(v) }));
       else if (field === "phone") setForm((f) => ({ ...f, phone: formatBRCell(v) }));
       else if (field === "clinicCnpj") setForm((f) => ({ ...f, clinicCnpj: formatCNPJ(v) }));
       else if (field === "clinicPhone") setForm((f) => ({ ...f, clinicPhone: formatBRCell(v) }));
+      else if (field === "clinicName") setForm((f) => ({ ...f, clinicName: titleAllWordsLive(v) }));
       else setForm((f) => ({ ...f, [field]: v }));
     };
 
@@ -195,34 +222,138 @@ export default function Profile({ onBack }: Props) {
     return Object.keys(e).length === 0;
   };
 
-  /* ========= salvar ========= */
+  const keepOr = (val: string, prev?: string | null) =>
+    val.trim() === "" ? (prev ?? null) : val.trim();
+
+  /* ========= upload/remover logo ========= */
+  const handleUploadLogo = async (file: File) => {
+    try {
+      setLogoUploading(true);
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) throw new Error("Usuário não autenticado.");
+
+      const ext = file.name.split(".").pop() || "png";
+      const fname = `${Date.now()}.${ext.toLowerCase()}`;
+      const path = `${uid}/${fname}`;
+
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (upErr) throw upErr;
+
+      // apaga anterior (se existir)
+      if (logoPath && logoPath !== path) {
+        await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
+      }
+
+      // tenta salvar o path na tabela (se a coluna existir)
+      const payload: any = { clinic_logo_path: path };
+      let saveErr: any = null;
+      if (hasRow) {
+        const { error } = await supabase.from("profiles").update(payload).eq("id", uid);
+        saveErr = error;
+      } else {
+        const { error } = await supabase.from("profiles").insert([{ id: uid, ...payload }]);
+        saveErr = error;
+      }
+      if (saveErr && (saveErr.code === "42703" || /column .* does not exist/i.test(saveErr.message))) {
+        // coluna não existe — ignorar
+      } else if (saveErr) {
+        throw saveErr;
+      }
+
+      const url = publicUrlFromPath(path);
+      setLogoPath(path);
+      setLogoUrl(url);
+    } catch (e: any) {
+      console.error("upload logo error:", e);
+      alert(e.message ?? "Erro ao enviar logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    try {
+      if (!confirm("Remover a logo da clínica?")) return;
+      setLogoUploading(true);
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) throw new Error("Usuário não autenticado.");
+
+      if (logoPath) {
+        await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
+      }
+
+      // tenta limpar o path na tabela (se existir a coluna)
+      const payload: any = { clinic_logo_path: null };
+      let saveErr: any = null;
+      const { error } = await supabase.from("profiles").update(payload).eq("id", uid);
+      saveErr = error;
+      if (saveErr && (saveErr.code === "42703" || /column .* does not exist/i.test(saveErr.message))) {
+        // coluna não existe — ignorar
+      } else if (saveErr) {
+        throw saveErr;
+      }
+
+      setLogoPath(null);
+      setLogoUrl(null);
+    } catch (e: any) {
+      console.error("remove logo error:", e);
+      alert(e.message ?? "Erro ao remover logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  /* ========= salvar (resiliente) ========= */
   const handleSave = async () => {
     if (!validate()) return;
+
     setSaving(true);
     try {
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) throw new Error("Usuário não autenticado.");
 
-      const payload: any = {
-        id: uid,
-        name: titleAllWordsFinal(form.name),
-        cpf: onlyDigits(form.cpf) || null,
-        phone: onlyDigits(form.phone) || null,
-        email: form.email?.trim() || null,
-        clinic_name: titleAllWordsFinal(form.clinicName) || null,
-        clinic_cnpj: onlyDigits(form.clinicCnpj) || null,
-        clinic_address: form.clinicAddress?.trim() || null,
-        clinic_phone: onlyDigits(form.clinicPhone) || null,
-        clinic_email: form.clinicEmail?.trim() || null,
-        clinic_logo_key: logoKey || null,
-        updated_at: new Date().toISOString(),
+      const basePayload = {
+        name: keepOr(titleAllWordsFinal(form.name), dbRow?.name),
+        cpf: keepOr(onlyDigits(form.cpf), dbRow?.cpf),
+        phone: keepOr(onlyDigits(form.phone), dbRow?.phone),
+        email: keepOr(form.email, dbRow?.email),
+      };
+      const clinicPayload = {
+        clinic_name: keepOr(titleAllWordsFinal(form.clinicName), dbRow?.clinic_name),
+        clinic_cnpj: keepOr(onlyDigits(form.clinicCnpj), dbRow?.clinic_cnpj),
+        clinic_address: keepOr(form.clinicAddress, dbRow?.clinic_address),
+        clinic_phone: keepOr(onlyDigits(form.clinicPhone), dbRow?.clinic_phone),
+        clinic_email: keepOr(form.clinicEmail, dbRow?.clinic_email),
+        // se a coluna existir, o path já foi salvo no upload/remove
       };
 
-      const { error } = await supabase.from("profiles").upsert(payload, { onConflict: "id" });
+      const trySave = async (payload: any) => {
+        if (hasRow) {
+          return supabase.from("profiles").update(payload).eq("id", uid);
+        }
+        return supabase.from("profiles").insert([{ id: uid, ...payload }]);
+      };
+
+      // 1ª tentativa: tudo
+      let { error } = await trySave({ ...basePayload, ...clinicPayload });
+
+      // se houver coluna inexistente, salva só básicas
+      if (error && (error.code === "42703" || /column .* does not exist/i.test(error.message))) {
+        const r2 = await trySave(basePayload);
+        error = r2.error;
+      }
       if (error) throw error;
 
-      setDbRow(payload);
+      setDbRow((prev: any) => ({ id: uid, ...(prev ?? {}), ...basePayload, ...clinicPayload }));
+      setHasRow(true);
+
+      window.dispatchEvent(new CustomEvent("profile:saved", { detail: { name: basePayload.name || "" } }));
       alert("Perfil atualizado com sucesso!");
     } catch (e: any) {
       console.error("save profile error:", e);
@@ -232,69 +363,6 @@ export default function Profile({ onBack }: Props) {
     }
   };
 
-  /* ========= upload/remover logo ========= */
-  const pickLogo = () => fileInputRef.current?.click();
-
-  const handleUploadLogo = async (file: File) => {
-    if (!file) return;
-    if (!/^image\//.test(file.type)) return alert("Envie uma imagem (PNG/JPG/SVG).");
-    if (file.size > 3 * 1024 * 1024) return alert("Tamanho máximo: 3 MB.");
-
-    try {
-      setLogoUploading(true);
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth.user?.id;
-      if (!uid) throw new Error("Usuário não autenticado.");
-
-      const ext = file.name.split(".").pop() || "png";
-      const path = `${uid}/logo_${Date.now()}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(path, file, { upsert: true, cacheControl: "3600", contentType: file.type });
-      if (upErr) throw upErr;
-
-      const { error: upsertErr } = await supabase
-        .from("profiles").update({ clinic_logo_key: path, updated_at: new Date().toISOString() }).eq("id", uid);
-      if (upsertErr) throw upsertErr;
-
-      setLogoKey(path);
-      setDbRow((prev: any) => ({ ...(prev ?? {}), clinic_logo_key: path, updated_at: new Date().toISOString() }));
-    } catch (e: any) {
-      console.error("upload logo error:", e);
-      alert(e.message ?? "Falha ao enviar logo");
-    } finally {
-      setLogoUploading(false);
-    }
-  };
-
-  const handleRemoveLogo = async () => {
-    if (!logoKey) return;
-    if (!confirm("Remover logo da clínica?")) return;
-    try {
-      setLogoUploading(true);
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth.user?.id;
-      if (!uid) throw new Error("Usuário não autenticado.");
-
-      await supabase.storage.from(STORAGE_BUCKET).remove([logoKey]);
-      const { error } = await supabase
-        .from("profiles")
-        .update({ clinic_logo_key: null, updated_at: new Date().toISOString() })
-        .eq("id", uid);
-      if (error) throw error;
-
-      setLogoKey(null);
-      setDbRow((prev: any) => ({ ...(prev ?? {}), clinic_logo_key: null, updated_at: new Date().toISOString() }));
-    } catch (e: any) {
-      console.error("remove logo error:", e);
-      alert(e.message ?? "Falha ao remover logo");
-    } finally {
-      setLogoUploading(false);
-    }
-  };
-
-  /* ========= sair ========= */
   const handleSignOut = async () => {
     if (!confirm("Deseja realmente encerrar a sessão?")) return;
     try {
@@ -309,9 +377,9 @@ export default function Profile({ onBack }: Props) {
     }
   };
 
-  /* ========= render ========= */
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
+      {/* topo */}
       <div className="flex items-center justify-between mb-4">
         <button onClick={onBack} className="inline-flex items-center text-blue-600 hover:text-blue-800">
           <ArrowLeft className="w-5 h-5 mr-2" />
@@ -337,8 +405,6 @@ export default function Profile({ onBack }: Props) {
               onBlur={() => setForm((f) => ({ ...f, name: titleAllWordsFinal(f.name) }))}
               className={inputClass(!!errors.name)}
               disabled={loading || saving}
-              autoCapitalize="words"
-              spellCheck={false}
             />
           </div>
           {errors.name && <p className="mb-3 text-xs text-red-600">{errors.name}</p>}
@@ -393,25 +459,42 @@ export default function Profile({ onBack }: Props) {
         <section>
           <h2 className="text-sm font-semibold text-slate-600 mb-3">Dados da clínica</h2>
 
-          {/* Logo */}
-          <div className="flex items-center gap-4 mb-2">
-            <div className="relative h-16 w-16 rounded-xl bg-gray-100 ring-1 ring-gray-200 overflow-hidden flex items-center justify-center">
+          {/* Logo da clínica (preview + botões estilosos) */}
+          <div className="mb-3 flex items-center gap-4">
+            {/* Preview */}
+            <div className="relative h-16 w-16 rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo da clínica" className="h-full w-full object-cover" />
               ) : (
-                <ImageIcon className="h-6 w-6 text-gray-400" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  className="h-7 w-7 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <path d="M3 17l6-6 4 4 5-5 3 3v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <path d="M14 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+                </svg>
               )}
             </div>
 
-            <div className="flex gap-2">
+            {/* Ações */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={pickLogo}
+                onClick={() => fileInputRef.current?.click()}
                 disabled={logoUploading}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
-                title="Enviar/Alterar logo"
+                className={[
+                  "group inline-flex items-center gap-2 rounded-lg px-3 py-2 text-white shadow-sm",
+                  "bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600",
+                  "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400",
+                  "active:scale-[0.98] disabled:opacity-60",
+                ].join(" ")}
+                title="Enviar ou trocar logo"
               >
-                <Upload className="w-4 h-4" />
+                <Upload className="h-4 w-4 transition-transform group-hover:-translate-y-[1px]" />
                 {logoUploading ? "Enviando..." : logoUrl ? "Trocar logo" : "Enviar logo"}
               </button>
 
@@ -420,15 +503,21 @@ export default function Profile({ onBack }: Props) {
                   type="button"
                   onClick={handleRemoveLogo}
                   disabled={logoUploading}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  className={[
+                    "inline-flex items-center gap-2 rounded-lg px-3 py-2",
+                    "border border-slate-300 text-slate-700 hover:bg-slate-100",
+                    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300",
+                    "active:scale-[0.98] disabled:opacity-60",
+                  ].join(" ")}
                   title="Remover logo"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="h-4 w-4" />
                   Remover
                 </button>
               )}
             </div>
 
+            {/* input invisível */}
             <input
               ref={fileInputRef}
               type="file"
@@ -442,7 +531,6 @@ export default function Profile({ onBack }: Props) {
             />
           </div>
 
-          {/* Nome da clínica */}
           <label className="block text-sm text-gray-600 mb-1">Nome da clínica</label>
           <div className="relative mb-1">
             <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -451,14 +539,14 @@ export default function Profile({ onBack }: Props) {
               placeholder="Ex.: Clínica Vida"
               value={form.clinicName}
               onChange={onChange("clinicName")}
-              onBlur={() => setForm((f) => ({ ...f, clinicName: titleAllWordsFinal(f.clinicName) }))}
+              onBlur={() =>
+                setForm((f) => ({ ...f, clinicName: titleAllWordsFinal(f.clinicName) }))
+              }
               className={inputClass()}
               disabled={loading || saving}
-              autoCapitalize="words"
             />
           </div>
 
-          {/* CNPJ */}
           <label className="block text-sm text-gray-600 mb-1">CNPJ</label>
           <div className="relative mb-1">
             <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -473,7 +561,6 @@ export default function Profile({ onBack }: Props) {
             />
           </div>
 
-          {/* Endereço */}
           <label className="block text-sm text-gray-600 mb-1">Endereço</label>
           <div className="relative mb-1">
             <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
@@ -486,7 +573,6 @@ export default function Profile({ onBack }: Props) {
             />
           </div>
 
-          {/* Telefone da clínica */}
           <label className="block text-sm text-gray-600 mb-1">Telefone da clínica</label>
           <div className="relative mb-1">
             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -501,7 +587,6 @@ export default function Profile({ onBack }: Props) {
             />
           </div>
 
-          {/* Email da clínica */}
           <label className="block text-sm text-gray-600 mb-1">Email da clínica</label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -514,32 +599,32 @@ export default function Profile({ onBack }: Props) {
               disabled={loading || saving}
             />
           </div>
-
-          {/* Ações */}
-          <div className="pt-2">
-            <button
-              onClick={handleSave}
-              disabled={loading || saving}
-              className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white ${
-                saving ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
-              }`}
-              title="Salvar"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? "Salvando..." : "Salvar"}
-            </button>
-
-            <button
-              onClick={handleSignOut}
-              disabled={signingOut}
-              className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
-              title="Encerrar sessão"
-            >
-              <LogOut className="w-4 h-4" />
-              {signingOut ? "Saindo..." : "Encerrar sessão"}
-            </button>
-          </div>
         </section>
+
+        {/* Ações */}
+        <div className="pt-2">
+          <button
+            onClick={handleSave}
+            disabled={loading || saving}
+            className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white ${
+              saving ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
+            }`}
+            title="Salvar"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "Salvando..." : "Salvar"}
+          </button>
+
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+            title="Encerrar sessão"
+          >
+            <LogOut className="w-4 h-4" />
+            {signingOut ? "Saindo..." : "Encerrar sessão"}
+          </button>
+        </div>
       </div>
     </div>
   );
