@@ -12,9 +12,11 @@ import Reports from './pages/Reports'
 import LoginGate from './pages/LoginGate'
 import OverlayMenu from './components/common/OverlayMenu'
 import PatientsNew from './pages/PatientsNew' // ⟵ NOVO
+import PatientEvolution from './pages/PatientEvolution';
 
 // Aceita também “rotas” internas de tela cheia
-type AppTab = Tab | 'perfil' | 'patients_new' // ⟵ mantém
+type AppTab = Tab | 'perfil' | 'patients_new'| 'evolucao'; // ⟵ mantém
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('inicio')
@@ -82,6 +84,12 @@ export default function App() {
     return () => window.removeEventListener('profile:saved', onSaved)
   }, [])
 
+  useEffect(() => {
+  const open = () => setActiveTab('evolucao');
+  window.addEventListener('evolution:open', open as EventListener);
+  return () => window.removeEventListener('evolution:open', open as EventListener);
+}, []);
+
   // ===== carregando / login =====
   if (checkingAuth) {
     return (
@@ -110,6 +118,8 @@ export default function App() {
             onCreated={() => setActiveTab('agenda')}
           />
         )
+        case 'evolucao':
+        return <PatientEvolution onBack={() => setActiveTab('agenda')} />;
       case 'perfil':        return <Profile onBack={() => setActiveTab('inicio')} />
       default:
         return (
@@ -156,7 +166,7 @@ export default function App() {
             Se estiver em 'perfil' ou 'patients_new', mostramos 'inicio' para não quebrar tipagem. */}
         <BottomNavigation
           activeTab={
-            activeTab === 'perfil' || activeTab === 'patients_new'
+            activeTab === 'perfil' || activeTab === 'patients_new'|| activeTab === 'evolucao'
               ? 'inicio'
               : (activeTab as Tab)
           }

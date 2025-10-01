@@ -5,7 +5,6 @@ import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 
-
 type FilterKind = 'today' | 'week';
 type Props = {
   onOpenProfile?: () => void;
@@ -13,14 +12,43 @@ type Props = {
   onGotoSchedule?: (filter: FilterKind) => void;
 };
 
-function parseToDate(s?: string | null) {
+/** Parser consistente com o Finance.tsx (DD/MM/YYYY, ISO, Date) */
+function parseBrDateToDate(s?: any): Date | null {
   if (!s) return null;
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    const [dd, mm, yyyy] = s.split('/').map(Number);
-    return new Date(yyyy, mm - 1, dd);
+  if (s instanceof Date) return isNaN(s.getTime()) ? null : s;
+
+  if (typeof s === 'string') {
+    // DD/MM/YYYY
+    const mBR = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (mBR) {
+      const [_, dd, mm, yyyy] = mBR;
+      const d = new Date(+yyyy, +mm - 1, +dd);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    // YYYY-MM-DD (ou ISO com tempo)
+    const mISO = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (mISO) {
+      const [_, yyyy, mm, dd] = mISO;
+      const d = new Date(+yyyy, +mm - 1, +dd);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const t = Date.parse(s);
+    if (!Number.isNaN(t)) return new Date(t);
   }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  return null;
+}
+
+/** Normaliza amount mesmo se vier string "1.234,56" ou "1234,56" */
+function normalizeAmount(v: any): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (typeof v === 'string') {
+    // remove separador de milhar e troca vírgula decimal por ponto
+    const s = v.replace(/\./g, '').replace(',', '.');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
 const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
@@ -32,95 +60,147 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
   });
   const todayDate = new Date().toISOString().split('T')[0];
 
-  // Atendimentos HOJE (igual Histórico/Dia: finalizados)
-  const todayAppointments = slots.filter(
-    (slot) => slot.date === todayDate && ['concluido', 'cancelado', 'no_show'].includes(slot.status)
+  // Atendimentos HOJE (finalizados/cancelados/no-show)
+  const todayAppointments = (slots || []).filter(
+    (slot) =>
+      slot.date === todayDate &&
+      ['concluido', 'cancelado', 'no_show'].includes(slot.status)
   );
 
   // Faltam hoje (pendentes)
-  const todayPending = slots.filter(
-    (slot) => slot.date === todayDate && ['agendado', 'em_andamento'].includes(slot.status)
+  const todayPending = (slots || []).filter(
+    (slot) =>
+      slot.date === todayDate &&
+      ['agendado', 'em_andamento'].includes(slot.status)
   ).length;
 
   // Semana atual e a partir de amanhã
   const startOfWeek = new Date(); startOfWeek.setHours(0,0,0,0);
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-  const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6); endOfWeek.setHours(23,59,59,999);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23,59,59,999);
   const startTomorrow = new Date(); startTomorrow.setHours(0,0,0,0); startTomorrow.setDate(startTomorrow.getDate() + 1);
 
-  const weeklyPending = slots.filter((slot) => {
+  const weeklyPending = (slots || []).filter((slot) => {
     const slotDate = new Date(`${slot.date}T12:00:00`);
-    return slotDate >= startTomorrow && slotDate <= endOfWeek &&
-           ['agendado', 'em_andamento'].includes(slot.status);
+    return (
+      slotDate >= startTomorrow &&
+      slotDate <= endOfWeek &&
+      ['agendado', 'em_andamento'].includes(slot.status)
+    );
   });
 
-  // Receita do mês (pagas)
+  // ================= Receita do mês (MESMA REGRA DO FINANCEIRO) =================
+  // Usa date || created_at || createdAt, considera somente income e status === 'paid'
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const isPaid = (t: any) => (t?.status ?? 'pending') === 'paid';
 
-  const monthlyRevenue = transactions
-    .filter((t) => t.type === 'income' && isPaid(t))
-    .filter((t) => {
-      const d = parseToDate(t.date);
-      return d ? d >= monthStart && d < nextMonthStart : true;
+  const monthlyRevenue = (transactions || [])
+    .map((t: any) => {
+      const rawDate = t?.date ?? t?.created_at ?? t?.createdAt ?? null;
+      const d = parseBrDateToDate(rawDate);
+      const amount = normalizeAmount(t?.amount);
+      const type = (t?.type ?? '').toString().toLowerCase();
+      const status = (t?.status ?? '').toString().toLowerCase();
+      return { d, amount, type, status };
     })
-    .reduce((sum, t) => sum + t.amount, 0);
+    .filter(({ d, type, status }) => {
+      if (!d || isNaN(d.getTime())) return false;
+      const inMonth = d >= monthStart && d < nextMonthStart;
+      const isIncome = type === 'income';
+      const isPaid = status === 'paid';
+      return inMonth && isIncome && isPaid;
+    })
+    .reduce((sum, { amount }) => sum + amount, 0);
 
   // Visibilidade (persiste)
   const [revenueVisible, setRevenueVisible] = React.useState<boolean>(() => getMoneyVisible());
   const toggleRevenue = () => {
-    setRevenueVisible(v => {
+    setRevenueVisible((v) => {
       const nv = !v;
-      setMoneyVisible(nv);   // persiste na mesma chave
+      setMoneyVisible(nv);
       return nv;
     });
   };
 
   // Valor formatado (sempre string)
-  const revenueStr = `R$ ${monthlyRevenue.toLocaleString('pt-BR', {
+  const revenueStr = `R$ ${Number(monthlyRevenue).toLocaleString('pt-BR', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   })}`;
 
   // Próximo atendimento (1)
-  const upcomingAppointments = slots
-    .filter((slot) => slot.date >= todayDate && ['agendado', 'em_andamento'].includes(slot.status))
-    .sort((a, b) => (a.date === b.date ? a.startTime.localeCompare(b.startTime) : a.date.localeCompare(b.date)))
+  const upcomingAppointments = (slots || [])
+    .filter(
+      (slot) =>
+        slot.date >= todayDate &&
+        ['agendado', 'em_andamento'].includes(slot.status)
+    )
+    .sort((a, b) =>
+      a.date === b.date
+        ? a.startTime.localeCompare(b.startTime)
+        : a.date.localeCompare(b.date)
+    )
     .slice(0, 1);
 
-  const CardButton: React.FC<React.PropsWithChildren<{ onClick: () => void; label: string }>> =
-    ({ onClick, label, children }) => (
-      <div role="button" tabIndex={0} onClick={onClick}
-           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-           aria-label={label}
-           className="cursor-pointer rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/30">
-        {children}
-      </div>
-    );
-
- 
+  const CardButton: React.FC<
+    React.PropsWithChildren<{ onClick: () => void; label: string }>
+  > = ({ onClick, label, children }) => (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      aria-label={label}
+      className="cursor-pointer rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/30"
+    >
+      {children}
+    </div>
+  );
 
   return (
     <div className="p-6 pb-24 min-h-screen bg-slate-50">
-      
-
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="text-slate-500 capitalize">{todayFmt}</p>
           <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            {firstName ? <>Seja bem-vindo <span className="text-blue-700">{firstName}</span></> : <>Seja bem-vindo</>}
+            {firstName ? (
+              <>Seja bem-vindo <span className="text-blue-700">{firstName}</span></>
+            ) : (
+              <>Seja bem-vindo</>
+            )}
           </h1>
         </div>
-       
         <div className="w-10 h-10" />
       </div>
 
       {/* KPIs topo */}
       <div className="grid grid-cols-2 gap-4 mb-4">
-        <CardButton onClick={() => { onGotoSchedule?.('today'); setTimeout(() => { window.dispatchEvent(new Event('agenda:history')); }, 0); }}
-                    label="Ver atendimentos de hoje">
+        {/* Atendimentos Hoje → abre histórico automaticamente */}
+        <CardButton
+          onClick={() => {
+            // flag para a rota Agenda abrir o histórico ao montar
+            sessionStorage.setItem('schedule:openHistory', 'today');
+
+            // sua navegação atual para Agenda
+            onGotoSchedule?.('today');
+
+            // reforço para quem já está na Agenda montada
+            setTimeout(() => {
+              window.dispatchEvent(
+                new CustomEvent('agenda:history', { detail: { range: 'today' } })
+              );
+            }, 200);
+          }}
+          label="Ver atendimentos de hoje"
+        >
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
             <StatCard title="Atendimentos Hoje" value={todayAppointments.length} icon={Users} color="blue" />
           </div>
@@ -133,13 +213,16 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
         </CardButton>
       </div>
 
-      {/* Receita do Mês (mascara de dígitos) */}
+      {/* Receita do Mês */}
       <div className="mb-4">
         <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
-          <button type="button" onClick={toggleRevenue}
-                  className="absolute right-3 top-3 rounded-md p-1.5 hover:bg-slate-100 text-slate-600 z-10"
-                  title={revenueVisible ? 'Ocultar' : 'Mostrar'}
-                  aria-label={revenueVisible ? 'Ocultar receita' : 'Mostrar receita'}>
+          <button
+            type="button"
+            onClick={toggleRevenue}
+            className="absolute right-3 top-3 rounded-md p-1.5 hover:bg-slate-100 text-slate-600 z-10"
+            title={revenueVisible ? 'Ocultar' : 'Mostrar'}
+            aria-label={revenueVisible ? 'Ocultar receita' : 'Mostrar receita'}
+          >
             {revenueVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
           </button>
 
@@ -184,18 +267,18 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
                       </p>
                     </div>
                     <div className="flex-shrink-0">
-                      <span className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${
-                        slot.status === 'agendado'
-                          ? 'bg-blue-100 text-blue-700'
-                          : slot.status === 'em_andamento'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-emerald-100 text-emerald-700'
-                      }`}>
+                      <span
+                        className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${
+                          slot.status === 'agendado'
+                            ? 'bg-blue-100 text-blue-700'
+                            : slot.status === 'em_andamento'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
                         {slot.status === 'agendado'
                           ? 'Agendado'
-                          : slot.status === 'em_andamento'
-                          ? 'Em Andamento'
-                          : 'Concluído'}
+                          : 'Em Andamento'}
                       </span>
                     </div>
                   </div>

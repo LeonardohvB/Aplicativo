@@ -111,11 +111,26 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:filter', handler as EventListener);
   }, []);
 
-  // Abrir histórico (via menu suspenso)
+  // ✅ Abrir histórico (menu suspenso OU Dashboard)
   useEffect(() => {
     const openHistory = () => setIsHistoryModalOpen(true);
+
+    // pelo menu suspenso
     window.addEventListener('agenda:openHistory', openHistory as EventListener);
-    return () => window.removeEventListener('agenda:openHistory', openHistory as EventListener);
+
+    // pelo Dashboard (flag + evento)
+    const flagged = sessionStorage.getItem('schedule:openHistory');
+    if (flagged) {
+      sessionStorage.removeItem('schedule:openHistory');
+      setIsHistoryModalOpen(true);
+    }
+    const handler = () => setIsHistoryModalOpen(true);
+    window.addEventListener('agenda:history', handler);
+
+    return () => {
+      window.removeEventListener('agenda:openHistory', openHistory as EventListener);
+      window.removeEventListener('agenda:history', handler);
+    };
   }, []);
 
   // Abrir cadastro rápido de paciente (se algum lugar disparar o evento)
@@ -213,7 +228,7 @@ const Schedule: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* FAB “+” — alinhado com o menu na mesma linha, mais à esquerda */}
+      {/* FAB “+” */}
       <button
         onClick={() => setIsCreateModalOpen(true)}
         className="fixed right-20 top-4 z-20 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
@@ -223,12 +238,12 @@ const Schedule: React.FC = () => {
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* Cabeçalho sem botões do lado direito */}
+      {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Atendimentos</h1>
       </div>
 
-      {/* ÚNICO componente com busca + datas + agrupamento por registro */}
+      {/* Agenda */}
       <KanbanAgenda
         professionals={professionalsForKanban as any}
         journeys={visibleJourneys}

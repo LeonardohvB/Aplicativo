@@ -8,6 +8,7 @@ import {
   Briefcase,
   History,
 } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 
 type Props = {
   onOpenProfile: () => void;
@@ -196,6 +197,20 @@ export default function OverlayMenu({
                     <span>Cadastrar profissional</span>
                   </button>
                 </li>
+
+                <li>
+                 <button
+                 role="menuitem"
+                 onClick={() => {
+                 setOpen(false);
+                 window.dispatchEvent(new CustomEvent('evolution:open'));
+           }}
+                 className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              >
+                 <ClipboardList className="h-4 w-4" />
+                 <span>Evolução do paciente</span>
+                 </button>
+                 </li>
 
                 {/* Histórico de atendimentos */}
                 <li>
