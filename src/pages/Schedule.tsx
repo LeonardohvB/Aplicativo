@@ -11,6 +11,7 @@ import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
 import KanbanAgenda from '../components/Schedule/KanbanAgenda';
+import { supabase } from '../lib/supabase';
 
 /* ===== Helpers (datas no fuso LOCAL) ===== */
 const localISODate = (d = new Date()) => {
@@ -24,6 +25,9 @@ const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
   d.setHours(hh, mm, 0, 0);
   return d;
 };
+/** Extrai o id do agendamento a partir de um slot (tolerante a nomes) */
+const getAppointmentIdFromSlot = (s: any): string | undefined =>
+  s?.appointmentId ?? s?.appointment_id ?? s?.id;
 
 /* Ordenações */
 type SlotLite = Pick<AppointmentSlot, 'date' | 'startTime' | 'endTime'> & { id: string };
@@ -72,7 +76,7 @@ const Schedule: React.FC = () => {
   const [isEditPatientModalOpen, setIsEditPatientModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
-  // Modal de cadastro rápido de paciente (pode abrir via evento 'patient:new')
+  // Modal de cadastro rápido de paciente
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
 
   const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
@@ -92,7 +96,6 @@ const Schedule: React.FC = () => {
     () =>
       (professionals ?? []).map(p => ({
         ...p,
-        // aliases aceitos pelo Kanban
         avatarUrl: p.avatar || undefined,
         avatarUpdatedAt: p.avatarUpdatedAt || undefined,
       })),
@@ -111,14 +114,42 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:filter', handler as EventListener);
   }, []);
 
+// ✅ Atualiza a agenda sem recarregar quando o LiveEncounter avisar que concluiu
+useEffect(() => {
+  const onSlotUpdate = async (e: Event) => {
+    const detail = (e as CustomEvent<{ appointmentId?: string; status?: string }>).detail;
+    const appointmentId = detail?.appointmentId;
+    const status = (detail?.status || 'concluido') as
+      | 'concluido' | 'em_andamento' | 'cancelado' | 'no_show';
+
+    if (!appointmentId) return;
+
+    // Procura o slot correspondente por id/appointmentId
+    const slot: any = slots.find(
+      (s: any) =>
+        s.id === appointmentId ||
+        s.appointmentId === appointmentId ||
+        s.appointment_id === appointmentId
+    );
+    if (!slot) return;
+
+    try {
+      await updateSlotStatus(slot.id, status); // isto já atualiza o estado do hook/local
+    } catch (err) {
+      console.warn('slot:update failed', err);
+    }
+  };
+
+  window.addEventListener('agenda:slot:update', onSlotUpdate as EventListener);
+  return () => window.removeEventListener('agenda:slot:update', onSlotUpdate as EventListener);
+}, [slots, updateSlotStatus]);
+
+
   // ✅ Abrir histórico (menu suspenso OU Dashboard)
   useEffect(() => {
     const openHistory = () => setIsHistoryModalOpen(true);
-
-    // pelo menu suspenso
     window.addEventListener('agenda:openHistory', openHistory as EventListener);
 
-    // pelo Dashboard (flag + evento)
     const flagged = sessionStorage.getItem('schedule:openHistory');
     if (flagged) {
       sessionStorage.removeItem('schedule:openHistory');
@@ -140,6 +171,8 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('patient:new', openNewPatient as EventListener);
   }, []);
 
+
+
   const todayStr = localISODate(new Date());
   const { end } = startEndOfThisWeek();
   const startTomorrow = new Date();
@@ -149,9 +182,10 @@ const Schedule: React.FC = () => {
   // Slots visíveis conforme filtro geral
   const filteredSlots = useMemo(() => {
     if (!Array.isArray(slots)) return [];
-    const base = (dashboardFilter === 'today' || dashboardFilter === 'week')
-      ? slots.filter(s => statusVisiblePeriod(s.status))
-      : slots.filter(s => statusVisibleDefault(s.status));
+    const base =
+      (dashboardFilter === 'today' || dashboardFilter === 'week')
+        ? slots.filter(s => statusVisiblePeriod(s.status))
+        : slots.filter(s => statusVisibleDefault(s.status));
 
     if (dashboardFilter === 'today') {
       return base.filter(s => s.date === todayStr);
@@ -171,7 +205,61 @@ const Schedule: React.FC = () => {
     return [...journeys].filter(j => ids.has(j.id)).sort(sortJourneysByDateTime);
   }, [journeys, filteredSlots]);
 
-  /* ===== Ações ===== */
+  /* ====== Passo B: garantir 1 encontro por agendamento ====== */
+
+  // Abre o prontuário chamando a RPC ensure_encounter
+  const handleOpenProntuarioFromSlot = async (slotId: string) => {
+    const s: any = slots.find(x => x.id === slotId);
+    if (!s) return;
+
+    const appointmentId = getAppointmentIdFromSlot(s);
+    if (!appointmentId) {
+      alert('Não foi possível identificar o agendamento.');
+      return;
+    }
+
+    const prof =
+      professionals?.find(p => p.id === s.professionalId || p.id === s.professional_id);
+
+    const meta = {
+      patientName: s.patientName || s.patient_name || '',
+      professionalName: prof?.name || s.professionalName || s.professional_name || '',
+      serviceName: s.service || s.serviceName || s.service_name || '',
+    };
+
+    const { data: encounterId, error } = await supabase.rpc('ensure_encounter', {
+      p_appointment_id: appointmentId,
+      p_meta: meta,
+    });
+
+    if (error || !encounterId) {
+      console.error('ensure_encounter error', error);
+      alert('Não foi possível abrir o prontuário.');
+      return;
+    }
+
+    // (opcional) marca visualmente como em andamento
+    try { await updateSlotStatus(slotId, 'em_andamento'); } catch {}
+
+    // abre a tela LiveEncounter (o componente já ouve esse evento)
+    window.dispatchEvent(
+      new CustomEvent('encounter:open', {
+        detail: { encounterId, appointmentId, ...meta },
+      })
+    );
+  };
+
+  // Listener global: se o card do Kanban disparar esse evento com {slotId}
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ slotId: string }>).detail;
+      if (detail?.slotId) handleOpenProntuarioFromSlot(detail.slotId);
+    };
+    window.addEventListener('agenda:openProntuario', handler as EventListener);
+    return () => window.removeEventListener('agenda:openProntuario', handler as EventListener);
+  }, [slots, professionals]);
+
+  /* ===== Ações existentes ===== */
   const handleEditJourney = (journeyId: string) => {
     const j = journeys.find(x => x.id === journeyId);
     if (j) { setSelectedJourney(j); setIsEditModalOpen(true); }
@@ -197,14 +285,60 @@ const Schedule: React.FC = () => {
     patientName: string; patientPhone: string; service: string; notes?: string;
   }) => { await updatePatient(slotId, data); };
 
-  const handleStartAppointment = async (slotId: string) => { await updateSlotStatus(slotId, 'em_andamento'); };
+  const handleStartAppointment = async (slotId: string) => {
+    await updateSlotStatus(slotId, 'em_andamento');
+  };
 
   const handleFinishAppointment = async (slotId: string) => {
     if (finishingSlot === slotId) return;
     setFinishingSlot(slotId);
-    try { await updateSlotStatus(slotId, 'concluido'); }
-    catch { alert('Não foi possível concluir. Tente novamente.'); }
-    finally { setFinishingSlot(null); }
+
+    try {
+      const gerarEvolucao = confirm(
+        'Finalizar este atendimento.\n\nDeseja também gerar a evolução agora?'
+      );
+
+      if (gerarEvolucao) {
+        // 1) tenta descobrir o appointmentId do slot
+        const slot = slots.find(s => s.id === slotId);
+        const appointmentId = getAppointmentIdFromSlot(slot) ?? slotId;
+
+        // 2) garante que existe encounter para esse agendamento
+        const { data: ensuredId, error: ensureErr } = await supabase.rpc(
+          'ensure_encounter',
+          {
+            p_appointment_id: appointmentId,
+            p_meta: {
+              patientName: (slot as any)?.patientName || (slot as any)?.patient_name || undefined,
+              professionalName:
+                professionals?.find(p => p.id === (slot as any)?.professionalId || p.id === (slot as any)?.professional_id)?.name ||
+                (slot as any)?.professionalName ||
+                (slot as any)?.professional_name ||
+                undefined,
+              serviceName: (slot as any)?.service || (slot as any)?.serviceName || (slot as any)?.service_name || undefined,
+            },
+          }
+        );
+        if (ensureErr) throw ensureErr;
+
+        // 3) finaliza (congela nota e fecha encontro/agenda base)
+        const { error: finErr } = await supabase.rpc('finalize_encounter', {
+          p_encounter_id: ensuredId as string,
+        });
+        if (finErr) throw finErr;
+      }
+
+      // 4) marca o SLOT como concluído na sua agenda (sempre)
+      await updateSlotStatus(slotId, 'concluido');
+
+      // 5) notifica outras telas (ex.: LiveEncounter já fecha e dispara também)
+      
+    } catch (err) {
+      console.warn(err);
+      alert('Não foi possível concluir. Tente novamente.');
+    } finally {
+      setFinishingSlot(null);
+    }
   };
 
   const handleCancelAppointment = async (slotId: string) => {
@@ -257,6 +391,8 @@ const Schedule: React.FC = () => {
         onEditJourney={handleEditJourney}
         onDeleteJourney={handleDeleteJourney}
         sortSlotsByTime={sortSlotsByTime}
+        // Se o componente aceitar, você pode passar:
+        // onOpenProntuario={handleOpenProntuarioFromSlot}
       />
 
       {/* Modais */}

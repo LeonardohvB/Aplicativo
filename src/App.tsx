@@ -11,12 +11,20 @@ import Finance from './pages/Finance'
 import Reports from './pages/Reports'
 import LoginGate from './pages/LoginGate'
 import OverlayMenu from './components/common/OverlayMenu'
-import PatientsNew from './pages/PatientsNew' // ⟵ NOVO
-import PatientEvolution from './pages/PatientEvolution';
+import PatientsNew from './pages/PatientsNew'
+import PatientEvolution from './pages/PatientEvolution'
+import LiveEncounter from './pages/LiveEncounter'
 
 // Aceita também “rotas” internas de tela cheia
-type AppTab = Tab | 'perfil' | 'patients_new'| 'evolucao'; // ⟵ mantém
+type AppTab = Tab | 'perfil' | 'patients_new' | 'evolucao'
 
+// Dados passados para o prontuário (overlay)
+type EncounterData = {
+  appointmentId?: string
+  patientName?: string
+  professionalName?: string
+  serviceName?: string
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('inicio')
@@ -30,10 +38,36 @@ export default function App() {
   }
   const [firstName, setFirstName] = useState<string | null>(null)
 
+  // ===== estado do prontuário em overlay =====
+  const [liveOpen, setLiveOpen] = useState(false)
+  const [encounterData, setEncounterData] = useState<EncounterData | null>(null)
+
+  // Abre o prontuário via evento global (fallback/atalhos internos)
+  useEffect(() => {
+    const open = (e: any) => {
+      const d = e?.detail || {}
+      setEncounterData({
+        appointmentId: d.appointmentId,
+        patientName: d.patientName,
+        professionalName: d.professionalName,
+        serviceName: d.serviceName,
+      })
+      setLiveOpen(true)
+    }
+    window.addEventListener('encounter:open', open as EventListener)
+    return () => window.removeEventListener('encounter:open', open as EventListener)
+  }, [])
+
+  // Fecha o prontuário
+  useEffect(() => {
+    const close = () => setLiveOpen(false)
+    window.addEventListener('encounter:close', close as EventListener)
+    return () => window.removeEventListener('encounter:close', close as EventListener)
+  }, [])
+
   // ===== sessão / auth =====
   useEffect(() => {
     let unsub = () => {}
-
     ;(async () => {
       const { data: { session }, error } = await supabase.auth.getSession()
       if (error) console.warn('getSession error:', error)
@@ -85,10 +119,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-  const open = () => setActiveTab('evolucao');
-  window.addEventListener('evolution:open', open as EventListener);
-  return () => window.removeEventListener('evolution:open', open as EventListener);
-}, []);
+    const open = () => setActiveTab('evolucao');
+    window.addEventListener('evolution:open', open as EventListener);
+    return () => window.removeEventListener('evolution:open', open as EventListener);
+  }, []);
 
   // ===== carregando / login =====
   if (checkingAuth) {
@@ -111,16 +145,17 @@ export default function App() {
       case 'agenda':        return <Schedule />
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />
-      case 'patients_new':  // ⟵ tela inteira de cadastro de paciente
+      case 'patients_new':
         return (
           <PatientsNew
             onBack={() => setActiveTab('agenda')}
             onCreated={() => setActiveTab('agenda')}
           />
         )
-        case 'evolucao':
-        return <PatientEvolution onBack={() => setActiveTab('agenda')} />;
-      case 'perfil':        return <Profile onBack={() => setActiveTab('inicio')} />
+      case 'evolucao':
+        return <PatientEvolution onBack={() => setActiveTab('agenda')} />
+      case 'perfil':
+        return <Profile onBack={() => setActiveTab('inicio')} />
       default:
         return (
           <DashboardComp
@@ -143,35 +178,42 @@ export default function App() {
       <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50 relative">
         {/* Menu suspenso fixo em TODAS as abas */}
         <div className="fixed right-4 top-4 z-40">
-        <OverlayMenu
-  onOpenProfile={() => setActiveTab('perfil')}
-  onOpenNewPatient={() => setActiveTab('patients_new')}
-  onOpenNewProfessional={() => {
-    setActiveTab('profissionais');
-    setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
-  }}
-  onOpenHistory={() => {                 // ← NOVO
-    setActiveTab('agenda');              // vai para Agenda
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('agenda:openHistory')); // sinal para abrir o modal
-    }, 0);
-  }}
-/>
-
+          <OverlayMenu
+            onOpenProfile={() => setActiveTab('perfil')}
+            onOpenNewPatient={() => setActiveTab('patients_new')}
+            onOpenNewProfessional={() => {
+              setActiveTab('profissionais');
+              setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
+            }}
+            onOpenHistory={() => {
+              setActiveTab('agenda');
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('agenda:openHistory'));
+              }, 0);
+            }}
+          />
         </div>
 
         {renderContent()}
 
-        {/* BottomNavigation só conhece Tabs “normais”.
-            Se estiver em 'perfil' ou 'patients_new', mostramos 'inicio' para não quebrar tipagem. */}
-        <BottomNavigation
-          activeTab={
-            activeTab === 'perfil' || activeTab === 'patients_new'|| activeTab === 'evolucao'
-              ? 'inicio'
-              : (activeTab as Tab)
-          }
-          onTabChange={(t: Tab) => setActiveTab(t)}
-        />
+        {/* Esconde a BottomNavigation quando o prontuário estiver aberto */}
+        {!liveOpen && (
+          <BottomNavigation
+            activeTab={
+              activeTab === 'perfil' || activeTab === 'patients_new' || activeTab === 'evolucao'
+                ? 'inicio'
+                : (activeTab as Tab)
+            }
+            onTabChange={(t: Tab) => setActiveTab(t)}
+          />
+        )}
+
+        {/* Overlay do LiveEncounter em tela cheia */}
+        {liveOpen && (
+          <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+            <LiveEncounter initialData={encounterData || undefined} />
+          </div>
+        )}
       </div>
     </>
   )

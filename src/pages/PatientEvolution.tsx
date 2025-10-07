@@ -1,5 +1,5 @@
 // src/pages/PatientEvolution.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   Mail,
 } from "lucide-react";
 import { useEvolutionFiles } from "../hooks/useEvolutionFiles";
+import PatientEvolutionTimeline from "../components/Patients/PatientEvolutionTimeline";
 
 /* =============== helpers =============== */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
@@ -20,10 +21,11 @@ const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
 const maskCell = (v?: string | null) => {
   const d = onlyDigits(v || "").slice(0, 11);
   if (!d) return "";
-  if (d.length <= 2) return `(${d}`;
-  if (d.length <= 3) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
+  // (11) 9 9999-9999
+  const dd = d.padEnd(11, " ");
+  return `(${dd.slice(0, 2)}) ${dd.slice(2, 3)} ${dd.slice(3, 7)}-${dd
+    .slice(7, 11)
+    .trim()}`;
 };
 
 const maskCPF = (v?: string | null) => {
@@ -33,7 +35,10 @@ const maskCPF = (v?: string | null) => {
   if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
   if (d.length <= 9)
     return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(
+    9,
+    11
+  )}`;
 };
 
 const initials = (name?: string | null) =>
@@ -49,7 +54,9 @@ const ageFromISO = (iso?: string | null): number | null => {
   if (!iso) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return null;
-  const yyyy = +m[1], mm = +m[2], dd = +m[3];
+  const yyyy = +m[1],
+    mm = +m[2],
+    dd = +m[3];
 
   const today = new Date();
   let age = today.getFullYear() - yyyy;
@@ -81,6 +88,34 @@ type Patient = {
 
 type TabKey = "timeline" | "metrics" | "documents";
 
+/* ============== UI subcomponent ============== */
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        "px-1 pb-2 -mb-px inline-flex items-center gap-2 text-sm whitespace-nowrap",
+        active
+          ? "text-blue-700 border-b-2 border-blue-600"
+          : "text-gray-700 hover:text-gray-900",
+      ].join(" ")}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 /* ===================================== */
 
 export default function PatientEvolution({ onBack }: { onBack: () => void }) {
@@ -89,6 +124,8 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   const [showSug, setShowSug] = useState(false);
   const [loadingSug, setLoadingSug] = useState(false);
   const [suggestions, setSuggestions] = useState<Patient[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const sugBoxRef = useRef<HTMLDivElement>(null);
 
   /* ---------- paciente ---------- */
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -101,12 +138,43 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   /* ---------- abas ---------- */
   const [tab, setTab] = useState<TabKey>("timeline");
 
-  /* ---------- arquivos da evolução ---------- */
-  const evolutionId = undefined; // ainda não há registro de evolução
+  /* ---------- refresh da timeline após finalizar atendimento ---------- */
+  const [refreshTick, setRefreshTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setRefreshTick((x) => x + 1);
+    window.addEventListener("encounter:close", bump as EventListener);
+    window.addEventListener("timeline:refresh", bump as EventListener);
+    return () => {
+      window.removeEventListener("encounter:close", bump as EventListener);
+      window.removeEventListener("timeline:refresh", bump as EventListener);
+    };
+  }, []);
+
+  /* ---------- arquivos da evolução (placeholder geral) ---------- */
+  // quando você ligar anexos por evolução específica, troque 'evolutionId'
+  const evolutionId = undefined;
   const { files, uploadFile, removeFile, loading: loadingFiles } =
     useEvolutionFiles(evolutionId);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  /* ===== fechar sugestões ao clicar fora / ESC ===== */
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!showSug) return;
+      const t = e.target as Node;
+      if (!inputRef.current?.contains(t) && !sugBoxRef.current?.contains(t)) {
+        setShowSug(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowSug(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showSug]);
 
   /* ===== buscar pacientes ao digitar ===== */
   useEffect(() => {
@@ -159,7 +227,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   }, [q]);
 
   /* ===== carregar paciente por id ===== */
-  const loadPatientById = async (id: string) => {
+  const loadPatientById = useCallback(async (id: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -168,63 +236,132 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         .eq("id", id)
         .maybeSingle();
 
-      if (error) throw error;
+    if (error) throw error;
       setPatient((data || null) as Patient | null);
+      setTab("timeline"); // foca na aba timeline
+      setRefreshTick((x) => x + 1); // força a timeline montar limpa
+      setShowSug(false);
     } catch (e) {
       console.warn("loadPatientById error:", e);
       setPatient(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   /* ===== puxar Total de consultas e Última consulta ===== */
   useEffect(() => {
     let alive = true;
-    const fetchStats = async () => {
-      if (!patient?.id) {
-        setTotalConsults(null);
-        setLastConsult(null);
-        return;
-      }
 
-      // 1) total de consultas (todas as entradas do histórico desse paciente)
+    const fetchFromEvolutionTable = async (pid: string) => {
+      const { count, error: cErr } = await supabase
+        .from("patient_evolution")
+        .select("id", { count: "exact", head: true })
+        .eq("patient_id", pid);
+      if (cErr) throw cErr;
+
+      const { data: lastRow, error: lErr } = await supabase
+        .from("patient_evolution")
+        .select("occurred_at")
+        .eq("patient_id", pid)
+        .order("occurred_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lErr) throw lErr;
+
+      return {
+        total: typeof count === "number" ? count : null,
+        last: (lastRow as any)?.occurred_at
+          ? formatDateBR(String((lastRow as any).occurred_at).slice(0, 10))
+          : null,
+      };
+    };
+
+    const fetchFromEvolutionView = async (pid: string) => {
+      const { count, error: cErr } = await supabase
+        .from("patient_evolution_feed")
+        .select("note_id", { count: "exact", head: true })
+        .eq("patient_id", pid);
+      if (cErr) throw cErr;
+
+      const { data: lastRow, error: lErr } = await supabase
+        .from("patient_evolution_feed")
+        .select("ts")
+        .eq("patient_id", pid)
+        .order("ts", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lErr) throw lErr;
+
+      return {
+        total: typeof count === "number" ? count : null,
+        last: (lastRow as any)?.ts
+          ? formatDateBR(String((lastRow as any).ts).slice(0, 10))
+          : null,
+      };
+    };
+
+    const fetchFromHistory = async (pid: string) => {
       const { count, error: countErr } = await supabase
         .from("appointment_history")
         .select("id", { count: "exact", head: true })
-        .eq("patient_id", patient.id);
+        .eq("patient_id", pid);
 
-      if (!alive) return;
-
-      if (countErr) {
-        console.warn("count appointment_history error:", countErr);
-        setTotalConsults(null);
-      } else {
-        setTotalConsults(typeof count === "number" ? count : null);
-      }
-
-      // 2) última consulta (max por data + horário)
       const { data: lastRow, error: lastErr } = await supabase
         .from("appointment_history")
         .select("date, start_time")
-        .eq("patient_id", patient.id)
+        .eq("patient_id", pid)
         .order("date", { ascending: false })
         .order("start_time", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (!alive) return;
+      return {
+        total: countErr ? null : typeof count === "number" ? count : null,
+        last: lastErr
+          ? null
+          : (lastRow as any)?.date
+          ? formatDateBR((lastRow as any).date)
+          : null,
+      };
+    };
 
-      if (lastErr) {
-        console.warn("last appointment error:", lastErr);
+    const run = async () => {
+      if (!patient?.id) {
+        setTotalConsults(null);
         setLastConsult(null);
-      } else {
-        const lastDate: string | null = (lastRow as any)?.date ?? null;
-        setLastConsult(lastDate ? formatDateBR(lastDate) : null);
+        return;
+      }
+      try {
+        const t = await fetchFromEvolutionTable(patient.id);
+        if (t.total && t.total > 0) {
+          if (!alive) return;
+          setTotalConsults(t.total);
+          setLastConsult(t.last);
+          return;
+        }
+
+        const v = await fetchFromEvolutionView(patient.id);
+        if (v.total && v.total > 0) {
+          if (!alive) return;
+          setTotalConsults(v.total);
+          setLastConsult(v.last);
+          return;
+        }
+
+        const h = await fetchFromHistory(patient.id);
+        if (!alive) return;
+        setTotalConsults(h.total);
+        setLastConsult(h.last);
+      } catch (err) {
+        if (!alive) return;
+        console.warn("stats fetch warn:", err);
+        setTotalConsults(null);
+        setLastConsult(null);
       }
     };
 
-    fetchStats();
+    run();
     return () => {
       alive = false;
     };
@@ -240,30 +377,27 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   /* ===== UI ===== */
   return (
     <div className="p-4 pb-24 bg-gray-50 min-h-screen">
-    {/* topo (título centralizado real, sem quebra) */}
-<div className="relative flex items-center mb-3">
-  <button
-    onClick={onBack}
-    className="inline-flex items-center text-blue-600 hover:text-blue-800"
-  >
-    <ArrowLeft className="w-5 h-5 mr-2" />
-    Voltar
-  </button>
+      {/* topo */}
+      <div className="relative flex items-center mb-3">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center text-blue-600 hover:text-blue-800"
+        >
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Voltar
+        </button>
 
-  {/* título absoluto no centro */}
-  <h1 className="absolute left-1/2 -translate-x-1/2 text-x0 font-bold text-gray-900 whitespace-nowrap">
-    Evolução do Paciente
-  </h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-xl font-bold text-gray-900 whitespace-nowrap">
+          Evolução do Paciente
+        </h1>
 
-  <button
-    className="ml-auto h-9 w-9 rounded-xl bg-white shadow ring-1 ring-black/5 flex items-center justify-center"
-    title="Menu"
-  >
-    <MenuIcon className="h-5 w-5 text-slate-700" />
-  </button>
-</div>
-
-
+        <button
+          className="ml-auto h-9 w-9 rounded-xl bg-white shadow ring-1 ring-black/5 flex items-center justify-center"
+          title="Menu"
+        >
+          <MenuIcon className="h-5 w-5 text-slate-700" />
+        </button>
+      </div>
 
       {/* busca */}
       <div className="relative mb-3">
@@ -281,9 +415,14 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
         {/* sugestões */}
         {showSug && q.trim() && (
-          <div className="absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+          <div
+            ref={sugBoxRef}
+            className="absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
+          >
             {loadingSug && (
-              <div className="px-3 py-2 text-sm text-gray-500">Carregando…</div>
+              <div className="px-3 py-2 text-sm text-gray-500">
+                Carregando…
+              </div>
             )}
 
             {!loadingSug && suggestions.length === 0 && (
@@ -299,8 +438,8 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
                   <button
                     key={p.id}
                     onClick={() => {
-                      setShowSug(false);
                       setQ(dn);
+                      setShowSug(false);
                       loadPatientById(p.id);
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50"
@@ -317,7 +456,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* cabeçalho do paciente */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4">
+      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-3">
         {loading ? (
           <div className="text-gray-500">Carregando paciente…</div>
         ) : !patient ? (
@@ -357,9 +496,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
                   <div className="text-[11px] uppercase tracking-wide text-gray-500">
                     Última consulta
                   </div>
-                  <div className="text-gray-900">
-                    {lastConsult || "—"}
-                  </div>
+                  <div className="text-gray-900">{lastConsult || "—"}</div>
                 </div>
               </div>
 
@@ -378,51 +515,48 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* abas */}
-      <div className="bg-white border border-gray-100 rounded-xl p-3">
-        <div className="flex gap-2 mb-3 overflow-x-auto">
-          <button
+      {/* Abas (fora de “pílula”) */}
+      <div className="mb-3 border-b border-gray-200">
+        <div className="flex gap-4 overflow-x-auto">
+          <TabButton
+            active={tab === "timeline"}
             onClick={() => setTab("timeline")}
-            className={`px-3 py-2 rounded-lg text-sm inline-flex items-center gap-2 ${
-              tab === "timeline"
-                ? "bg-blue-50 text-blue-700"
-                : "hover:bg-gray-50 text-gray-700"
-            }`}
-          >
-            <CalendarIcon className="w-4 h-4" />
-            Linha do Tempo
-          </button>
-          <button
+            icon={<CalendarIcon className="w-4 h-4" />}
+            label="Linha do Tempo"
+          />
+          <TabButton
+            active={tab === "metrics"}
             onClick={() => setTab("metrics")}
-            className={`px-3 py-2 rounded-lg text-sm inline-flex items-center gap-2 ${
-              tab === "metrics"
-                ? "bg-blue-50 text-blue-700"
-                : "hover:bg-gray-50 text-gray-700"
-            }`}
-          >
-            <BarChart2 className="w-4 h-4" />
-            Métricas
-          </button>
-          <button
+            icon={<BarChart2 className="w-4 h-4" />}
+            label="Métricas"
+          />
+          <TabButton
+            active={tab === "documents"}
             onClick={() => setTab("documents")}
-            className={`px-3 py-2 rounded-lg text-sm inline-flex items-center gap-2 ${
-              tab === "documents"
-                ? "bg-blue-50 text-blue-700"
-                : "hover:bg-gray-50 text-gray-700"
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            Documentos
-          </button>
+            icon={<FileText className="w-4 h-4" />}
+            label="Documentos"
+          />
         </div>
+      </div>
 
-        {tab === "timeline" && (
-          <div className="space-y-3">
-            <div className="text-sm text-gray-700 font-medium">
-              Anexos desta evolução (imagens, PDFs, exames, etc.)
+      {/* Conteúdo das abas */}
+      {tab === "timeline" && (
+        <div className="space-y-4">
+          {/* Timeline de evoluções */}
+          {patient ? (
+            <PatientEvolutionTimeline
+              key={`${patient.id}:${refreshTick}`}
+              patientId={patient.id}
+            />
+          ) : (
+            <div className="text-sm text-gray-600">
+              Selecione um paciente para ver a linha do tempo.
             </div>
+          )}
 
-            <div className="rounded-lg border border-gray-200">
+          {/* Anexos gerais (placeholder) */}
+          {patient && (
+            <div className="rounded-lg border border-gray-200 bg-white">
               <div className="flex items-center justify-between px-3 py-2">
                 <div>
                   <div className="text-sm font-medium text-gray-800">
@@ -479,21 +613,21 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
                 </ul>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {tab === "metrics" && (
-          <div className="text-sm text-gray-600">
-            Em breve: gráficos de sinais vitais, evolução de medidas, etc.
-          </div>
-        )}
+      {tab === "metrics" && (
+        <div className="text-sm text-gray-600">
+          Em breve: gráficos de sinais vitais, evolução de medidas, etc.
+        </div>
+      )}
 
-        {tab === "documents" && (
-          <div className="text-sm text-gray-600">
-            Em breve: prescrições, relatórios e documentos gerados.
-          </div>
-        )}
-      </div>
+      {tab === "documents" && (
+        <div className="text-sm text-gray-600">
+          Em breve: prescrições, relatórios e documentos gerados.
+        </div>
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
 import { AppointmentSlot, AppointmentJourney } from '../../types';
 import { publicUrlFromPath } from '../../lib/avatars';
 
+
 /* ======================= Tipos utilitários ======================= */
 type Pro = {
   id: string;
@@ -29,13 +30,11 @@ type Pro = {
   reg_type?: string;
   registrationCode?: string;
 
-  // possíveis campos de avatar que podem vir do hook:
   avatar?: string | null;
   avatar_path?: string | null;
   avatarUpdatedAt?: string | null;
   avatar_updated_at?: string | null;
 
-  // usados pelo Kanban anteriormente
   avatarUrl?: string | null;
   photoUrl?: string | null;
 
@@ -79,7 +78,6 @@ const SOON_BEFORE_MIN = 20;
 const SOON_AFTER_MIN = 10;
 
 const onlyDigits = (v?: string) => String(v || '').replace(/\D+/g, '');
-
 const maskPhone = (v?: string) => {
   const d = onlyDigits(v).slice(0, 11);
   if (!d) return '';
@@ -89,7 +87,7 @@ const maskPhone = (v?: string) => {
   return `(${d.slice(0, 2)}) ${d.slice(2, 3)} ${d.slice(3, 7)}-${d.slice(7)}`;
 };
 
-/* ======== Avatar helpers (iguais ao ProfessionalCard) ======== */
+/* ======== Avatar helpers ======== */
 const placeholder = 'https://placehold.co/96x96?text=Foto';
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}` : url;
@@ -113,7 +111,6 @@ function resolveProAvatarVersion(p?: Pro): string | undefined {
   return (p.avatarUpdatedAt as any) ?? (p.avatar_updated_at as any) ?? undefined;
 }
 
-// normaliza e extrai prefixo de uma string de registro (ex.: "CRP - 25461")
 const extractRegPrefix = (v?: string) => {
   if (!v) return '';
   const raw = String(v).toUpperCase().trim();
@@ -122,7 +119,6 @@ const extractRegPrefix = (v?: string) => {
   return (m?.[0] || fromDash || '').normalize('NFD').replace(/\p{Diacritic}/gu, '');
 };
 
-// categoria por registro
 function typeToCategory(raw?: string, specialty?: string): { key: string; label: string } {
   const s = extractRegPrefix(raw);
   const direct: Record<string, string> = {
@@ -226,6 +222,7 @@ type MiniSlotProps = {
   onCancel?: (slotId: string) => void;
   onNoShow?: (slotId: string) => void;
   onDelete: () => void;
+  professionalName?: string; // ← NOVO
 };
 
 const MiniSlotCard: React.FC<MiniSlotProps> = ({
@@ -241,6 +238,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   onCancel,
   onNoShow,
   onDelete,
+  professionalName,
 }) => {
   const st = String(slot?.status || '').toLowerCase();
   const startTime = safeHHMM(slot?.startTime, '00:00');
@@ -265,6 +263,20 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
     (slot as any)?.patient_phone ||
     patientObj?.phone ||
     '';
+
+  // Abre o Atendimento ao Vivo (LiveEncounter) com dados
+  const openEncounterFromSlot = React.useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent('encounter:open', {
+        detail: {
+          appointmentId: slot.id,
+          patientName: patientName || (slot as any)?.patient?.name,
+          professionalName: professionalName || 'Profissional',
+          serviceName: (slot as any).service || 'Consulta',
+        },
+      })
+    );
+  }, [slot, patientName, professionalName]);
 
   // largura/altura
   const wClass = isEditing || isRunning ? 'w-[280px]' : 'w-[160px]';
@@ -299,7 +311,6 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
 
   return (
     <div className={`snap-start flex-shrink-0 ${wClass}`}>
-      {/* Wrapper sempre <div> para evitar <button> dentro de <button> */}
       <div
         role={onCardClick ? 'button' : undefined}
         tabIndex={onCardClick ? 0 : undefined}
@@ -358,10 +369,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2 px-2 py-[4px] rounded-lg bg-white/70 border border-emerald-200 overflow-hidden">
                 <span className="text-[12px] text-gray-600 shrink-0">Paciente:</span>
-                <span
-                  className="text-[12px] font-medium text-gray-800 truncate"
-                  title={patientName}
-                >
+                <span className="text-[12px] font-medium text-gray-800 truncate" title={patientName}>
                   {patientName || '—'}
                 </span>
               </div>
@@ -398,14 +406,14 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onNoShow?.(slot.id);
+                openEncounterFromSlot(); // abre o prontuário
               }}
-              className="px-3 py-[6px] rounded-full border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 text-[11px] font-semibold"
-              title="Marcar paciente como faltou"
-              aria-label="Faltou"
+              className="px-3 py-[6px] rounded-full border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 text-[11px] font-semibold"
+              title="Abrir prontuário"
+              aria-label="Prontuário"
             >
               <span className="inline-flex items-center gap-1">
-                <CancelIcon className="w-3.5 h-3.5" /> Faltou
+                <StartIcon className="w-3.5 h-3.5" /> Prontuário
               </span>
             </button>
 
@@ -457,34 +465,52 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
         )}
       </div>
 
-      {/* ações abaixo do card (apenas quando agendado e ainda não iniciado) */}
-      {!isRunning && !isAvailable && (
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => (onStart ?? onEdit)(slot.id)}
-            disabled={!isSoon}
-            className={[
-              'px-3 py-2 rounded-full text-[12px] font-medium border inline-flex items-center justify-center gap-1',
-              isSoon
-                ? 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
-                : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed',
-            ].join(' ')}
-            title={isSoon ? 'Começar consulta' : 'Disponível 20min antes'}
-          >
-            <StartIcon className="w-4 h-4" /> Começar
-          </button>
+      {/* ações abaixo do card (agendado e ainda não iniciado) */}
+      {!isRunning && !isAvailable && (() => {
+        const showNoShow = isPast;
+        return (
+          <div className={`mt-2 grid gap-2 ${showNoShow ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            <button
+              type="button"
+              onClick={() => {
+                openEncounterFromSlot();            // abre prontuário
+                (onStart ?? onEdit)(slot.id);       // inicia mantendo lógica atual
+              }}
+              disabled={!isSoon}
+              className={[
+                'px-3 py-2 rounded-full text-[12px] font-medium border inline-flex items-center justify-center gap-1',
+                isSoon
+                  ? 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                  : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed',
+              ].join(' ')}
+              title={isSoon ? 'Começar consulta' : 'Disponível 20min antes'}
+            >
+              <StartIcon className="w-4 h-4" /> Começar
+            </button>
 
-          <button
-            type="button"
-            onClick={() => (onCancel ? onCancel(slot.id) : onDelete())}
-            className="px-3 py-2 rounded-full text-[12px] font-medium border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 inline-flex items-center justify-center gap-1"
-            title="Cancelar agendamento"
-          >
-            <CancelIcon className="w-4 h-4" /> Cancelar
-          </button>
-        </div>
-      )}
+            {showNoShow && (
+              <button
+                type="button"
+                onClick={() => onNoShow?.(slot.id)}
+                className="px-3 py-2 rounded-full text-[12px] font-medium border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 inline-flex items-center justify-center gap-1"
+                title="Marcar paciente como faltou"
+                aria-label="Faltou"
+              >
+                <CancelIcon className="w-4 h-4" /> Faltou
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => (onCancel ? onCancel(slot.id) : onDelete())}
+              className="px-3 py-2 rounded-full text-[12px] font-medium border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 inline-flex items-center justify-center gap-1"
+              title="Cancelar agendamento"
+            >
+              <CancelIcon className="w-4 h-4" /> Cancelar
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -523,8 +549,6 @@ const KanbanAgenda: React.FC<Props> = ({
   sortSlotsByTime,
 }) => {
   const [query, setQuery] = useState('');
-  const [todayISO, setTodayISO] = useState<string>('');
-  const [nowMin, setNowMin] = useState<number>(0);
   const [days, setDays] = useState<string[]>([]);
   const [activeDay, setActiveDay] = useState<string>('');
   const [, setTick] = useState<number>(Date.now());
@@ -534,26 +558,17 @@ const KanbanAgenda: React.FC<Props> = ({
 
   useEffect(() => {
     const now = new Date();
-    const today = toLocalISO(now);
-    setTodayISO(today);
-    setNowMin(
-      hhmmToMin(
-        `${String(now.getHours()).padStart(2, '0')}:${String(
-          now.getMinutes()
-        ).padStart(2, '0')}`
-      )
-    );
     const arr: string[] = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date();
-      d.setDate(d.getDate() + i);
-      arr.push(toLocalISO(d));
+      d.setDate(now.getDate() + i);
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      arr.push(d.toISOString().slice(0, 10));
     }
     setDays(arr);
-    setActiveDay((prev) => prev || today);
+    setActiveDay((prev) => prev || arr[0]);
   }, []);
 
-  // atualiza a cada 30s para cronômetro
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(id);
@@ -605,8 +620,7 @@ const KanbanAgenda: React.FC<Props> = ({
     return (slots || [])
       .filter((s) => normISO(s?.date) === activeDay)
       .filter((s) => {
-        const proId =
-          jById.get(String(s?.journeyId || ''))?.professionalId || '';
+        const proId = jById.get(String(s?.journeyId || ''))?.professionalId || '';
         return filterByQuery(proById.get(proId));
       })
       .sort(defaultSort);
@@ -670,7 +684,6 @@ const KanbanAgenda: React.FC<Props> = ({
     onStartAppointment?.(slotId);
   };
 
-  // elapsed para em_andamento
   const getElapsedMin = (s: AppointmentSlot) => {
     const apiStarted = (s as any)?.startedAt
       ? new Date((s as any).startedAt).getTime()
@@ -720,7 +733,7 @@ const KanbanAgenda: React.FC<Props> = ({
               {section.groups.map((g, idx) => {
                 const pro = g.pro;
                 const j = g.journey;
-                const dateLabel = fmtDateLong(normISO(j?.date) || activeDay);
+                const dateLabel = fmtDateLong(normISO(j?.date) || toLocalISO(new Date()));
                 const address = pro?.address;
 
                 const availableCount = g.slots.filter((s) => {
@@ -728,7 +741,6 @@ const KanbanAgenda: React.FC<Props> = ({
                   return st === '' || st === 'disponivel' || st === 'available';
                 }).length;
 
-                // FOTO do profissional
                 const baseAvatar = resolveProAvatarBaseUrl(pro);
                 const version = resolveProAvatarVersion(pro);
                 const avatar = withCacheBust(baseAvatar, version);
@@ -827,7 +839,6 @@ const KanbanAgenda: React.FC<Props> = ({
                             ).padStart(2, '0')}`
                           );
 
-                          // tolerância para bloquear o card somente 10 min após o início
                           const BLOCK_GRACE_MIN = 10;
 
                           const isPast =
@@ -864,6 +875,7 @@ const KanbanAgenda: React.FC<Props> = ({
                               onDelete={() => {
                                 if (jId) onDeleteJourney(jId);
                               }}
+                              professionalName={pro?.name || 'Profissional'} // ← envia nome do profissional
                             />
                           );
                         })}
