@@ -403,7 +403,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
       <div className="relative mb-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
+        <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -444,7 +444,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50"
                   >
-                    <div className="font-medium text-gray-800">{dn}</div>
+                    <div className="font-medium text-gray-800 truncate">{dn}</div>
                     <div className="text-xs text-gray-500">
                       {maskCPF(p.cpf)} • {maskCell(p.phone)}
                     </div>

@@ -12,6 +12,7 @@ import {
   Edit3,
   Trash2,
   Stethoscope,
+  Clock,
 } from "lucide-react";
 import { usePatientEvolutionFeed, EvolutionItem } from "../../hooks/usePatientEvolutionFeed";
 
@@ -38,13 +39,22 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{children}</div>;
 }
 function TagPill({ children }: { children: React.ReactNode }) {
-  return <span className="px-2 py-1 text-xs rounded-full bg-amber-50 text-amber-700">{children}</span>;
+  return (
+    <span className="px-2 py-1 text-xs rounded-full bg-amber-50 text-amber-700 break-words max-w-full">
+      {children}
+    </span>
+  );
 }
 function Box({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 p-3">
       <SectionTitle>{title}</SectionTitle>
-      <div className="text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed">{children}</div>
+      <div
+        className="text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
+        style={{ overflowWrap: "anywhere" }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -94,6 +104,8 @@ function VitalInline({
   );
 }
 
+/* tipo local para itens de medicação */
+type Med = { name: string; freq?: string | null; duration?: string | null };
 
 export default function PatientEvolutionTimeline({ patientId }: { patientId: string }) {
   const { data, loading, error } = usePatientEvolutionFeed(patientId);
@@ -107,16 +119,23 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
       <div className="absolute left-3 sm:left-4 top-0 bottom-0 w-px bg-slate-200" />
       <div className="space-y-6 pl-1 sm:pl-2">
         {data.map((item: EvolutionItem) => {
-          const v = item.vitals || {};
-          const meds = item.medications || [];
+          const v = (item as any).vitals || {};
+          const meds = ((item as any).medications || []) as Med[];
           const hasVitals = v.bp || v.hr || v.temp || v.weight || v.height;
           const hasSOAP =
-            (item.symptoms?.length ?? 0) > 0 ||
-            (item.diagnosis?.length ?? 0) > 0 ||
-            !!item.conduct ||
-            !!item.observations ||
+            (item as any).symptoms?.length > 0 ||
+            (item as any).diagnosis?.length > 0 ||
+            !!(item as any).conduct ||
+            !!(item as any).observations ||
             meds.length > 0 ||
-            !!item.next_steps;
+            !!(item as any).next_steps;
+
+          // Heurística + flags do backend para "preencher depois"
+          const isPending =
+            (item as any)?.data_json?.pending === true ||
+            (item as any)?.pending === true ||
+            (item as any)?.status === "pending" ||
+            (!hasVitals && !hasSOAP);
 
           return (
             <div className="relative flex flex-nowrap items-start gap-3 md:gap-4" key={item.id}>
@@ -157,7 +176,10 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
 
                 {/* card arrastável */}
                 <div
-                  className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm transform transition-transform duration-300 ease-in-out group-[.show]:-translate-x-20"
+                  className={[
+                    "rounded-2xl bg-white border p-4 shadow-sm transform transition-transform duration-300 ease-in-out group-[.show]:-translate-x-20",
+                    isPending ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200",
+                  ].join(" ")}
                   onTouchStart={(e) => {
                     (e.currentTarget as any).dataset.startX = e.touches[0].clientX.toString();
                   }}
@@ -183,8 +205,11 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 flex flex-col gap-1 min-w-0">
                       {/* título + chip (profissão) */}
-                      <div className="flex items-start gap-2">
-                        <div className="text-lg font-bold text-gray-900">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <div
+                          className="text-lg font-bold text-gray-900 break-words"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
                           {item.title || "Consulta de Acompanhamento"}
                         </div>
                         {item.professional_role && (
@@ -208,14 +233,25 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         </div>
 
                         {item.professional_name && (
-                          <span className="inline-flex items-start gap-2 ml-auto">
+                          <span className="inline-flex items-start gap-2 ml-auto min-w-0">
                             <User2 className="w-4 h-4 text-slate-400 mt-[2px]" />
-                            <span className="leading-tight text-right">
+                            <span
+                              className="leading-tight text-right break-words"
+                              style={{ overflowWrap: "anywhere" }}
+                            >
                               <div className="font-normal text-gray-600">{item.professional_name}</div>
                             </span>
                           </span>
                         )}
                       </div>
+
+                      {/* lembrete de pendência */}
+                      {isPending && (
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-50 text-amber-800 px-2 py-1 ring-1 ring-amber-200">
+                          <Clock className="w-4 h-4" />
+                          <span className="text-xs font-medium">Evolução pendente de preenchimento</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -252,7 +288,10 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         <div>
                           <SectionTitle>Diagnóstico</SectionTitle>
                           {item.diagnosis?.length ? (
-                            <div className="text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed">
+                            <div
+                              className="text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
+                              style={{ overflowWrap: "anywhere" }}
+                            >
                               {item.diagnosis.join("\n")}
                             </div>
                           ) : (
@@ -267,16 +306,21 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         <div className="rounded-xl border border-slate-200 p-3">
                           <SectionTitle>Medicações</SectionTitle>
                           <ul className="space-y-2">
-                            {meds.map((m, i) => (
+                            {meds.map((m: Med, i: number) => (
                               <li
                                 key={`${item.id}-med-${i}`}
                                 className="flex items-start gap-2 rounded-xl bg-violet-50 text-violet-900 p-2"
                               >
                                 <PillIcon className="w-4 h-4 mt-0.5" />
-                                <div className="text-sm">
-                                  <div className="font-semibold text-gray-800">{m.name}</div>
+                                <div className="text-sm min-w-0">
+                                  <div
+                                    className="font-semibold text-gray-800 break-words"
+                                    style={{ overflowWrap: "anywhere" }}
+                                  >
+                                    {m.name}
+                                  </div>
                                   {(m.freq || m.duration) && (
-                                    <div className="text-[12px] text-gray-700/80">
+                                    <div className="text-[12px] text-gray-700/80 break-words">
                                       {m.freq ?? ""}
                                       {m.freq && m.duration ? " • " : ""}
                                       {m.duration ?? ""}
@@ -292,7 +336,10 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                       {item.observations && (
                         <div>
                           <SectionTitle>Observações</SectionTitle>
-                          <div className="text-sm font-normal text-gray-700 whitespace-pre-wrap leading-relaxed">
+                          <div
+                            className="text-sm font-normal text-gray-700 whitespace-pre-wrap leading-relaxed break-words"
+                            style={{ overflowWrap: "anywhere" }}
+                          >
                             {item.observations}
                           </div>
                         </div>
@@ -306,7 +353,10 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                               Próximos passos
                             </div>
                           </div>
-                          <div className="mt-1 text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed">
+                          <div
+                            className="mt-1 text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
+                            style={{ overflowWrap: "anywhere" }}
+                          >
                             {item.next_steps}
                           </div>
                         </div>

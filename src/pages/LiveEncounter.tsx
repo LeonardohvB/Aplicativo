@@ -648,7 +648,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       });
       if (!eid) return;
 
-      // Cria evolução “vazia”
+      // Cria evolução “vazia” com flag de pendência
       try {
         const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
@@ -680,7 +680,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             vitals: {},
             tags: [] as string[],
             updatedAt: new Date().toISOString(),
-            pending: true, // flag informativa (se existir a coluna será ignorada)
+            pending: true, // ⬅️ marcador usado na timeline
           },
           s_text: null,
           o_text: null,
