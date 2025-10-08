@@ -9,7 +9,7 @@ import SwipeRow from '../components/common/SwipeRow';
 
 // padrões globais
 import { useConfirm } from '../providers/ConfirmProvider';
-import { useToast } from '../components/ui/toast';
+import { useToast } from '../components/ui/Toast';
 import { Trash2 } from 'lucide-react';
 
 const Professionals: React.FC = () => {

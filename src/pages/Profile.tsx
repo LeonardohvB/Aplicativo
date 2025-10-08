@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import ConfirmDialog from "../components/ui/ConfirmDialog";
-import { ToastContainer, useToast } from "../components/ui/toast";
+import { ToastContainer, useToast } from "../components/ui/Toast";
 
 /* -------------------- Helpers -------------------- */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
