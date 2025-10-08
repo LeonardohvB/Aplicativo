@@ -14,10 +14,8 @@ import OverlayMenu from './components/common/OverlayMenu'
 import PatientsNew from './pages/PatientsNew'
 import PatientEvolution from './pages/PatientEvolution'
 import LiveEncounter from './pages/LiveEncounter'
-
-// novos imports: provider + toaster (nomeados)
 import { ConfirmProvider } from './providers/ConfirmProvider'
-import { ToastContainer } from './components/ui/toast'
+// import { ToastContainer } from './components/ui/toast' // REMOVIDO
 
 // Aceita também “rotas” internas de tela cheia
 type AppTab = Tab | 'perfil' | 'patients_new' | 'evolucao'
@@ -221,8 +219,8 @@ export default function App() {
         )}
       </div>
 
-      {/* Toaster global (UMA vez só no app) */}
-      <ToastContainer />
+      {/* (Toaster global removido) */}
+      {/* <ToastContainer /> */}
     </ConfirmProvider>
   )
 }

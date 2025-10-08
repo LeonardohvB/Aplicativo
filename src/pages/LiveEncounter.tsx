@@ -88,27 +88,14 @@ const Toasts: React.FC<{
 );
 
 /* ==========================================================
-   Modal de confirmação (inline, central, com zoom)
+   Modal de Finalização (com 2 ações + sair)
    ========================================================== */
-const ConfirmDialog: React.FC<{
+const FinalizeDialog: React.FC<{
   open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  description?: string;
-  confirmText?: string;
-  cancelText?: string;
-  icon?: React.ReactNode;
-}> = ({
-  open,
-  onClose,
-  onConfirm,
-  title,
-  description,
-  confirmText = "Confirmar",
-  cancelText = "Cancelar",
-  icon,
-}) => {
+  onClose: () => void;            // Sair
+  onNow: () => void;              // Gerar agora
+  onLater: () => void;            // Preencher depois
+}> = ({ open, onClose, onNow, onLater }) => {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -136,25 +123,38 @@ const ConfirmDialog: React.FC<{
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3">
-          <div className="shrink-0 mt-0.5 text-blue-600">{icon}</div>
+          <div className="shrink-0 mt-0.5 text-blue-600">
+            <FileText className="w-6 h-6" />
+          </div>
           <div className="flex-1">
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-            {description && (
-              <p className="mt-1 text-sm text-slate-600">{description}</p>
-            )}
-            <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-2">
-              <button
-                className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
-                onClick={onClose}
-                autoFocus
-              >
-                {cancelText}
-              </button>
+            <h3 className="text-base font-semibold text-slate-900">
+              Finalizar atendimento?
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Escolha se deseja gerar a evolução agora ou deixar para preencher depois.
+            </p>
+
+            <div className="mt-4 grid gap-2">
               <button
                 className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-                onClick={onConfirm}
+                onClick={onNow}
               >
-                {confirmText}
+                Gerar agora
+              </button>
+
+              <button
+                className="inline-flex items-center justify-center rounded-lg bg-indigo-50 px-4 py-2 text-sm text-indigo-700 ring-1 ring-inset ring-indigo-200 hover:bg-indigo-100"
+                onClick={onLater}
+              >
+                Preencher depois
+              </button>
+
+              <button
+                className="inline-flex items-center justify-center rounded-lg  px-4 py-2 text-sm text-indigo-700 ring-1 ring-inset ring-black hover:bg-indigo-100"
+                onClick={onClose}
+                aria-label="Sair"
+              >
+                Sair
               </button>
             </div>
           </div>
@@ -475,42 +475,68 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
     return () => window.removeEventListener("encounter:open", open as EventListener);
   }, []);
 
-  /* -------- Se veio autoFinalize da Agenda, finaliza sem pedir novo confirm -------- */
+  /* -------- Se veio autoFinalize da Agenda, finaliza no modo "agora" -------- */
   useEffect(() => {
     if (!autoFinalizeRequested) return;
     const t = setTimeout(() => {
-      finalize(); // usa o mesmo finalize() que cria evolução
+      finalizeNow();
       setAutoFinalizeRequested(false);
     }, 250);
     return () => clearTimeout(t);
   }, [autoFinalizeRequested]);
 
   /* ===================== Finalizar + Evolução ===================== */
-  const finalize = async () => {
+  const ensureEncounterAndCloseSlot = async (
+    payloadForFinalize: any
+  ): Promise<string | undefined> => {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user) {
+      toasts.error("Sessão expirada. Faça login novamente.");
+      return;
+    }
+
+    // 1) Garante encounterId
+    let eid = encounterId;
+    if (!eid && appointmentId) {
+      const { data, error } = await supabase.rpc("ensure_encounter", {
+        p_appointment_id: appointmentId,
+        p_meta: { patientName, professionalName, serviceName },
+      });
+      if (error) throw error;
+      eid = (data as string) || undefined;
+      if (eid) setEncounterId(eid);
+    }
+    if (!eid) {
+      toasts.error("Não foi possível identificar o encontro.");
+      return;
+    }
+
+    // 2) finalize_encounter (registra conclusão no encontro)
+    const { error: finErr } = await supabase.rpc("finalize_encounter", {
+      p_encounter_id: eid,
+      p_options: payloadForFinalize,
+    });
+    if (finErr) throw finErr;
+
+    // 3) Atualiza status do slot (best-effort)
+    if (appointmentId) {
+      try {
+        await supabase
+          .from("appointment_slots")
+          .update({ status: "concluido" })
+          .eq("id", appointmentId);
+      } catch (e) {
+        console.warn("update appointment_slots skipped:", e);
+      }
+    }
+
+    return eid;
+  };
+
+  /** Finaliza e cria evolução a partir do rascunho (fluxo “Gerar agora”) */
+  const finalizeNow = async () => {
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth?.user) {
-        toasts.error("Sessão expirada. Faça login novamente.");
-        return;
-      }
-
-      // 1) Garante encounterId
-      let eid = encounterId;
-      if (!eid && appointmentId) {
-        const { data, error } = await supabase.rpc("ensure_encounter", {
-          p_appointment_id: appointmentId,
-          p_meta: { patientName, professionalName, serviceName },
-        });
-        if (error) throw error;
-        eid = (data as string) || undefined;
-        if (eid) setEncounterId(eid);
-      }
-      if (!eid) {
-        toasts.error("Não foi possível identificar o encontro.");
-        return;
-      }
-
-      // 2) plain text (opcional)
+      // plain text (opcional)
       const plain =
         [
           draft.S && `S: ${draft.S}`,
@@ -524,23 +550,13 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           .filter(Boolean)
           .join("\n") || null;
 
-      // 3) finalize_encounter
-      const { error: finErr } = await supabase.rpc("finalize_encounter", {
-        p_encounter_id: eid,
-        p_options: { data_json: draft, plain_text: plain },
+      const eid = await ensureEncounterAndCloseSlot({
+        data_json: draft,
+        plain_text: plain,
       });
-      if (finErr) throw finErr;
+      if (!eid) return;
 
-      // 4) Atualiza status do slot
-      if (appointmentId) {
-        try {
-          await supabase.from("appointment_slots").update({ status: "concluido" }).eq("id", appointmentId);
-        } catch (e) {
-          console.warn("update appointment_slots skipped:", e);
-        }
-      }
-
-      // 5) Cria evolução do paciente
+      // Cria evolução preenchida
       try {
         const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
@@ -591,7 +607,9 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         };
 
         if (evoInsert.patient_id) {
-          const { error: evoErr } = await supabase.from("patient_evolution").insert([evoInsert]);
+          const { error: evoErr } = await supabase
+            .from("patient_evolution")
+            .insert([evoInsert]);
           if (evoErr) console.warn("evolution insert failed:", evoErr);
         } else {
           console.warn("patient_evolution skipped: patient_id não encontrado");
@@ -600,7 +618,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         console.warn("evolution creation warning:", err);
       }
 
-      // 6) sinaliza agenda e limpa cache local
+      // sinaliza/limpa
       if (appointmentId) {
         window.dispatchEvent(
           new CustomEvent("agenda:slot:update", {
@@ -616,8 +634,83 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       window.dispatchEvent(new CustomEvent("agenda:refresh"));
       window.dispatchEvent(new CustomEvent("encounter:close"));
     } catch (e) {
-      console.warn("finalize error:", e);
+      console.warn("finalizeNow error:", e);
       toasts.error("Não foi possível finalizar agora. Tente novamente.");
+    }
+  };
+
+  /** Finaliza e cria evolução em branco (fluxo “Preencher depois”) */
+  const finalizeBlank = async () => {
+    try {
+      const eid = await ensureEncounterAndCloseSlot({
+        data_json: {}, // registra o finalize sem conteúdo
+        plain_text: null,
+      });
+      if (!eid) return;
+
+      // Cria evolução “vazia”
+      try {
+        const patient_id = await findPatientId(patientName);
+        const occurred_at = new Date().toISOString();
+        const title = serviceName || "Consulta";
+        const userId = (await supabase.auth.getUser()).data.user?.id as string;
+
+        const evoInsert = {
+          owner_id: userId,
+          patient_id,
+          appointment_id: appointmentId || null,
+          professional_id: userId,
+          professional_name: professionalName || "Profissional",
+          specialty: serviceName || null,
+          title,
+          type: "consultation",
+          occurred_at,
+          vitals: {},
+          symptoms: [] as string[],
+          diagnosis: [] as string[],
+          conduct: null as string | null,
+          observations: null as string | null,
+          next_steps: undefined,
+          medications: [] as any[],
+          data_json: {
+            S: "",
+            O: "",
+            A: "",
+            P: "",
+            vitals: {},
+            tags: [] as string[],
+            updatedAt: new Date().toISOString(),
+            pending: true, // flag informativa (se existir a coluna será ignorada)
+          },
+          s_text: null,
+          o_text: null,
+          a_text: null,
+          p_text: null,
+          tags: [] as string[],
+        };
+
+        if (evoInsert.patient_id) {
+          const { error: evoErr } = await supabase
+            .from("patient_evolution")
+            .insert([evoInsert]);
+          if (evoErr) console.warn("evolution blank insert failed:", evoErr);
+        } else {
+          console.warn("patient_evolution blank skipped: patient_id não encontrado");
+        }
+      } catch (err) {
+        console.warn("evolution blank creation warning:", err);
+      }
+
+      try {
+        (clearLocal as any)?.();
+      } catch {}
+
+      toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
+      window.dispatchEvent(new CustomEvent("agenda:refresh"));
+      window.dispatchEvent(new CustomEvent("encounter:close"));
+    } catch (e) {
+      console.warn("finalizeBlank error:", e);
+      toasts.error("Não foi possível concluir. Tente novamente.");
     }
   };
 
@@ -638,7 +731,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            {/* Voltar (padrão) */}
+            {/* Voltar */}
             <button
               className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
               onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
@@ -839,19 +932,18 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         </div>
       </div>
 
-      {/* Modal Confirmar Finalização */}
-      <ConfirmDialog
+      {/* Modal Finalizar: Gerar agora / Preencher depois / Sair */}
+      <FinalizeDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        onConfirm={() => {
+        onNow={() => {
           setConfirmOpen(false);
-          finalize();
+          finalizeNow();
         }}
-        title="Finalizar atendimento?"
-        description="Gerar evolução agora e marcar este atendimento como concluído."
-        confirmText="Finalizar"
-        cancelText="Cancelar"
-        icon={<FileText className="w-6 h-6" />}
+        onLater={() => {
+          setConfirmOpen(false);
+          finalizeBlank();
+        }}
       />
 
       {/* Toasts */}
