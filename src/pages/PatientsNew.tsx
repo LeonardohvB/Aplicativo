@@ -1,7 +1,8 @@
+// src/pages/PatientsNew.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Search, Trash2 , ChevronLeft } from "lucide-react";
-
+import { Search, Trash2, ChevronLeft } from "lucide-react";
+import { useConfirm } from "../providers/ConfirmProvider";
 
 /* ==================== Tipos ==================== */
 type Patient = {
@@ -112,6 +113,8 @@ const titleFinal = (s: string) => titleLive(s).trim();
 
 /* =========================== Página =========================== */
 export default function PatientsNew({ onBack, onCreated }: Props) {
+  const confirm = useConfirm(); // ← usa o ConfirmDialog global animado
+
   type Mode = "create" | "search" | "edit" | "list" | "view";
   const [mode, setMode] = useState<Mode>("create");
 
@@ -254,7 +257,7 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
     ev.preventDefault();
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Informe o nome.";
-    if (email && !/^[^\s@]+@[^\s@]+$/.test(email)) e.email = "E-mail inválido.";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = "E-mail inválido.";
     if (Object.keys(e).length) { setErrors(e); shakeNow(); return; }
     if (!editing) return;
 
@@ -296,8 +299,18 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
 
   const onDelete = async () => {
     if (!editing) return;
-    const ok = window.confirm("Excluir este paciente? Esta ação não pode ser desfeita.");
+
+    // ← Confirmação com animação padrão (ConfirmDialog do Profile)
+    const ok = await confirm({
+      title: "Excluir este paciente?",
+      description: "Esta ação não pode ser desfeita.",
+      confirmText: "Excluir",
+      cancelText: "Cancelar",
+      icon: <Trash2 className="w-5 h-5" />,
+      variant: "danger",
+    });
     if (!ok) return;
+
     setLoading(true);
     try {
       const { error } = await supabase.from("patients").delete().eq("id", editing.id);
@@ -356,52 +369,52 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
 
       {/* Cabeçalho fixo */}
       <header className="sticky top-0 z-10 bg-white border-b">
-  {/* Linha 1: Voltar (esq) + Título central */}
-  <div className="relative px-3 py-3 flex items-center justify-center">
-    {/* Botão Voltar alinhado à esquerda */}
-    <button
-      onClick={onBack}
-      className="absolute left-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
-      aria-label="Voltar"
-    >
-      <ChevronLeft className="h-5 w-5" />
-      <span className="font-medium">Voltar</span>
-    </button>
+        {/* Linha 1: Voltar (esq) + Título central */}
+        <div className="relative px-3 py-3 flex items-center justify-center">
+          {/* Botão Voltar alinhado à esquerda */}
+          <button
+            onClick={onBack}
+            className="absolute left-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
+            aria-label="Voltar"
+          >
+            <ChevronLeft className="h-5 w-5" />
+            <span className="font-medium">Voltar</span>
+          </button>
 
-    {/* Título central (muda conforme o modo) */}
-    <h1 className="text-base sm:text-lg font-semibold text-slate-900">
-      {mode === "create" && "Cadastrar Paciente"}
-      {mode === "search" && "Buscar / Editar Paciente"}
-      {mode === "list"   && "Lista de Pacientes"}
-      {mode === "view"   && "Informações do Paciente"}
-      {mode === "edit"   && "Editar Paciente"}
-    </h1>
-  </div>
+          {/* Título central (muda conforme o modo) */}
+          <h1 className="text-base sm:text-lg font-semibold text-slate-900">
+            {mode === "create" && "Cadastrar Paciente"}
+            {mode === "search" && "Buscar / Editar Paciente"}
+            {mode === "list"   && "Lista de Pacientes"}
+            {mode === "view"   && "Informações do Paciente"}
+            {mode === "edit"   && "Editar Paciente"}
+          </h1>
+        </div>
 
-  {/* Linha 2: Abas (somem em view/edit) — visíveis só em telas >= sm */}
-  {mode !== "edit" && mode !== "view" && (
-    <div className="px-3 pb-3 hidden sm:flex gap-2 flex-wrap">
-      <button
-        className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-        onClick={() => setMode("create")}
-      >
-        Cadastrar
-      </button>
-      <button
-        className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-        onClick={() => setMode("search")}
-      >
-        Buscar / Editar
-      </button>
-      <button
-        className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-        onClick={() => setMode("list")}
-      >
-        Lista
-      </button>
-    </div>
-  )}
-</header>
+        {/* Linha 2: Abas (somem em view/edit) — visíveis só em telas >= sm */}
+        {mode !== "edit" && mode !== "view" && (
+          <div className="px-3 pb-3 hidden sm:flex gap-2 flex-wrap">
+            <button
+              className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+              onClick={() => setMode("create")}
+            >
+              Cadastrar
+            </button>
+            <button
+              className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+              onClick={() => setMode("search")}
+            >
+              Buscar / Editar
+            </button>
+            <button
+              className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+              onClick={() => setMode("list")}
+            >
+              Lista
+            </button>
+          </div>
+        )}
+      </header>
 
       {/* Abinhas em telas pequenas (mobile) */}
       {mode !== "edit" && mode !== "view" && (
@@ -712,7 +725,7 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
 
             {/* Telefone */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Telefone</label>
+              <label className="block text sm font-medium text-gray-700">Telefone</label>
               <input
                 value={formatBRCell(phone)}
                 onChange={(e) => setPhone(onlyDigits(e.target.value).slice(0,11))}

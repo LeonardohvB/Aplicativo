@@ -12,99 +12,13 @@ import {
   StopCircle as StopIcon,
   XCircle as CancelIcon,
   Phone,
-  FileText, // ← para ícone do modal
+  FileText,
 } from 'lucide-react';
 import { AppointmentSlot, AppointmentJourney } from '../../types';
 import { publicUrlFromPath } from '../../lib/avatars';
 
-/* ======================= Modal de Confirmação ======================= */
-function ConfirmDialog({
-  open,
-  title,
-  description,
-  confirmText = 'Confirmar',
-  cancelText = 'Cancelar',
-  icon,
-  onConfirm,
-  onClose,
-}: {
-  open: boolean;
-  title: string;
-  description?: string;
-  confirmText?: string;
-  cancelText?: string;
-  icon?: React.ReactNode;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      {/* overlay */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
-      {/* card */}
-      <div
-        className="
-          relative w-full max-w-[420px] rounded-2xl bg-white shadow-xl ring-1 ring-black/10
-          p-4 sm:p-5 animate-zoom-in
-          animate__animated animate__zoomIn
-        "
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start gap-3">
-          <div className="shrink-0 mt-0.5 text-blue-600">{icon}</div>
-          <div className="flex-1">
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-            {description ? (
-              <p className="mt-1 text-sm text-slate-600">{description}</p>
-            ) : null}
-            <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-2">
-              <button
-                className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
-                onClick={onClose}
-                autoFocus
-              >
-                {cancelText}
-              </button>
-              <button
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-                onClick={onConfirm}
-              >
-                {confirmText}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* fallback das animações (se não usar animate.css) */}
-      <style>{`
-        @keyframes zoom-in { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
-        .animate-zoom-in { animation: zoom-in 220ms cubic-bezier(.2,.8,.2,1) both; }
-        .animate-fade-in { animation: fade-in 180ms ease-out both; }
-      `}</style>
-    </div>
-  );
-}
+// >>> usa o ConfirmDialog PADRÃO do app (o mesmo do Profile)
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 /* ======================= Tipos utilitários ======================= */
 type Pro = {
@@ -407,6 +321,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
         }}
         className={[
           'relative rounded-xl border px-3 py-2 transition w-full text-left',
+          'animate-[toast-in_0.18s_ease-out]', // ← mesmo timing do Toast
           cardH,
           stateBg,
           stateBorder,
@@ -414,6 +329,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
           'focus-visible:outline-none focus-visible:ring-0',
           isPast && !onCardClick ? 'cursor-not-allowed' : '',
         ].join(' ')}
+        style={{ transformOrigin: 'top left' }}
         aria-label="slot"
       >
         {/* header */}
@@ -621,7 +537,6 @@ const KanbanAgenda: React.FC<Props> = ({
   slots = [],
   onSchedulePatient,
   onEditPatient,
-  onFinishAppointment,
   onStartAppointment,
   onCancel,
   onNoShow,
@@ -982,41 +897,41 @@ const KanbanAgenda: React.FC<Props> = ({
 
       {/* Modal de finalizar (central com zoom) */}
       <ConfirmDialog
-  open={!!slotIdToFinish}
-  onClose={() => setSlotIdToFinish(null)}
-  onConfirm={() => {
-    if (!slotIdToFinish) return;
+        open={!!slotIdToFinish}
+        onClose={() => setSlotIdToFinish(null)}
+        onConfirm={() => {
+          if (!slotIdToFinish) return;
 
-    // pega o slot e metadados p/ abrir o prontuário
-    const s = (slots || []).find(x => x.id === slotIdToFinish);
-    if (!s) { setSlotIdToFinish(null); return; }
+          // pega o slot e metadados p/ abrir o prontuário
+          const s = (slots || []).find(x => x.id === slotIdToFinish);
+          if (!s) { setSlotIdToFinish(null); return; }
 
-    const j = jById.get(String(s.journeyId || ''));
-    const proName =
-      proById.get(j?.professionalId || '')?.name || 'Profissional';
-    const patientName =
-      (s as any)?.patientName || (s as any)?.patient?.name || '';
-    const serviceName = (s as any)?.service || 'Consulta';
+          const j = jById.get(String(s.journeyId || ''));
+          const proName =
+            proById.get(j?.professionalId || '')?.name || 'Profissional';
+          const patientName =
+            (s as any)?.patientName || (s as any)?.patient?.name || '';
+          const serviceName = (s as any)?.service || 'Consulta';
 
-    // abre o prontuário e já solicita finalizar sem novo confirm
-    window.dispatchEvent(new CustomEvent('encounter:open', {
-      detail: {
-        appointmentId: s.id,
-        patientName,
-        professionalName: proName,
-        serviceName,
-        autoFinalize: true,   // ← chave p/ o LiveEncounter
-      },
-    }));
+          // abre o prontuário e já solicita finalizar sem novo confirm
+          window.dispatchEvent(new CustomEvent('encounter:open', {
+            detail: {
+              appointmentId: s.id,
+              patientName,
+              professionalName: proName,
+              serviceName,
+              autoFinalize: true,   // ← chave p/ o LiveEncounter
+            },
+          }));
 
-    setSlotIdToFinish(null);
-  }}
-  title="Finalizar este atendimento."
-  description="Deseja também gerar a evolução agora?"
-  confirmText="Finalizar"
-  cancelText="Cancelar"
-  icon={<FileText className="w-6 h-6" />}
-/>
+          setSlotIdToFinish(null);
+        }}
+        title="Finalizar este atendimento."
+        description="Deseja também gerar a evolução agora?"
+        confirmText="Finalizar"
+        cancelText="Cancelar"
+        icon={<FileText className="w-6 h-6" />}
+      />
     </div>
   );
 };

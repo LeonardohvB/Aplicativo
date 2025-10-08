@@ -15,6 +15,10 @@ import PatientsNew from './pages/PatientsNew'
 import PatientEvolution from './pages/PatientEvolution'
 import LiveEncounter from './pages/LiveEncounter'
 
+// novos imports: provider + toaster (nomeados)
+import { ConfirmProvider } from './providers/ConfirmProvider'
+import { ToastContainer } from './components/ui/toast'
+
 // Aceita também “rotas” internas de tela cheia
 type AppTab = Tab | 'perfil' | 'patients_new' | 'evolucao'
 
@@ -122,7 +126,7 @@ export default function App() {
     const open = () => setActiveTab('evolucao');
     window.addEventListener('evolution:open', open as EventListener);
     return () => window.removeEventListener('evolution:open', open as EventListener);
-  }, []);
+  }, [])
 
   // ===== carregando / login =====
   if (checkingAuth) {
@@ -172,8 +176,9 @@ export default function App() {
     }
   }
 
+  // ===== retorno =====
   return (
-    <>
+    <ConfirmProvider>
       {/* Wrapper de viewport: rolagem só aqui */}
       <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50 relative">
         {/* Menu suspenso fixo em TODAS as abas */}
@@ -215,6 +220,9 @@ export default function App() {
           </div>
         )}
       </div>
-    </>
+
+      {/* Toaster global (UMA vez só no app) */}
+      <ToastContainer />
+    </ConfirmProvider>
   )
 }

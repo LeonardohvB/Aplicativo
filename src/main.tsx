@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
+import "animate.css"; // opcional; se não estiver presente, o dialog já funciona com o fallback
+
 
 // Auto-update PWA after each deploy
 if ('serviceWorker' in navigator) {

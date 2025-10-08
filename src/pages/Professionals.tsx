@@ -7,11 +7,19 @@ import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
 import SwipeRow from '../components/common/SwipeRow';
 
+// padrões globais
+import { useConfirm } from '../providers/ConfirmProvider';
+import { useToast } from '../components/ui/toast';
+import { Trash2 } from 'lucide-react';
+
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
+
+  const  confirm  = useConfirm();
+  const { success, error } = useToast();
 
   const {
     professionals,
@@ -65,10 +73,36 @@ const Professionals: React.FC = () => {
     setEditingProfessional(null);
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteProfessional(id);
-    setIsEditModalOpen(false);
-    setEditingProfessional(null);
+  // ⬇️ CONFIRMAÇÃO PADRÃO AO EXCLUIR (via swipe)
+  const askAndDelete = async (id: string) => {
+    const prof = professionals.find(p => p.id === id);
+    const ok = await confirm({
+      title: 'Excluir profissional?',
+      description: (
+        <>
+          Tem certeza que deseja excluir <b>{prof?.name ?? 'este profissional'}</b>?<br />
+          Esta ação não pode ser desfeita.
+        </>
+      ),
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      variant: 'danger',
+      icon: <Trash2 className="w-5 h-5" />,
+    });
+    if (!ok) return;
+
+    try {
+      await deleteProfessional(id);
+      success('Profissional excluído.');
+    } catch (e) {
+      console.error(e);
+      error('Não foi possível excluir o profissional.');
+    } finally {
+      // garante fechamento de estados relacionados
+      setIsEditModalOpen(false);
+      setEditingProfessional(null);
+      setSwipeOpenId(null);
+    }
   };
 
   const handlePhotoChange = async (_id: string, _photoFile: File) => {
@@ -101,13 +135,13 @@ const Professionals: React.FC = () => {
                 onOpen={(id) => setSwipeOpenId(id)}
                 onClose={() => setSwipeOpenId(null)}
                 onEdit={() => openEditById(p.id)}
-                onDelete={() => handleDelete(p.id)}
+                onDelete={() => askAndDelete(p.id)} // ← confirmação aqui
               >
                 <ProfessionalCard
                   professional={p}
                   onToggle={toggleProfessional}
                   onEdit={openEditById}
-                  onDelete={handleDelete}
+                  onDelete={askAndDelete}     // se algum lugar ainda chamar delete do card
                   onPhotoChange={handlePhotoChange}
                 />
               </SwipeRow>
@@ -129,7 +163,7 @@ const Professionals: React.FC = () => {
           setEditingProfessional(null);
         }}
         onUpdate={handleUpdate}
-        onDelete={handleDelete}
+        onDelete={askAndDelete} // não há botão de excluir no modal, mas mantemos por compat
         professional={editingProfessional}
       />
     </div>

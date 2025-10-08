@@ -18,6 +18,7 @@ interface EditProfessionalModalProps {
       isActive?: boolean;
     }
   ) => void;
+  // mantido por compatibilidade, mas a exclusão agora é feita no card (swipe + useConfirm)
   onDelete: (id: string) => Promise<void> | void;
   professional: Professional | null;
 }
@@ -36,39 +37,31 @@ function splitRegistration(s: string | undefined | null) {
 /* ===== Title Case PT-BR ===== */
 const PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e', "d'", "d’"]);
 
-// usada ENQUANTO DIGITA — preserva espaços (inclui espaço no fim)
+// enquanto digita
 function titleCaseLive(input: string) {
-  // separa por "tokens", preservando os separadores de espaço
   const tokens = input.split(/(\s+)/);
-  let wordIndex = 0; // índice de palavras (ignora espaços)
+  let wordIndex = 0;
   return tokens
-    .map(tok => {
-      if (/^\s+$/.test(tok)) return tok; // mantém espaços como estão
+    .map((tok) => {
+      if (/^\s+$/.test(tok)) return tok;
       const lower = tok.toLowerCase();
-
-      // mantém partículas minúsculas se não forem a primeira palavra
       if (wordIndex > 0 && (PARTICLES.has(lower) || PARTICLES.has(lower.replace(/’/g, "'")))) {
         wordIndex++;
         return lower;
       }
-
-      // trata hifenizados
       const capped = lower
         .split('-')
-        .map(p => (p ? p.charAt(0).toUpperCase() + p.slice(1) : p))
+        .map((p) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : p))
         .join('-');
-
       wordIndex++;
       return capped;
     })
     .join('');
 }
-
-// usada no BLUR/salvar — normaliza espaços e aplica title case definitivo
+// no blur/salvar
 function titleCaseFinalize(input: string) {
   const trimmed = input.replace(/\s+/g, ' ').trim();
   if (!trimmed) return '';
-  // reaproveita a live em cima do normalizado
   return titleCaseLive(trimmed);
 }
 /* =========================== */
@@ -77,7 +70,7 @@ export default function EditProfessionalModal({
   isOpen,
   onClose,
   onUpdate,
-  onDelete,
+  onDelete: _onDeleteNotUsed, // não usamos aqui
   professional,
 }: EditProfessionalModalProps) {
   const [name, setName] = useState('');
@@ -88,7 +81,19 @@ export default function EditProfessionalModal({
   const [council, setCouncil] = useState<string>('CRM');
   const [customCouncil, setCustomCouncil] = useState('');
   const [regNumber, setRegNumber] = useState('');
-  const [deleting, setDeleting] = useState(false);
+
+  // ESC fecha + trava o scroll enquanto aberto
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (professional && isOpen) {
@@ -108,7 +113,6 @@ export default function EditProfessionalModal({
         setCustomCouncil(c.toUpperCase());
       }
       setRegNumber(n ?? '');
-      setDeleting(false);
     }
   }, [professional, isOpen]);
 
@@ -142,30 +146,23 @@ export default function EditProfessionalModal({
     onClose();
   };
 
-  const handleDelete = async () => {
-    const ok = confirm('Tem certeza que deseja excluir este profissional? Esta ação não poderá ser desfeita.');
-    if (!ok) return;
-    try {
-      setDeleting(true);
-      await onDelete(professional.id);
-      onClose();
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center" onClick={onClose}>
+      {/* Backdrop com blur + fade padrão */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] animate-[fadeIn_.18s_ease-out]" />
+
+      {/* Painel */}
       <div
-        className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl"
+        className="relative w-[92vw] max-w-md rounded-2xl bg-white p-5 shadow-xl ring-1 ring-black/10 animate-[zoomIn_.22s_cubic-bezier(.2,.8,.2,1)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-prof-title"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 id="edit-prof-title" className="text-lg font-semibold">Editar profissional</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Fechar">
-            <X />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -191,7 +188,7 @@ export default function EditProfessionalModal({
               onChange={(e) => setSpecialty(titleCaseLive(e.target.value))}
               onBlur={(e) => setSpecialty(titleCaseFinalize(e.target.value))}
               className="mt-1 w-full rounded-lg border px-3 py-2"
-              placeholder="Ex.: Arquiteta"
+              placeholder="Ex.: Psicólogo(a)"
               required
             />
           </div>
@@ -237,7 +234,7 @@ export default function EditProfessionalModal({
               <input
                 value={regNumber}
                 onChange={(e) => setRegNumber(e.target.value)}
-                placeholder="número (ex.: 26465 / SP)"
+                placeholder="número (ex.: 02/14676)"
                 className="flex-1 rounded-lg border px-3 py-2"
               />
             </div>
@@ -270,7 +267,7 @@ export default function EditProfessionalModal({
             />
           </div>
 
-          {/* Rodapé */}
+          {/* Rodapé — sem botão Excluir (exclusão via swipe do card) */}
           <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
             <button
               type="button"
@@ -278,15 +275,6 @@ export default function EditProfessionalModal({
               className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
             >
               Cancelar
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex-1 rounded-lg border border-red-300 px-4 py-2 text-red-700 hover:bg-red-50 disabled:opacity-60"
-            >
-              {deleting ? 'Excluindo…' : 'Excluir'}
             </button>
 
             <button
@@ -298,6 +286,18 @@ export default function EditProfessionalModal({
           </div>
         </form>
       </div>
+
+      {/* Keyframes usados pelas classes animate-[...] */}
+      <style>{`
+        @keyframes zoomIn {
+          0% { transform: scale(.92); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes fadeIn {
+          0% { opacity: 0; }
+          100% { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

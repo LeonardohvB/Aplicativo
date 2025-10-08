@@ -1,5 +1,5 @@
 // src/pages/Profile.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
@@ -11,10 +11,12 @@ import {
   LogOut,
   Building2,
   MapPin,
+  Upload,
+  Trash2,
 } from "lucide-react";
 
-// ícones para os botões da Logo
-import { Upload, Trash2 } from "lucide-react";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { ToastContainer, useToast } from "../components/ui/toast";
 
 /* -------------------- Helpers -------------------- */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
@@ -95,6 +97,8 @@ const CLINIC_COLS =
 const BUCKET = "clinic-logos"; // bucket sugerido
 
 export default function Profile({ onBack }: Props) {
+  const { success, error,} = useToast();
+
   const [form, setForm] = useState<Form>({
     name: "",
     cpf: "",
@@ -115,10 +119,14 @@ export default function Profile({ onBack }: Props) {
   const [errors, setErrors] = useState<{ name?: string; cpf?: string; phone?: string }>({});
 
   // Logo
-  const [logoPath, setLogoPath] = useState<string | null>(null); // caminho no storage
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);   // URL pública/preview
+  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirms
+  const [confirmRemoveLogo, setConfirmRemoveLogo] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   // URL pública a partir do path
   const publicUrlFromPath = (path?: string | null) => {
@@ -267,17 +275,17 @@ export default function Profile({ onBack }: Props) {
       const url = publicUrlFromPath(path);
       setLogoPath(path);
       setLogoUrl(url);
+      success("Logo atualizada com sucesso.");
     } catch (e: any) {
       console.error("upload logo error:", e);
-      alert(e.message ?? "Erro ao enviar logo");
+      error(e.message ?? "Erro ao enviar logo");
     } finally {
       setLogoUploading(false);
     }
   };
 
-  const handleRemoveLogo = async () => {
+  const reallyRemoveLogo = async () => {
     try {
-      if (!confirm("Remover a logo da clínica?")) return;
       setLogoUploading(true);
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
@@ -300,17 +308,22 @@ export default function Profile({ onBack }: Props) {
 
       setLogoPath(null);
       setLogoUrl(null);
+      success("Logo removida.");
     } catch (e: any) {
       console.error("remove logo error:", e);
-      alert(e.message ?? "Erro ao remover logo");
+      error(e.message ?? "Erro ao remover logo");
     } finally {
       setLogoUploading(false);
+      setConfirmRemoveLogo(false);
     }
   };
 
   /* ========= salvar (resiliente) ========= */
   const handleSave = async () => {
-    if (!validate()) return;
+    if (!validate()) {
+      error("Corrija os campos destacados.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -330,7 +343,6 @@ export default function Profile({ onBack }: Props) {
         clinic_address: keepOr(form.clinicAddress, dbRow?.clinic_address),
         clinic_phone: keepOr(onlyDigits(form.clinicPhone), dbRow?.clinic_phone),
         clinic_email: keepOr(form.clinicEmail, dbRow?.clinic_email),
-        // se a coluna existir, o path já foi salvo no upload/remove
       };
 
       const trySave = async (payload: any) => {
@@ -354,26 +366,26 @@ export default function Profile({ onBack }: Props) {
       setHasRow(true);
 
       window.dispatchEvent(new CustomEvent("profile:saved", { detail: { name: basePayload.name || "" } }));
-      alert("Perfil atualizado com sucesso!");
+      success("Perfil atualizado com sucesso.");
     } catch (e: any) {
       console.error("save profile error:", e);
-      alert(e.message ?? "Erro ao salvar perfil");
+      error(e.message ?? "Erro ao salvar perfil");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSignOut = async () => {
-    if (!confirm("Deseja realmente encerrar a sessão?")) return;
+  const reallySignOut = async () => {
     try {
       setSigningOut(true);
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     } catch (e: any) {
       console.error("signOut error:", e);
-      alert(e.message ?? "Erro ao sair");
+      error(e.message ?? "Erro ao sair");
     } finally {
       setSigningOut(false);
+      setConfirmSignOut(false);
     }
   };
 
@@ -459,7 +471,7 @@ export default function Profile({ onBack }: Props) {
         <section>
           <h2 className="text-sm font-semibold text-slate-600 mb-3">Dados da clínica</h2>
 
-          {/* Logo da clínica (preview + botões estilosos) */}
+          {/* Logo da clínica (preview + botões) */}
           <div className="mb-3 flex items-center gap-4">
             {/* Preview */}
             <div className="relative h-16 w-16 rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
@@ -501,7 +513,7 @@ export default function Profile({ onBack }: Props) {
               {logoUrl && (
                 <button
                   type="button"
-                  onClick={handleRemoveLogo}
+                  onClick={() => setConfirmRemoveLogo(true)}
                   disabled={logoUploading}
                   className={[
                     "inline-flex items-center gap-2 rounded-lg px-3 py-2",
@@ -616,7 +628,7 @@ export default function Profile({ onBack }: Props) {
           </button>
 
           <button
-            onClick={handleSignOut}
+            onClick={() => setConfirmSignOut(true)}
             disabled={signingOut}
             className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
             title="Encerrar sessão"
@@ -626,6 +638,32 @@ export default function Profile({ onBack }: Props) {
           </button>
         </div>
       </div>
+
+      {/* ======= Dialogs ======= */}
+      <ConfirmDialog
+        open={confirmRemoveLogo}
+        onClose={() => setConfirmRemoveLogo(false)}
+        onConfirm={reallyRemoveLogo}
+        title="Remover a logo da clínica?"
+        description="A imagem atual será apagada do armazenamento."
+        confirmText="Remover"
+        cancelText="Cancelar"
+        icon={<Trash2 className="w-5 h-5" />}
+      />
+
+      <ConfirmDialog
+        open={confirmSignOut}
+        onClose={() => setConfirmSignOut(false)}
+        onConfirm={reallySignOut}
+        title="Encerrar sessão?"
+        description="Você precisará entrar novamente para acessar o sistema."
+        confirmText="Sair"
+        cancelText="Cancelar"
+        icon={<LogOut className="w-5 h-5" />}
+      />
+
+      {/* Toaster (uma vez por página) */}
+      <ToastContainer />
     </div>
   );
 }

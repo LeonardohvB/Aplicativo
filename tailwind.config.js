@@ -2,12 +2,32 @@
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
-    extend: {},
+    extend: {
+      keyframes: {
+        'toast-in': {
+          '0%':   { opacity: '0', transform: 'translateY(-6px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'dialog-in': {
+          '0%':   { opacity: '0', transform: 'translateY(6px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'fade-in': {
+          '0%':   { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'toast-in':  'toast-in .18s ease-out both',
+        'dialog-in': 'dialog-in .18s ease-out both',
+        'fade-in':   'fade-in .18s ease-out both',
+      },
+    },
   },
   safelist: [
-    'bg-blue-500',
-    'peer-checked:bg-blue-500',
-    'bg-red-500'
+    'animate-toast-in',
+    'animate-dialog-in',
+    'animate-fade-in',
   ],
   plugins: [],
 };
