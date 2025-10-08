@@ -236,7 +236,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         .eq("id", id)
         .maybeSingle();
 
-    if (error) throw error;
+      if (error) throw error;
       setPatient((data || null) as Patient | null);
       setTab("timeline"); // foca na aba timeline
       setRefreshTick((x) => x + 1); // força a timeline montar limpa
@@ -467,11 +467,12 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
               {initials(displayName)}
             </div>
 
-            <div className="flex-1">
-              <div className="text-base md:text-lg font-semibold text-gray-900">
+            {/* min-w-0 permite o texto encolher dentro do flex */}
+            <div className="flex-1 min-w-0">
+              <div className="text-base md:text-lg font-semibold text-gray-900 break-words">
                 {displayName}
               </div>
-              <div className="text-xs md:text-sm text-gray-500">
+              <div className="text-xs md:text-sm text-gray-500 break-words">
                 CPF: {displayCPF || "—"}
               </div>
 
@@ -501,11 +502,11 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-700">
-                <div className="inline-flex items-center gap-2">
+                <div className="inline-flex items-center gap-2 break-words">
                   <Phone className="w-4 h-4 text-gray-400" />
                   {displayPhone || "—"}
                 </div>
-                <div className="inline-flex items-center gap-2">
+                <div className="inline-flex items-center gap-2 break-words">
                   <Mail className="w-4 h-4 text-gray-400" />
                   {displayEmail || "—"}
                 </div>
@@ -541,7 +542,8 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
       {/* Conteúdo das abas */}
       {tab === "timeline" && (
-        <div className="space-y-4">
+        // 🔒 Escopo que força quebra de palavras gigantes SEM alterar outros lugares
+        <div className="space-y-4 evo-wrap">
           {/* Timeline de evoluções */}
           {patient ? (
             <PatientEvolutionTimeline
@@ -598,9 +600,11 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
                       key={f.id}
                       className="flex items-center justify-between px-3 py-2 text-sm"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-800">{f.file_name}</span>
+                        <span className="text-gray-800 break-words">
+                          {f.file_name}
+                        </span>
                       </div>
                       <button
                         className="text-red-600 hover:underline"
@@ -628,6 +632,15 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           Em breve: prescrições, relatórios e documentos gerados.
         </div>
       )}
+
+      {/* Escopo CSS local para forçar quebra dentro da aba timeline */}
+      <style>{`
+        .evo-wrap, .evo-wrap * {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          min-width: 0; /* ajuda em flex containers aninhados */
+        }
+      `}</style>
     </div>
   );
 }
