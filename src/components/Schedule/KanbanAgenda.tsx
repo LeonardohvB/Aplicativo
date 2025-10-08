@@ -12,10 +12,99 @@ import {
   StopCircle as StopIcon,
   XCircle as CancelIcon,
   Phone,
+  FileText, // ← para ícone do modal
 } from 'lucide-react';
 import { AppointmentSlot, AppointmentJourney } from '../../types';
 import { publicUrlFromPath } from '../../lib/avatars';
 
+/* ======================= Modal de Confirmação ======================= */
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmText = 'Confirmar',
+  cancelText = 'Cancelar',
+  icon,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+  icon?: React.ReactNode;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      {/* overlay */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
+      {/* card */}
+      <div
+        className="
+          relative w-full max-w-[420px] rounded-2xl bg-white shadow-xl ring-1 ring-black/10
+          p-4 sm:p-5 animate-zoom-in
+          animate__animated animate__zoomIn
+        "
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5 text-blue-600">{icon}</div>
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+            {description ? (
+              <p className="mt-1 text-sm text-slate-600">{description}</p>
+            ) : null}
+            <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-2">
+              <button
+                className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+                onClick={onClose}
+                autoFocus
+              >
+                {cancelText}
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                onClick={onConfirm}
+              >
+                {confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* fallback das animações (se não usar animate.css) */}
+      <style>{`
+        @keyframes zoom-in { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+        .animate-zoom-in { animation: zoom-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+        .animate-fade-in { animation: fade-in 180ms ease-out both; }
+      `}</style>
+    </div>
+  );
+}
 
 /* ======================= Tipos utilitários ======================= */
 type Pro = {
@@ -222,7 +311,7 @@ type MiniSlotProps = {
   onCancel?: (slotId: string) => void;
   onNoShow?: (slotId: string) => void;
   onDelete: () => void;
-  professionalName?: string; // ← NOVO
+  professionalName?: string;
 };
 
 const MiniSlotCard: React.FC<MiniSlotProps> = ({
@@ -248,7 +337,6 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
   const isAvailable = st === 'disponivel' || st === 'available' || st === '';
   const isEditing = st === 'agendado';
 
-  // dados do paciente
   const patientObj: Maybe<{ name?: string; phone?: string; document?: string; documentNumber?: string }> =
     (slot as any)?.patient || null;
 
@@ -264,7 +352,6 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
     patientObj?.phone ||
     '';
 
-  // Abre o Atendimento ao Vivo (LiveEncounter) com dados
   const openEncounterFromSlot = React.useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('encounter:open', {
@@ -278,22 +365,18 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
     );
   }, [slot, patientName, professionalName]);
 
-  // largura/altura
   const wClass = isEditing || isRunning ? 'w-[280px]' : 'w-[160px]';
   const cardH = isEditing || isRunning ? 'h-[180px]' : 'h-[116px]';
 
-  // clique
   let onCardClick: (() => void) | undefined;
   if (!isPast && !isRunning) {
     if (isAvailable) onCardClick = () => onSchedule(slot.id);
     else if (isEditing) onCardClick = () => onEdit(slot.id);
   }
 
-  // modo remoto/local
   const isRemote = /online|on-line|tele|vídeo|video|remoto/i.test(String(slot?.service || ''));
   const ModeIcon = isRemote ? Video : MapPin;
 
-  // estilos por estado
   const stateBorder = isRunning
     ? 'border-sky-300'
     : isPast
@@ -333,7 +416,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
         ].join(' ')}
         aria-label="slot"
       >
-        {/* header: modo + hora */}
+        {/* header */}
         <div className="absolute left-2 top-2 text-gray-700">
           <ModeIcon className="w-3.5 h-3.5" />
         </div>
@@ -351,7 +434,6 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             isEditing || isRunning ? 'pt-2 pb-8' : 'pt-4 pb-7'
           } flex flex-col items-stretch justify-center`}
         >
-          {/* Disponível → mostra somente preço */}
           {isAvailable && !isRunning && (
             <div className="text-center">
               <div className="text-[16px] font-semibold leading-none text-gray-900 tabular-nums">
@@ -364,7 +446,6 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             </div>
           )}
 
-          {/* Agendado ou Em andamento */}
           {!isAvailable && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 px-2 py-[4px] rounded-lg bg-white/70 border border-emerald-200 overflow-hidden">
@@ -388,7 +469,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
           )}
         </div>
 
-        {/* rodapé: duração / cronômetro */}
+        {/* rodapé / cronômetro */}
         {!isRunning ? (
           <div className="absolute bottom-2 left-2 text-[10px] text-gray-600 tabular-nums">
             {mins}min
@@ -399,14 +480,14 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
           </div>
         )}
 
-        {/* ações no card (em atendimento) */}
+        {/* ações em atendimento */}
         {isRunning && (
           <div className="absolute bottom-1 right-1 flex gap-2">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                openEncounterFromSlot(); // abre o prontuário
+                openEncounterFromSlot();
               }}
               className="px-3 py-[6px] rounded-full border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 text-[11px] font-semibold"
               title="Abrir prontuário"
@@ -421,7 +502,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onFinish(slot.id);
+                onFinish(slot.id); // ← agora abre o modal (wrapper no Kanban)
               }}
               className="px-3 py-[6px] rounded-full bg-red-600 text-white hover:bg-red-700 text-[11px] font-semibold"
               title="Finalizar consulta"
@@ -434,7 +515,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
           </div>
         )}
 
-        {/* ações pequenas (editar/excluir) para horários livres/passados */}
+        {/* ações para horários livres/passados */}
         {!isRunning && isAvailable && (
           <div className="absolute bottom-1 right-1 flex gap-1">
             <button
@@ -473,8 +554,8 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
             <button
               type="button"
               onClick={() => {
-                openEncounterFromSlot();            // abre prontuário
-                (onStart ?? onEdit)(slot.id);       // inicia mantendo lógica atual
+                openEncounterFromSlot();
+                (onStart ?? onEdit)(slot.id);
               }}
               disabled={!isSoon}
               className={[
@@ -553,8 +634,12 @@ const KanbanAgenda: React.FC<Props> = ({
   const [activeDay, setActiveDay] = useState<string>('');
   const [, setTick] = useState<number>(Date.now());
 
-  // startedAt local para mostrar cronômetro imediatamente
+  // startedAt local para cronômetro
   const [startedAtMap, setStartedAtMap] = useState<Record<string, number>>({});
+
+  // === estado do modal de finalizar ===
+  const [slotIdToFinish, setSlotIdToFinish] = useState<string | null>(null);
+  const askFinish = (slotId: string) => setSlotIdToFinish(slotId);
 
   useEffect(() => {
     const now = new Date();
@@ -678,7 +763,6 @@ const KanbanAgenda: React.FC<Props> = ({
     [daySlots, jById]
   );
 
-  // start wrapper: grava hora de início localmente para cronômetro
   const handleStartLocal = (slotId: string) => {
     setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
     onStartAppointment?.(slotId);
@@ -869,13 +953,13 @@ const KanbanAgenda: React.FC<Props> = ({
                                 }
                               }}
                               onStart={handleStartLocal}
-                              onFinish={onFinishAppointment}
+                              onFinish={askFinish}               // ← wrapper abre modal
                               onCancel={onCancel}
                               onNoShow={onNoShow}
                               onDelete={() => {
                                 if (jId) onDeleteJourney(jId);
                               }}
-                              professionalName={pro?.name || 'Profissional'} // ← envia nome do profissional
+                              professionalName={pro?.name || 'Profissional'}
                             />
                           );
                         })}
@@ -895,6 +979,44 @@ const KanbanAgenda: React.FC<Props> = ({
           </div>
         );
       })}
+
+      {/* Modal de finalizar (central com zoom) */}
+      <ConfirmDialog
+  open={!!slotIdToFinish}
+  onClose={() => setSlotIdToFinish(null)}
+  onConfirm={() => {
+    if (!slotIdToFinish) return;
+
+    // pega o slot e metadados p/ abrir o prontuário
+    const s = (slots || []).find(x => x.id === slotIdToFinish);
+    if (!s) { setSlotIdToFinish(null); return; }
+
+    const j = jById.get(String(s.journeyId || ''));
+    const proName =
+      proById.get(j?.professionalId || '')?.name || 'Profissional';
+    const patientName =
+      (s as any)?.patientName || (s as any)?.patient?.name || '';
+    const serviceName = (s as any)?.service || 'Consulta';
+
+    // abre o prontuário e já solicita finalizar sem novo confirm
+    window.dispatchEvent(new CustomEvent('encounter:open', {
+      detail: {
+        appointmentId: s.id,
+        patientName,
+        professionalName: proName,
+        serviceName,
+        autoFinalize: true,   // ← chave p/ o LiveEncounter
+      },
+    }));
+
+    setSlotIdToFinish(null);
+  }}
+  title="Finalizar este atendimento."
+  description="Deseja também gerar a evolução agora?"
+  confirmText="Finalizar"
+  cancelText="Cancelar"
+  icon={<FileText className="w-6 h-6" />}
+/>
     </div>
   );
 };

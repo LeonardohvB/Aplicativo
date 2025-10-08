@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-pdf/renderer": "^4.3.0",
     "@supabase/supabase-js": "^2.55.0",
+    "animate.css": "^4.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

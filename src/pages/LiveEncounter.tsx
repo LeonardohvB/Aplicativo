@@ -3,25 +3,179 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Stethoscope,
   ChevronLeft,
-  Save,
   FileText,
   Activity,
   Thermometer,
   Scale,
   Ruler,
+  Heart,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Info,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useEncounterDraft } from "../hooks/useEncounterDraft";
 
-/* ===================== Tipos leves p/ UI ===================== */
-type DraftUI = {
-  vitals: {
-    bp?: string;
-    hr?: string;
-    temp?: string;
-    weight?: string;
-    height?: string;
+/* ==========================================================
+   Toasts (inline)
+   ========================================================== */
+type ToastKind = "success" | "error" | "info";
+type ToastItem = { id: string; kind: ToastKind; title?: string; message?: string };
+
+function useToasts() {
+  const [items, setItems] = useState<ToastItem[]>([]);
+  const push = (t: Omit<ToastItem, "id">, ttl = 3000) => {
+    const id = Math.random().toString(36).slice(2);
+    const item = { id, ...t };
+    setItems((arr) => [...arr, item]);
+    if (ttl > 0) setTimeout(() => dismiss(id), ttl);
   };
+  const dismiss = (id: string) => setItems((arr) => arr.filter((i) => i.id !== id));
+  return {
+    items,
+    dismiss,
+    success: (message: string, title = "Tudo certo") =>
+      push({ kind: "success", message, title }),
+    error: (message: string, title = "Algo deu errado") =>
+      push({ kind: "error", message, title }),
+    info: (message: string, title = "Atenção") => push({ kind: "info", message, title }),
+  };
+}
+
+const Toasts: React.FC<{
+  items: ToastItem[];
+  onDismiss: (id: string) => void;
+}> = ({ items, onDismiss }) => (
+  <div className="fixed inset-x-0 bottom-4 z-[90] flex flex-col items-center gap-2 px-4 pointer-events-none">
+    {items.map((t) => {
+      const Icon =
+        t.kind === "success" ? CheckCircle2 : t.kind === "error" ? AlertCircle : Info;
+      const bg =
+        t.kind === "success"
+          ? "bg-emerald-600"
+          : t.kind === "error"
+          ? "bg-rose-600"
+          : "bg-slate-700";
+      return (
+        <div
+          key={t.id}
+          className={`pointer-events-auto w-full max-w-[520px] rounded-xl ${bg} text-white shadow-lg ring-1 ring-black/10 px-4 py-3 animate-toast-in`}
+        >
+          <div className="flex items-start gap-3">
+            <Icon className="w-5 h-5 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              {t.title && <div className="font-semibold">{t.title}</div>}
+              {t.message && <div className="text-sm opacity-90">{t.message}</div>}
+            </div>
+            <button
+              onClick={() => onDismiss(t.id)}
+              className="opacity-70 hover:opacity-100 transition"
+              aria-label="Fechar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      );
+    })}
+
+    <style>{`
+      @keyframes toast-in { 0% { transform: translateY(8px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+      .animate-toast-in { animation: toast-in .18s ease-out both; }
+    `}</style>
+  </div>
+);
+
+/* ==========================================================
+   Modal de confirmação (inline, central, com zoom)
+   ========================================================== */
+const ConfirmDialog: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+  icon?: React.ReactNode;
+}> = ({
+  open,
+  onClose,
+  onConfirm,
+  title,
+  description,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  icon,
+}) => {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
+      <div
+        className="relative w-full max-w-[420px] rounded-2xl bg-white shadow-xl ring-1 ring-black/10 p-4 sm:p-5 animate-zoom-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5 text-blue-600">{icon}</div>
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+            {description && (
+              <p className="mt-1 text-sm text-slate-600">{description}</p>
+            )}
+            <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-2">
+              <button
+                className="inline-flex items-center justify-center rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+                onClick={onClose}
+                autoFocus
+              >
+                {cancelText}
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                onClick={onConfirm}
+              >
+                {confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes zoom-in { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+        .animate-zoom-in { animation: zoom-in 200ms cubic-bezier(.2,.8,.2,1) both; }
+        .animate-fade-in { animation: fade-in 160ms ease-out both; }
+      `}</style>
+    </div>
+  );
+};
+
+/* ==========================================================
+   Tipos leves p/ UI
+   ========================================================== */
+type DraftUI = {
+  vitals: { bp?: string; hr?: string; temp?: string; weight?: string; height?: string };
   S: string;
   O: string;
   A: string;
@@ -30,18 +184,17 @@ type DraftUI = {
   updatedAt?: string;
 };
 
-// props recebidas do App.tsx quando abrimos em overlay
 type LiveEncounterProps = {
   initialData?: {
     appointmentId?: string;
     patientName?: string;
     professionalName?: string;
     serviceName?: string;
-    encounterId?: string; // opcional: permite injetar pelo pai
+    encounterId?: string;
   };
 };
 
-/* ===================== helpers locais ===================== */
+/* ===================== helpers ===================== */
 function getEncounterIdFromURL(): string | undefined {
   try {
     const sp = new URLSearchParams(window.location.search);
@@ -50,15 +203,13 @@ function getEncounterIdFromURL(): string | undefined {
     return undefined;
   }
 }
-function toStr(v: any): string {
+function toStr(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v);
 }
 function anyVital(v: DraftUI["vitals"]): boolean {
   return !!(v.bp || v.hr || v.temp || v.weight || v.height);
 }
-
-/* Conversores do draft p/ campos da evolução */
 function parseDiagnosisLines(a: string): string[] {
   return (a || "")
     .split(/\r?\n| - |•|,|;/g)
@@ -79,7 +230,7 @@ function parseObservations(o: string, s: string): string | undefined {
   return out || undefined;
 }
 
-/** Heurística: acha o patient_id pelo nome e/ou telefone (se quisermos passar) */
+/** Heurística: acha o patient_id pelo nome e/ou telefone */
 async function findPatientId(patientName?: string, phoneMasked?: string) {
   let patient_id: string | undefined;
 
@@ -109,25 +260,148 @@ async function findPatientId(patientName?: string, phoneMasked?: string) {
   return patient_id;
 }
 
-/* ========================================================== */
+/* ==========================================================
+   Subcomponentes simples
+   ========================================================== */
+function VitalInput({
+  icon,
+  label,
+  placeholder,
+  value,
+  onChange,
+  chips,
+  onQuick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  chips: string[];
+  onQuick: (v: string) => void;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center gap-2 text-gray-800 mb-2">
+        {icon}
+        <span className="text-sm font-semibold">{label}</span>
+      </div>
+      <input
+        className="w-full rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent px-3 py-2"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-2 mt-3">
+        {chips.map((c) => (
+          <button
+            key={c}
+            onClick={() => onQuick(c)}
+            className="text-xs px-2 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
+function TextBlock({
+  title,
+  value,
+  onChange,
+}: {
+  title: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="text-sm font-bold text-gray-800 mb-2">{title}</div>
+      <textarea
+        className="w-full min-h-[140px] rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent px-3 py-2 resize-none"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Digite aqui..."
+      />
+    </div>
+  );
+}
+
+function QuickTagInput({
+  onAdd,
+  suggestions,
+}: {
+  onAdd: (t: string) => void;
+  suggestions: string[];
+}) {
+  const [val, setVal] = useState("");
+
+  const add = (t: string) => {
+    const clean = (t || "").trim();
+    if (!clean) return;
+    onAdd(clean);
+    setVal("");
+  };
+
+  return (
+    <div className="flex flex-col md:flex-row md:items-start gap-2">
+      <input
+        className="w-full md:flex-1 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent px-3 py-2"
+        placeholder="Adicionar tag (ex.: 'Ansiedade leve')"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") add(val);
+        }}
+      />
+
+      <div className="flex flex-wrap gap-2 w-full md:w-auto">
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            onClick={() => add(s)}
+            className="text-xs px-2 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 whitespace-nowrap"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================
+   Componente Principal
+   ========================================================== */
 export default function LiveEncounter({ initialData }: LiveEncounterProps) {
-  // dados do encontro/agenda que você já usava
+  // toasts
+  const toasts = useToasts();
+
+  // dados gerais
   const [appointmentId, setAppointmentId] = useState<string>("");
   const [patientName, setPatientName] = useState<string>("Paciente");
   const [professionalName, setProfessionalName] = useState<string>("Profissional");
   const [serviceName, setServiceName] = useState<string>("Consulta");
+  const [showVitals, setShowVitals] = useState<boolean>(true);
 
-  // encounterId é lido de forma segura (sem precisar de Router)
+  // encounter id
   const [encounterId, setEncounterId] = useState<string | undefined>(() =>
     initialData?.encounterId || getEncounterIdFromURL()
   );
 
-  // autosave (Supabase + cache local) do hook
+  // modal confirmar finalizar
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // pedido de auto-finalização (quando vem da Agenda)
+  const [autoFinalizeRequested, setAutoFinalizeRequested] = useState(false);
+
+  // autosave (Supabase + cache local)
   const { draft: hookDraft, setDraft: setHookDraft, saveState, clearLocal } =
     useEncounterDraft(encounterId, { appointmentId });
 
-  // converte o draft do hook para o formato que sua UI usa
+  // adapta o draft do hook p/ UI
   const draft: DraftUI = useMemo(() => {
     const d: any = hookDraft || {};
     return {
@@ -147,7 +421,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
     };
   }, [hookDraft]);
 
-  // wrapper para atualizar via hook mantendo sua API de setDraft
+  // setter compatível
   const setDraft = (updater: (d: DraftUI) => DraftUI) => {
     setHookDraft((prev: any) => {
       const before: DraftUI = {
@@ -175,7 +449,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
     });
   };
 
-  /* -------- 1) Carregar dados recebidos do App.tsx -------- */
+  /* -------- Carregar dados recebidos do pai -------- */
   useEffect(() => {
     if (!initialData) return;
     setAppointmentId(String(initialData.appointmentId ?? ""));
@@ -185,31 +459,42 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
     if (initialData.encounterId) setEncounterId(initialData.encounterId);
   }, [initialData]);
 
-  /* -------- 2) Fallback: também aceita evento global -------- */
+  /* -------- Listener global encounter:open -------- */
   useEffect(() => {
-    const open = (e: any) => {
-      const d = e?.detail || {};
+    const open = (e: Event) => {
+      const anyE = e as CustomEvent<any>;
+      const d = anyE?.detail || {};
       setAppointmentId(String(d.appointmentId || ""));
       setPatientName(d.patientName || "Paciente");
       setProfessionalName(d.professionalName || "Profissional");
       setServiceName(d.serviceName || "Consulta");
       if (d.encounterId) setEncounterId(String(d.encounterId));
+      if (d.autoFinalize) setAutoFinalizeRequested(true);
     };
     window.addEventListener("encounter:open", open as EventListener);
     return () => window.removeEventListener("encounter:open", open as EventListener);
   }, []);
 
-  /* -------- 3) Finalizar + Evolução (congela nota e fecha encontro/agenda) -------- */
+  /* -------- Se veio autoFinalize da Agenda, finaliza sem pedir novo confirm -------- */
+  useEffect(() => {
+    if (!autoFinalizeRequested) return;
+    const t = setTimeout(() => {
+      finalize(); // usa o mesmo finalize() que cria evolução
+      setAutoFinalizeRequested(false);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [autoFinalizeRequested]);
+
+  /* ===================== Finalizar + Evolução ===================== */
   const finalize = async () => {
     try {
-      // 0) garante usuário
       const { data: auth } = await supabase.auth.getUser();
       if (!auth?.user) {
-        alert("Sessão expirada. Faça login novamente.");
+        toasts.error("Sessão expirada. Faça login novamente.");
         return;
       }
 
-      // 1) Garantir encounterId (fallback usando o appointmentId)
+      // 1) Garante encounterId
       let eid = encounterId;
       if (!eid && appointmentId) {
         const { data, error } = await supabase.rpc("ensure_encounter", {
@@ -220,13 +505,12 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         eid = (data as string) || undefined;
         if (eid) setEncounterId(eid);
       }
-
       if (!eid) {
-        alert("Não foi possível identificar o encontro.");
+        toasts.error("Não foi possível identificar o encontro.");
         return;
       }
 
-      // 2) Texto simples p/ histórico legado (opcional)
+      // 2) plain text (opcional)
       const plain =
         [
           draft.S && `S: ${draft.S}`,
@@ -240,30 +524,25 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           .filter(Boolean)
           .join("\n") || null;
 
-      // 3) Congela rascunho em encounter_notes e encerra o encontro (RPC)
+      // 3) finalize_encounter
       const { error: finErr } = await supabase.rpc("finalize_encounter", {
         p_encounter_id: eid,
-        p_options: { data_json: draft }, // pega exatamente o que está na tela
+        p_options: { data_json: draft, plain_text: plain },
       });
       if (finErr) throw finErr;
 
-      // 4) Concluir SLOT na agenda — apenas por id (seu schema não tem appointment_id)
+      // 4) Atualiza status do slot
       if (appointmentId) {
         try {
-          await supabase
-            .from("appointment_slots")
-            .update({ status: "concluido" })
-            .eq("id", appointmentId);
+          await supabase.from("appointment_slots").update({ status: "concluido" }).eq("id", appointmentId);
         } catch (e) {
           console.warn("update appointment_slots skipped:", e);
         }
       }
 
-      // 5) Criar item na EVOLUÇÃO DO PACIENTE (sem depender de appointments/history)
+      // 5) Cria evolução do paciente
       try {
-        // tenta achar o patient_id por nome (pode adicionar telefone se tiver)
-        const patient_id = await findPatientId(patientName /*, opcionalTelefone*/);
-
+        const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
         const title = serviceName || "Consulta";
         const specialty = serviceName || null;
@@ -276,59 +555,52 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           height: draft.vitals.height || undefined,
         };
 
-       const evoInsert = {
-  owner_id: auth.user.id,                 // (trigger também preenche)
-  patient_id,                              // precisa existir
-  appointment_id: appointmentId || null,
-  professional_id: auth.user.id,
-  professional_name: professionalName || "Profissional",
-  specialty,
-  title,
-  type: "consultation",
-  occurred_at,
+        const userId = (await supabase.auth.getUser()).data.user?.id as string;
 
-  // já existia
-  vitals,
-  symptoms: draft.tags || [],
-  diagnosis: parseDiagnosisLines(draft.A),
-  conduct: parseConduct(draft.P) ?? null,
-  observations: parseObservations(draft.O, draft.S) ?? null,
-  next_steps: undefined,
-  medications: [] as any[],
-
-  // 👇 NOVO — o feed/timeline consome daqui:
-  data_json: {
-    vitals,
-    S: draft.S || "",
-    O: draft.O || "",
-    A: draft.A || "",
-    P: draft.P || "",
-    tags: draft.tags || [],
-    updatedAt: draft.updatedAt || new Date().toISOString(),
-  },
-  s_text: draft.S || null,
-  o_text: draft.O || null,
-  a_text: draft.A || null,
-  p_text: draft.P || null,
-  tags: draft.tags || [],
-};
-
-
-        console.log("[evolution] will-insert", evoInsert);
+        const evoInsert = {
+          owner_id: userId,
+          patient_id,
+          appointment_id: appointmentId || null,
+          professional_id: userId,
+          professional_name: professionalName || "Profissional",
+          specialty,
+          title,
+          type: "consultation",
+          occurred_at,
+          vitals,
+          symptoms: draft.tags || [],
+          diagnosis: parseDiagnosisLines(draft.A),
+          conduct: parseConduct(draft.P) ?? null,
+          observations: parseObservations(draft.O, draft.S) ?? null,
+          next_steps: undefined,
+          medications: [] as any[],
+          data_json: {
+            vitals,
+            S: draft.S || "",
+            O: draft.O || "",
+            A: draft.A || "",
+            P: draft.P || "",
+            tags: draft.tags || [],
+            updatedAt: draft.updatedAt || new Date().toISOString(),
+          },
+          s_text: draft.S || null,
+          o_text: draft.O || null,
+          a_text: draft.A || null,
+          p_text: draft.P || null,
+          tags: draft.tags || [],
+        };
 
         if (evoInsert.patient_id) {
-          const { error: evoErr } = await supabase
-            .from("patient_evolution")
-            .insert([evoInsert]);
+          const { error: evoErr } = await supabase.from("patient_evolution").insert([evoInsert]);
           if (evoErr) console.warn("evolution insert failed:", evoErr);
         } else {
-          console.warn("patient_evolution skipped: patient_id não encontrado por nome/telefone");
+          console.warn("patient_evolution skipped: patient_id não encontrado");
         }
       } catch (err) {
         console.warn("evolution creation warning:", err);
       }
 
-      // avisa a Agenda para refletir "concluido" sem recarregar
+      // 6) sinaliza agenda e limpa cache local
       if (appointmentId) {
         window.dispatchEvent(
           new CustomEvent("agenda:slot:update", {
@@ -336,205 +608,185 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           })
         );
       }
-
-      // 6) Limpa cache local do rascunho
       try {
         (clearLocal as any)?.();
       } catch {}
 
-      alert("Evolução gerada e atendimento finalizado.");
-
-      // avisa à Agenda para recarregar o card
+      toasts.success("Evolução gerada e atendimento finalizado.");
       window.dispatchEvent(new CustomEvent("agenda:refresh"));
-
-      // fecha o overlay
       window.dispatchEvent(new CustomEvent("encounter:close"));
     } catch (e) {
       console.warn("finalize error:", e);
-      alert("Não foi possível finalizar agora. Tente novamente.");
+      toasts.error("Não foi possível finalizar agora. Tente novamente.");
     }
   };
 
   /* ===================== UI helpers ===================== */
   const setVital = (key: keyof DraftUI["vitals"], value: string) =>
-    setDraft((d) => ({
-      ...d,
-      vitals: { ...(d.vitals || {}), [key]: value },
-    }));
+    setDraft((d) => ({ ...d, vitals: { ...(d.vitals || {}), [key]: value } }));
 
   const addTag = (tag: string) =>
-    setDraft((d) => ({
-      ...d,
-      tags: Array.from(new Set([...(d.tags || []), tag])),
-    }));
+    setDraft((d) => ({ ...d, tags: Array.from(new Set([...(d.tags || []), tag])) }));
 
   const removeTag = (tag: string) =>
-    setDraft((d) => ({
-      ...d,
-      tags: (d.tags || []).filter((t) => t !== tag),
-    }));
+    setDraft((d) => ({ ...d, tags: (d.tags || []).filter((t) => t !== tag) }));
 
   /* ===================== Render ===================== */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-6">
-      <div className="max-w-6xl mx-auto space-y-4">
-        {/* Topo */}
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            {/* Voltar (padrão) */}
             <button
+              className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
               onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
-              className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-white text-slate-700 hover:bg-slate-50 shadow"
             >
-              <ChevronLeft className="w-4 h-4" />
-              Voltar
+              <ChevronLeft size={20} />
+              <span className="font-medium">Voltar</span>
             </button>
-            <div className="flex items-center gap-2 text-slate-700">
-              <Stethoscope className="w-5 h-5" />
-              <span className="font-semibold">Atendimento ao Vivo</span>
+
+            <div className="flex items-center gap-2 text-gray-600">
+              <Clock size={18} />
+              <span className="text-sm">Atendimento ao Vivo</span>
+              <Stethoscope className="w-4 h-4 opacity-80" />
             </div>
-          </div>
-          <div className="text-sm text-slate-500">
-            {saveState === "saving" && "Salvando..."}
-            {saveState === "saved" && "✓ Salvo"}
-            {saveState === "error" && "⚠️ Falha ao salvar (offline?)"}
+
+            <div className="text-sm text-gray-500">
+              {saveState === "saving" && "Salvando..."}
+              {saveState === "saved" && "✓ Salvo"}
+              {saveState === "error" && "⚠️ Falha ao salvar (offline?)"}
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Info / Ações rápidas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-white p-4 shadow">
-            <div className="text-xs uppercase text-slate-500 mb-1">Paciente</div>
-            <div className="text-slate-800 font-semibold">
-              {patientName || "Paciente"}
-            </div>
-            <div className="text-xs text-slate-500 mt-1">
-              Serviço: {serviceName || "Consulta"}
-            </div>
-          </div>
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
+        {/* Paciente */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-1">PACIENTE</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-1">{patientName || "Paciente"}</h2>
+          <p className="text-sm text-gray-600">Serviço: {serviceName || "Consulta"}</p>
+        </div>
 
-          <div className="rounded-2xl bg-white p-4 shadow">
-            <div className="text-xs uppercase text-slate-500 mb-1">Profissional</div>
-            <div className="text-slate-800 font-semibold">
-              {professionalName || "Profissional"}
-            </div>
+        {/* Profissional */}
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase mb-1">PROFISSIONAL</p>
+          <h3 className="text-lg font-bold text-gray-900">{professionalName || "Profissional"}</h3>
+          <p className="text-sm text-gray-600">{serviceName || ""}</p>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {/* Salvar manual (opcional; agora é automático) */}
+          <div className="mt-4">
+            <div className="flex">
               <button
-                onClick={() => alert("O rascunho já salva automaticamente 😉")}
-                className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-slate-100 text-slate-800 hover:bg-slate-200"
-              >
-                <Save className="w-4 h-4" /> Salvar rascunho
-              </button>
-
-              {/* Finalizar + Evolução */}
-              <button
-                onClick={() => {
-                  if (confirm("Gerar evolução agora e finalizar atendimento?")) {
-                    finalize();
-                  }
-                }}
-                className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-indigo-600 text-white hover:bg-indigo-700"
+                onClick={() => setConfirmOpen(true)}
                 title="Gerar evolução agora"
+                className="
+                  inline-flex items-center justify-center gap-2
+                  rounded-lg bg-blue-600 hover:bg-blue-700 text-white
+                  px-3 py-2 text-xs leading-tight sm:text-sm
+                  whitespace-normal text-center min-h-[40px]
+                "
               >
-                <FileText className="w-4 h-4" />
-                Finalizar + Evolução
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white p-4 shadow">
-            <div className="text-xs uppercase text-slate-500 mb-2">Ações</div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(draft, null, 2));
-                  alert("Rascunho copiado para a área de transferência.");
-                }}
-                className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-slate-100 text-slate-800 hover:bg-slate-200"
-              >
-                <Save className="w-4 h-4" />
-                Copiar rascunho
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm("Limpar rascunho atual?")) {
-                    setDraft(() => ({
-                      vitals: {},
-                      S: "",
-                      O: "",
-                      A: "",
-                      P: "",
-                      tags: [],
-                    }));
-                  }
-                }}
-                className="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100"
-              >
-                Limpar rascunho
+                <FileText className="w-4 h-4 shrink-0" />
+                <span className="text-[14px] leading-tight">Finalizar Evolução</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* VITAIS */}
-        <div className="rounded-2xl bg-white p-4 shadow">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-5 h-5 text-slate-500" />
-            <div className="font-semibold text-slate-700">VITAIS</div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity className="text-blue-600" size={20} />
+              <h3 className="text-lg font-bold text-gray-900">SINAIS VITAIS</h3>
+            </div>
+
+            {/* Toggle */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600">
+                {showVitals ? "Ocultar" : "Mostrar"} sinais vitais
+              </span>
+              <button
+                onClick={() => setShowVitals((v) => !v)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  showVitals ? "bg-blue-600" : "bg-gray-300"
+                }`}
+                aria-label="Alternar sinais vitais"
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    showVitals ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <VitalInput
-              icon={<Activity className="w-4 h-4" />}
-              label="Pressão"
-              placeholder="120/80"
-              value={draft.vitals.bp || ""}
-              onChange={(v) => setVital("bp", v)}
-              chips={["120/80", "130/85", "110/70"]}
-              onQuick={(v) => setVital("bp", v)}
-            />
-            <VitalInput
-              icon={<Activity className="w-4 h-4" />}
-              label="FC"
-              placeholder="72 bpm"
-              value={draft.vitals.hr || ""}
-              onChange={(v) => setVital("hr", v)}
-              chips={["68 bpm", "72 bpm", "78 bpm"]}
-              onQuick={(v) => setVital("hr", v)}
-            />
-            <VitalInput
-              icon={<Thermometer className="w-4 h-4" />}
-              label="Temp."
-              placeholder="36.5°C"
-              value={draft.vitals.temp || ""}
-              onChange={(v) => setVital("temp", v)}
-              chips={["36.3°C", "36.5°C", "37.0°C"]}
-              onQuick={(v) => setVital("temp", v)}
-            />
-            <VitalInput
-              icon={<Scale className="w-4 h-4" />}
-              label="Peso"
-              placeholder="78.5 kg"
-              value={draft.vitals.weight || ""}
-              onChange={(v) => setVital("weight", v)}
-              chips={["70 kg", "78.5 kg", "80 kg"]}
-              onQuick={(v) => setVital("weight", v)}
-            />
-            <VitalInput
-              icon={<Ruler className="w-4 h-4" />}
-              label="Altura"
-              placeholder="175 cm"
-              value={draft.vitals.height || ""}
-              onChange={(v) => setVital("height", v)}
-              chips={["170 cm", "175 cm", "180 cm"]}
-              onQuick={(v) => setVital("height", v)}
-            />
-          </div>
+          {showVitals ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <VitalInput
+                icon={<Activity className="w-4 h-4 text-blue-600" />}
+                label="Pressão"
+                placeholder="120/80"
+                value={draft.vitals.bp || ""}
+                onChange={(v) => setVital("bp", v)}
+                chips={["120/80", "130/85", "110/70"]}
+                onQuick={(v) => setVital("bp", v)}
+              />
+              <VitalInput
+                icon={<Heart className="w-4 h-4 text-blue-600" />}
+                label="FC"
+                placeholder="72 bpm"
+                value={draft.vitals.hr || ""}
+                onChange={(v) => setVital("hr", v)}
+                chips={["68 bpm", "72 bpm", "78 bpm"]}
+                onQuick={(v) => setVital("hr", v)}
+              />
+              <VitalInput
+                icon={<Thermometer className="w-4 h-4 text-blue-600" />}
+                label="Temp."
+                placeholder="36.5 °C"
+                value={draft.vitals.temp || ""}
+                onChange={(v) => setVital("temp", v)}
+                chips={["36.3 °C", "36.5 °C", "37.0 °C"]}
+                onQuick={(v) => setVital("temp", v)}
+              />
+              <VitalInput
+                icon={<Scale className="w-4 h-4 text-blue-600" />}
+                label="Peso"
+                placeholder="78.5 kg"
+                value={draft.vitals.weight || ""}
+                onChange={(v) => setVital("weight", v)}
+                chips={["70 kg", "78.5 kg", "80 kg"]}
+                onQuick={(v) => setVital("weight", v)}
+              />
+              <VitalInput
+                icon={<Ruler className="w-4 h-4 text-blue-600" />}
+                label="Altura"
+                placeholder="175 cm"
+                value={draft.vitals.height || ""}
+                onChange={(v) => setVital("height", v)}
+                chips={["170 cm", "175 cm", "180 cm"]}
+                onQuick={(v) => setVital("height", v)}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Activity className="mx-auto text-gray-300 mb-3" size={48} />
+              <p className="text-gray-500 text-sm">
+                Os sinais vitais estão ocultos para este tipo de atendimento.
+              </p>
+              <p className="text-gray-400 text-xs mt-1">
+                Ative o switch acima se precisar registrar sinais vitais.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Editor SOAP */}
-        <div className="rounded-2xl bg-white p-4 shadow">
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <TextBlock
               title="S — Subjetivo (relato do paciente)"
@@ -558,26 +810,27 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             />
           </div>
 
-          {/* TAGS/Sintomas simples */}
+          {/* TAGS/Sintomas */}
           <div className="mt-4">
-            <div className="text-xs uppercase text-slate-500 mb-2">Sintomas/Tags</div>
-            <div className="flex flex-wrap gap-2">
-              {draft.tags.map((t) => (
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">SINTOMAS/TAGS</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(draft.tags || []).map((t) => (
                 <span
                   key={t}
-                  className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-sm"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm"
                 >
                   {t}
                   <button
                     onClick={() => removeTag(t)}
-                    className="text-amber-700 hover:text-amber-900"
-                    title="Remover"
+                    className="hover:text-blue-900"
+                    aria-label={`Remover ${t}`}
                   >
                     ×
                   </button>
                 </span>
               ))}
             </div>
+
             <QuickTagInput
               onAdd={(tag) => addTag(tag)}
               suggestions={["Ansiedade leve", "Insônia", "Cefaleia", "Check-up"]}
@@ -585,116 +838,24 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
 
-/* ===================== Subcomponentes ===================== */
-
-function VitalInput({
-  icon,
-  label,
-  placeholder,
-  value,
-  onChange,
-  chips,
-  onQuick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  placeholder: string;
-  value: string;
-  onChange: (v: string) => void;
-  chips: string[];
-  onQuick: (v: string) => void;
-}) {
-  return (
-    <div className="border border-slate-200 rounded-xl p-3">
-      <div className="flex items-center gap-2 text-slate-700 mb-2">
-        {icon}
-        <span className="text-sm font-medium">{label}</span>
-      </div>
-      <input
-        className="w-full rounded-lg border-slate-200 focus:ring-2 focus:ring-indigo-400 focus:outline-none px-3 py-2"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <div className="flex flex-wrap gap-2 mt-2">
-        {chips.map((c) => (
-          <button
-            key={c}
-            onClick={() => onQuick(c)}
-            className="text-xs px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TextBlock({
-  title,
-  value,
-  onChange,
-}: {
-  title: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <div className="text-sm font-semibold text-slate-700 mb-2">{title}</div>
-      <textarea
-        className="w-full min-h-[140px] rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-400 focus:outline-none px-3 py-2"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Digite aqui..."
-      />
-    </div>
-  );
-}
-
-function QuickTagInput({
-  onAdd,
-  suggestions,
-}: {
-  onAdd: (t: string) => void;
-  suggestions: string[];
-}) {
-  const [val, setVal] = useState("");
-
-  const add = (t: string) => {
-    if (!t.trim()) return;
-    onAdd(t.trim());
-    setVal("");
-  };
-
-  return (
-    <div className="flex flex-col md:flex-row md:items-start gap-2">
-      <input
-        className="w-full md:flex-1 rounded-lg border-slate-200 focus:ring-2 focus:ring-indigo-400 focus:outline-none px-3 py-2"
-        placeholder="Adicionar tag (ex.: 'Ansiedade leve')"
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") add(val);
+      {/* Modal Confirmar Finalização */}
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          finalize();
         }}
+        title="Finalizar atendimento?"
+        description="Gerar evolução agora e marcar este atendimento como concluído."
+        confirmText="Finalizar"
+        cancelText="Cancelar"
+        icon={<FileText className="w-6 h-6" />}
       />
 
-      <div className="flex flex-wrap gap-2 w-full md:w-auto">
-        {suggestions.map((s) => (
-          <button
-            key={s}
-            onClick={() => add(s)}
-            className="text-xs px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 whitespace-nowrap"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {/* Toasts */}
+      <Toasts items={toasts.items} onDismiss={toasts.dismiss} />
     </div>
   );
 }
