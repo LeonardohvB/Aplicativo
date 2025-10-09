@@ -1,5 +1,5 @@
 // src/components/Patients/PatientEvolutionTimeline.tsx
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   CalendarDays,
   User2,
@@ -13,10 +13,12 @@ import {
   Trash2,
   Stethoscope,
   Clock,
+  X,
 } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 import { usePatientEvolutionFeed, EvolutionItem } from "../../hooks/usePatientEvolutionFeed";
 
-/* helpers */
+/* ============ helpers ============ */
 function fmtDate(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -34,6 +36,11 @@ function splitUnit(v: string): [string, string] {
   if (!m) return [v, ""];
   return [m[1], m[2] || ""];
 }
+const parseLines = (s: string) =>
+  (s || "")
+    .split(/\r?\n| - |•|,|;/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{children}</div>;
@@ -59,7 +66,7 @@ function Box({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-/* vitais */
+/* ============ vitais (render da timeline) ============ */
 function VitalGroup({
   items,
 }: {
@@ -69,7 +76,6 @@ function VitalGroup({
   if (!visible.length) return null;
   return (
     <div className="mt-3 rounded-2xl bg-slate-50 p-3">
-      {/* FIXO: 4 colunas sempre. Se tiver mais que 4, quebra para a linha de baixo */}
       <div className="grid grid-cols-4 gap-3">
         {visible.map((it, i) => (
           <VitalInline key={`vital-${i}`} icon={it.icon} label={it.label} value={it.value!} />
@@ -90,12 +96,10 @@ function VitalInline({
   const [num, unit] = splitUnit(value);
   return (
     <div className="text-center">
-      {/* legenda */}
       <div className="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wide text-gray-500">
         {icon}
         {label}
       </div>
-      {/* valor + sufixo na MESMA linha */}
       <div className="mt-0.5 leading-tight flex items-baseline justify-center gap-1 whitespace-nowrap">
         <span className="text-sm font-semibold text-gray-800">{num}</span>
         {unit && <span className="text-xs text-gray-600">{unit}</span>}
@@ -104,11 +108,547 @@ function VitalInline({
   );
 }
 
-/* tipo local para itens de medicação */
+/* ============ tipos ============ */
 type Med = { name: string; freq?: string | null; duration?: string | null };
 
+type EditState = {
+  id: string;
+  title: string;
+  pending: boolean; // exibido, mas calculado automaticamente
+  vitals: { bp?: string; hr?: string; temp?: string; weight?: string; height?: string };
+  // S/O/A/P
+  subjective: string; // S
+  objective: string; // O
+  assessment: string; // A
+  plan: string; // P
+  // extras usados pelo card
+  symptomsText: string;  // tags
+  diagnosisText: string; // diagnóstico como lista (um por linha)
+  conduct: string;
+  observations: string;
+  next_steps: string;
+};
+
+/* ============ Confirm Dialog ============ */
+function ConfirmDialog({
+  open,
+  title = "Confirmar",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title?: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[96] flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-0" />
+      <div
+        className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10 p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        <p className="mt-2 text-sm text-slate-700">{message}</p>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ Modal de edição – layout semelhante ao atendimento ============ */
+function Chip({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-700 hover:bg-slate-200"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        {icon}
+        {title}
+      </div>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function EditModal({
+  open,
+  initial,
+  onClose,
+  onSaved,
+  askDelete,
+}: {
+  open: boolean;
+  initial: EditState | null;
+  onClose: () => void;
+  onSaved: () => void;
+  askDelete: (id: string) => void;
+}) {
+  const [form, setForm] = useState<EditState | null>(initial);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setForm(initial), [initial]);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
+  if (!open || !form) return null;
+
+  const setVital = (k: keyof EditState["vitals"], v: string) =>
+    setForm((f) => (f ? { ...f, vitals: { ...(f.vitals || {}), [k]: v } } : f));
+
+  // status calculado
+  const computedPending = (() => {
+    const hasVitals =
+      !!form.vitals.bp || !!form.vitals.hr || !!form.vitals.temp || !!form.vitals.weight || !!form.vitals.height;
+    const hasSOAP =
+      (form.subjective?.trim()?.length ?? 0) > 0 ||
+      (form.objective?.trim()?.length ?? 0) > 0 ||
+      (form.assessment?.trim()?.length ?? 0) > 0 ||
+      (form.plan?.trim()?.length ?? 0) > 0 ||
+      (form.symptomsText?.trim()?.length ?? 0) > 0 ||
+      (form.diagnosisText?.trim()?.length ?? 0) > 0 ||
+      (form.conduct?.trim()?.length ?? 0) > 0 ||
+      (form.observations?.trim()?.length ?? 0) > 0 ||
+      (form.next_steps?.trim()?.length ?? 0) > 0;
+    return !(hasVitals || hasSOAP);
+  })();
+
+  const doSave = async () => {
+    try {
+      setSaving(true);
+
+      const subjective = (form.subjective || "").trim();
+      const objective  = (form.objective  || "").trim();
+      const assessment = (form.assessment || "").trim(); // um por linha
+      const plan       = (form.plan       || "").trim();
+
+      // diagnóstico como lista (usa “Diagnóstico (lista)” se preenchido; senão usa A)
+      const diagnosisArr = form.diagnosisText?.trim()
+        ? parseLines(form.diagnosisText)
+        : parseLines(assessment);
+
+      const symptomsArr = parseLines(form.symptomsText || "");
+
+      // mapeamento p/ colunas lidas pela timeline
+      const observations = objective || form.observations || null; // O
+      const conduct      = plan || form.conduct || null;           // P
+      const nextSteps    = plan || form.next_steps || null;        // P
+
+      // recálculo de pending
+      const hasVitals =
+        !!form.vitals.bp || !!form.vitals.hr || !!form.vitals.temp ||
+        !!form.vitals.weight || !!form.vitals.height;
+
+      const hasContent =
+        subjective || objective || assessment || plan ||
+        symptomsArr.length || diagnosisArr.length ||
+        (observations ?? "").toString().trim() ||
+        (conduct ?? "").toString().trim() ||
+        (nextSteps ?? "").toString().trim();
+
+      const pending = !(hasVitals || hasContent);
+
+      const data_json: any = {
+        vitals: form.vitals || {},
+        tags: symptomsArr,
+        subjective,
+        objective,
+        assessment,
+        plan,
+        updatedAt: new Date().toISOString(),
+        pending,
+      };
+
+      const update = {
+        title: form.title || "Consulta",
+        vitals: form.vitals || {},
+        symptoms: symptomsArr,
+        diagnosis: diagnosisArr,
+        observations,         // O
+        conduct,              // P
+        next_steps: nextSteps, // P
+        data_json,
+      };
+
+      const { error } = await supabase
+        .from("patient_evolution")
+        .update(update)
+        .eq("id", form.id);
+
+      if (error) throw error;
+
+      onSaved?.();
+      onClose();
+      window.dispatchEvent(new CustomEvent("timeline:refresh"));
+    } catch (e) {
+      console.warn("save evolution error:", e);
+      alert("Não foi possível salvar. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const ph = {
+    tags: "Adicionar tag (ex.: ‘Ansiedade leve’)\nou separe por vírgula/linha",
+    diag: "Um por linha\nEx.: F41.1 Transtorno de ansiedade",
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-2 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-0" />
+      <div
+        className="
+          relative z-10 w-full sm:w-auto max-w-[100vw] sm:max-w-3xl
+          bg-white rounded-t-2xl sm:rounded-2xl shadow-xl ring-1 ring-black/10
+          max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col
+        "
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="px-3 sm:px-4 py-3 border-b flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base sm:text-lg font-semibold text-slate-900">Editar evolução</h3>
+            <span
+              className={[
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1",
+                computedPending
+                  ? "bg-amber-50 text-amber-700 ring-amber-200"
+                  : "bg-emerald-50 text-emerald-700 ring-emerald-200",
+              ].join(" ")}
+              title="Status calculado automaticamente"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              {computedPending ? "Pendente" : "Concluída"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => askDelete(form.id)}
+              className="inline-flex items-center gap-2 rounded-lg border border-rose-200 text-rose-700 px-2.5 py-1.5 text-sm hover:bg-rose-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Excluir</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 text-slate-700 px-2.5 py-1.5 text-sm hover:bg-slate-50"
+            >
+              <X className="w-4 h-4" />
+              <span className="hidden sm:inline">Fechar</span>
+            </button>
+          </div>
+        </div>
+
+        {/* conteúdo */}
+        <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-4">
+          {/* título */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Título</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="Ex.: Consulta de acompanhamento"
+            />
+          </div>
+
+          {/* SINAIS VITAIS */}
+          <Card title="SINAIS VITAIS" icon={<Activity className="w-4 h-4 text-indigo-600" />}>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Pressão</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="120/80"
+                  value={form.vitals.bp || ""}
+                  onChange={(e) => setVital("bp", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["120/80", "130/85", "110/70"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("bp", v)}>
+                      {v}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">FC</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="72 bpm"
+                  value={form.vitals.hr || ""}
+                  onChange={(e) => setVital("hr", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["68 bpm", "72 bpm", "78 bpm"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("hr", v)}>
+                      {v}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Temp.</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="36.5 °C"
+                  value={form.vitals.temp || ""}
+                  onChange={(e) => setVital("temp", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["36.3 °C", "36.5 °C", "37.0 °C"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("temp", v)}>
+                      {v}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Peso</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="78.5 kg"
+                  value={form.vitals.weight || ""}
+                  onChange={(e) => setVital("weight", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["70 kg", "78.5 kg", "80 kg"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("weight", v)}>
+                      {v}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Altura</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="175 cm"
+                  value={form.vitals.height || ""}
+                  onChange={(e) => setVital("height", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["170 cm", "175 cm", "180 cm"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("height", v)}>
+                      {v}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* S / O / A / P */}
+          <Card title="S — Subjetivo (relato do paciente)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form.subjective}
+              onChange={(e) => setForm({ ...form, subjective: e.target.value })}
+            />
+          </Card>
+
+          <Card title="O — Objetivo (exame/achados)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form.objective}
+              onChange={(e) => setForm({ ...form, objective: e.target.value })}
+            />
+          </Card>
+
+          <Card title="A — Avaliação (diagnóstico/CID)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui… (um por linha)"
+              value={form.assessment}
+              onChange={(e) => setForm({ ...form, assessment: e.target.value })}
+            />
+          </Card>
+
+          <Card title="P — Plano (conduta/medicação/próximos passos)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form.plan}
+              onChange={(e) => setForm({ ...form, plan: e.target.value })}
+            />
+          </Card>
+
+          {/* Tags */}
+          <div>
+            <SectionTitle>Sintomas/Tags</SectionTitle>
+            <textarea
+              className="w-full min-h-[90px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder={ph.tags}
+              value={form.symptomsText}
+              onChange={(e) => setForm({ ...form, symptomsText: e.target.value })}
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              {["Ansiedade leve", "Insônia", "Cefaleia", "Check-up"].map((tag) => (
+                <Chip
+                  key={tag}
+                  onClick={() =>
+                    setForm((f) =>
+                      f
+                        ? {
+                            ...f,
+                            symptomsText: f.symptomsText ? `${f.symptomsText.trim()}\n${tag}` : tag,
+                          }
+                        : f
+                    )
+                  }
+                >
+                  {tag}
+                </Chip>
+              ))}
+            </div>
+          </div>
+
+          {/* Diagnóstico (lista) */}
+          <div>
+            <SectionTitle>Diagnóstico (lista)</SectionTitle>
+            <textarea
+              className="w-full min-h-[90px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder={ph.diag}
+              value={form.diagnosisText}
+              onChange={(e) => setForm({ ...form, diagnosisText: e.target.value })}
+            />
+          </div>
+        </div>
+
+        {/* footer */}
+        <div className="border-t px-3 sm:px-4 py-2 sm:py-3 bg-white flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <button
+            onClick={onClose}
+            className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-slate-700"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={doSave}
+            disabled={saving}
+            className="w-full sm:w-auto rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 disabled:opacity-60"
+          >
+            {saving ? "Salvando..." : "Salvar evolução"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ Timeline ============ */
 export default function PatientEvolutionTimeline({ patientId }: { patientId: string }) {
   const { data, loading, error } = usePatientEvolutionFeed(patientId);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editInitial, setEditInitial] = useState<EditState | null>(null);
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [toDeleteId, setToDeleteId] = useState<string | null>(null);
+
+  const openEditor = (item: EvolutionItem, isPending: boolean) => {
+    const dj: any = (item as any)?.data_json || {};
+    const v = (item as any).vitals || dj.vitals || {};
+    const symptoms = (item as any).symptoms || dj.tags || [];
+    const diagnosis = (item as any).diagnosis || [];
+
+    const assessmentText =
+      typeof dj.assessment === "string" && dj.assessment.trim().length
+        ? dj.assessment
+        : Array.isArray(diagnosis) ? diagnosis.join("\n") : "";
+
+    setEditInitial({
+      id: item.id,
+      title: item.title || "Consulta",
+      pending: isPending || dj.pending === true,
+      vitals: {
+        bp: v.bp || "",
+        hr: v.hr || "",
+        temp: v.temp || "",
+        weight: v.weight || "",
+        height: v.height || "",
+      },
+      subjective: dj.subjective || "",
+      objective: dj.objective || "",
+      assessment: assessmentText,
+      plan: dj.plan || ((item as any).conduct || (item as any).next_steps || ""),
+      symptomsText: Array.isArray(symptoms) ? symptoms.join("\n") : "",
+      diagnosisText: Array.isArray(diagnosis) ? diagnosis.join("\n") : "",
+      conduct: (item as any).conduct || "",
+      observations: (item as any).observations || "",
+      next_steps: (item as any).next_steps || "",
+    });
+    setEditOpen(true);
+  };
+
+  const requestDelete = (id: string) => {
+    setToDeleteId(id);
+    setConfirmOpen(true);
+  };
+
+  const performDelete = async () => {
+    if (!toDeleteId) return;
+    try {
+      const { error } = await supabase.from("patient_evolution").delete().eq("id", toDeleteId);
+      if (error) throw error;
+      window.dispatchEvent(new CustomEvent("timeline:refresh"));
+    } catch (e) {
+      console.warn("delete evolution error:", e);
+      alert("Falha ao excluir. Tente novamente.");
+    } finally {
+      setConfirmOpen(false);
+      setToDeleteId(null);
+      setEditOpen(false);
+    }
+  };
 
   if (loading) return <div className="text-sm text-gray-600">Carregando…</div>;
   if (error) return <div className="text-sm text-red-600">Falha ao carregar a evolução.</div>;
@@ -121,6 +661,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
         {data.map((item: EvolutionItem) => {
           const v = (item as any).vitals || {};
           const meds = ((item as any).medications || []) as Med[];
+
           const hasVitals = v.bp || v.hr || v.temp || v.weight || v.height;
           const hasSOAP =
             (item as any).symptoms?.length > 0 ||
@@ -130,7 +671,6 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
             meds.length > 0 ||
             !!(item as any).next_steps;
 
-          // Heurística + flags do backend para "preencher depois"
           const isPending =
             (item as any)?.data_json?.pending === true ||
             (item as any)?.pending === true ||
@@ -145,9 +685,8 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                 </div>
               </div>
 
-              {/* wrapper do card com overflow-x-hidden */}
+              {/* wrapper com ações */}
               <div className="flex-1 min-w-0 -ml-1 md:-ml-3 relative overflow-x-hidden overflow-y-visible group">
-                {/* ações (reveal on swipe) – empurradas para fora com margem extra */}
                 <div
                   className="
                     absolute -right-1 top-0 bottom-0
@@ -160,15 +699,15 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                 >
                   <button
                     className="h-14 w-14 grid place-items-center text-white rounded-2xl bg-indigo-600 shadow-xl ring-1 ring-black/5 hover:bg-indigo-700 transition pointer-events-auto"
-                    title="Editar evolução"
-                    onClick={() => alert("Em breve: editar evolução")}
+                    title={isPending ? "Preencher evolução" : "Editar evolução"}
+                    onClick={() => openEditor(item, isPending)}
                   >
                     <Edit3 className="w-5 h-5" />
                   </button>
                   <button
                     className="h-14 w-14 grid place-items-center text-white rounded-2xl bg-red-600 shadow-xl ring-1 ring-black/5 hover:bg-red-700 transition pointer-events-auto"
                     title="Excluir evolução"
-                    onClick={() => alert("Em breve: excluir evolução")}
+                    onClick={() => requestDelete(item.id)}
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -178,7 +717,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                 <div
                   className={[
                     "rounded-2xl bg-white border p-4 shadow-sm transform transition-transform duration-300 ease-in-out group-[.show]:-translate-x-20",
-                    isPending ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200",
+                    isPending ? "border-amber-300 ring-1 ring-amber-200/60" : "border-slate-200",
                   ].join(" ")}
                   onTouchStart={(e) => {
                     (e.currentTarget as any).dataset.startX = e.touches[0].clientX.toString();
@@ -201,10 +740,9 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                     if (delta < -30) e.currentTarget.parentElement?.classList.remove("show");
                   }}
                 >
-                  {/* ===== header ===== */}
+                  {/* header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 flex flex-col gap-1 min-w-0">
-                      {/* título + chip (profissão) */}
                       <div className="flex items-start gap-2 min-w-0">
                         <div
                           className="text-lg font-bold text-gray-900 break-words"
@@ -212,6 +750,14 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         >
                           {item.title || "Consulta de Acompanhamento"}
                         </div>
+
+                        {isPending && (
+                          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-semibold ring-1 ring-amber-200">
+                            <Clock className="w-3.5 h-3.5" />
+                            Pendente
+                          </span>
+                        )}
+
                         {item.professional_role && (
                           <span
                             className="ml-auto inline-flex items-center rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-semibold"
@@ -222,7 +768,6 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         )}
                       </div>
 
-                      {/* data/hora + bloco do profissional */}
                       <div className="flex items-start justify-between text-sm text-gray-600 font-normal flex-wrap gap-x-3 gap-y-1">
                         <div className="inline-flex items-start gap-2">
                           <CalendarDays className="w-4 h-4 text-slate-400 mt-0.5" />
@@ -245,7 +790,6 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         )}
                       </div>
 
-                      {/* lembrete de pendência */}
                       {isPending && (
                         <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-50 text-amber-800 px-2 py-1 ring-1 ring-amber-200">
                           <Clock className="w-4 h-4" />
@@ -269,14 +813,19 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                   )}
 
                   {/* conteúdo */}
-                  {(hasSOAP || meds.length > 0) && (
+                  {((item as any).symptoms?.length > 0 ||
+                    (item as any).diagnosis?.length > 0 ||
+                    (item as any).conduct ||
+                    (item as any).observations ||
+                    meds.length > 0 ||
+                    (item as any).next_steps) && (
                     <div className="mt-4 space-y-4">
                       <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
                         <div>
                           <SectionTitle>Sintomas</SectionTitle>
-                          {item.symptoms?.length ? (
+                          {(item as any).symptoms?.length ? (
                             <div className="flex flex-wrap gap-2">
-                              {item.symptoms.map((t, i) => (
+                              {(item as any).symptoms.map((t: string, i: number) => (
                                 <TagPill key={`${item.id}-sym-${i}`}>{t}</TagPill>
                               ))}
                             </div>
@@ -287,12 +836,12 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
 
                         <div>
                           <SectionTitle>Diagnóstico</SectionTitle>
-                          {item.diagnosis?.length ? (
+                          {(item as any).diagnosis?.length ? (
                             <div
                               className="text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
                               style={{ overflowWrap: "anywhere" }}
                             >
-                              {item.diagnosis.join("\n")}
+                              {(item as any).diagnosis.join("\n")}
                             </div>
                           ) : (
                             <div className="text-sm text-gray-500">—</div>
@@ -300,7 +849,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         </div>
                       </div>
 
-                      {item.conduct && <Box title="Conduta">{item.conduct}</Box>}
+                      {(item as any).conduct && <Box title="Conduta">{(item as any).conduct}</Box>}
 
                       {meds.length > 0 && (
                         <div className="rounded-xl border border-slate-200 p-3">
@@ -333,19 +882,19 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         </div>
                       )}
 
-                      {item.observations && (
+                      {(item as any).observations && (
                         <div>
                           <SectionTitle>Observações</SectionTitle>
                           <div
                             className="text-sm font-normal text-gray-700 whitespace-pre-wrap leading-relaxed break-words"
                             style={{ overflowWrap: "anywhere" }}
                           >
-                            {item.observations}
+                            {(item as any).observations}
                           </div>
                         </div>
                       )}
 
-                      {item.next_steps && (
+                      {(item as any).next_steps && (
                         <div className="rounded-xl border border-slate-200 p-3">
                           <div className="flex items-center gap-2">
                             <ClipboardList className="w-4 h-4 text-blue-500" />
@@ -357,7 +906,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                             className="mt-1 text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
                             style={{ overflowWrap: "anywhere" }}
                           >
-                            {item.next_steps}
+                            {(item as any).next_steps}
                           </div>
                         </div>
                       )}
@@ -369,6 +918,29 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
           );
         })}
       </div>
+
+      {/* modal de edição */}
+      <EditModal
+        open={editOpen}
+        initial={editInitial}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => {}}
+        askDelete={(id) => requestDelete(id)}
+      />
+
+      {/* confirmação de exclusão */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Excluir evolução"
+        message="Deseja realmente excluir esta evolução? Essa ação não pode ser desfeita."
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        onConfirm={performDelete}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setToDeleteId(null);
+        }}
+      />
     </div>
   );
 }

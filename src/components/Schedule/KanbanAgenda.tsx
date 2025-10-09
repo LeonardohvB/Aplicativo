@@ -928,7 +928,7 @@ const KanbanAgenda: React.FC<Props> = ({
         }}
         title="Finalizar este atendimento."
         description="Deseja também gerar a evolução agora?"
-        confirmText="Finalizar"
+        confirmText="Sim"
         cancelText="Cancelar"
         icon={<FileText className="w-6 h-6" />}
       />

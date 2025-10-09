@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -27,13 +27,17 @@ const ConfirmDialog: React.FC<Props> = ({
   variant = "primary",
   loading = false,
 }) => {
-  // fecha com ESC e bloqueia scroll quando aberto
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+
+  // ESC para fechar, bloquear scroll e focar botão cancelar
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // foca o cancelar para acessibilidade
+    setTimeout(() => cancelBtnRef.current?.focus(), 0);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
@@ -42,45 +46,76 @@ const ConfirmDialog: React.FC<Props> = ({
 
   if (!open) return null;
 
-  const confirmBtn =
+  const confirmClasses =
     variant === "danger"
-      ? "bg-red-600 hover:bg-red-700 focus:ring-red-400"
-      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-400";
+      ? "bg-rose-600 hover:bg-rose-700 active:bg-rose-800"
+      : "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800";
 
   return createPortal(
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-3">
       {/* backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]" onClick={onClose} />
-      {/* painel */}
-      <div className="relative w-[92vw] max-w-md rounded-2xl bg-white p-4 sm:p-5 shadow-lg animate__animated animate__zoomIn">
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px]" onClick={onClose} />
+
+      {/* painel compacto */}
+      <div
+        className="
+          relative w-full max-w-[340px] sm:max-w-[380px]
+          rounded-2xl bg-white p-4 shadow-xl ring-1 ring-black/10
+        "
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* cabeçalho */}
         <div className="flex items-start gap-3">
           {icon && (
             <div className="mt-0.5 shrink-0 rounded-lg bg-blue-50 text-blue-600 p-2">{icon}</div>
           )}
           <div className="min-w-0">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900">{title}</h3>
-            {description && <div className="mt-1 text-sm text-gray-600">{description}</div>}
+            <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
+            {description && (
+              <div className="mt-2 text-[13px] leading-5 text-slate-700">{description}</div>
+            )}
           </div>
           <button
             aria-label="Fechar"
             onClick={onClose}
-            className="ml-auto rounded-full p-1 text-gray-500 hover:bg-gray-100"
+            className="ml-auto rounded-full p-1 text-slate-500 hover:bg-slate-100"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="mt-4 flex gap-2">
+        {/* ações */}
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {/* Cancelar — cinza claro */}
           <button
+            ref={cancelBtnRef}
             onClick={onClose}
-            className="flex-1 inline-flex items-center justify-center rounded-lg border border-black px-4 py-2 text-black hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-red-400"
+            className="
+              inline-flex items-center justify-center
+              rounded-lg px-3 py-1.5 text-[13px] font-medium
+              bg-slate-100 text-slate-700
+              ring-1 ring-slate-200
+              hover:bg-slate-200 active:bg-slate-300
+              focus:outline-none focus:ring-2 focus:ring-slate-300
+            "
           >
             {cancelText}
           </button>
+
+          {/* Confirmar / Excluir */}
           <button
             onClick={onConfirm}
             disabled={loading}
-            className={`flex-1 inline-flex items-center justify-center rounded-lg border border-black px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-offset-1 ${confirmBtn} disabled:opacity-70`}
+            className={`
+              inline-flex items-center justify-center
+              rounded-lg px-3 py-1.5 text-[13px] font-medium text-white
+              shadow-sm transition
+              ${confirmClasses}
+              focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-slate-200
+              disabled:opacity-70
+            `}
           >
             {loading ? "Aguarde..." : confirmText}
           </button>
