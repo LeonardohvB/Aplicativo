@@ -205,9 +205,10 @@ const Toolbar: React.FC<ToolbarProps> = ({
         );
       })}
     </div>
-    <div className="text-sm text-gray-500">
-      {prosCount} psicólogo{prosCount === 1 ? '' : 's'} {prosCount === 1 ? 'disponível' : 'disponíveis'}
-    </div>
+    <div className="text-sm text-gray-600">
+  {prosCount} {prosCount === 1 ? 'profissional disponível' : 'profissionais disponíveis'}
+</div>
+
   </div>
 );
 

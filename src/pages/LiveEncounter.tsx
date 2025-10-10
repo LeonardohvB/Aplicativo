@@ -184,7 +184,7 @@ type DraftUI = {
   A: string;
   P: string;
   tags: string[];
-  medications: Med[]; // ⬅️ novo
+  medications: Med[];
   updatedAt?: string;
 };
 
@@ -388,7 +388,19 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   const [patientName, setPatientName] = useState<string>("Paciente");
   const [professionalName, setProfessionalName] = useState<string>("Profissional");
   const [serviceName, setServiceName] = useState<string>("Consulta");
-  const [showVitals, setShowVitals] = useState<boolean>(true);
+
+  // vitais: iniciam ocultos e persistem no localStorage
+  const [showVitals, setShowVitals] = useState<boolean>(() => {
+    const saved = localStorage.getItem("live:vitalsVisible");
+    return saved ? saved === "1" : false; // padrão: oculto
+  });
+  const toggleVitals = () => {
+    setShowVitals((v) => {
+      const nv = !v;
+      localStorage.setItem("live:vitalsVisible", nv ? "1" : "0");
+      return nv;
+    });
+  };
 
   // encounter id
   const [encounterId, setEncounterId] = useState<string | undefined>(() =>
@@ -399,7 +411,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // pedido de auto-finalização (quando vem da Agenda)
-  
   const [autoFinalizeRequested, setAutoFinalizeRequested] = useState(false);
 
   // autosave (Supabase + cache local)
@@ -422,7 +433,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       A: toStr(d?.A),
       P: toStr(d?.P),
       tags: Array.isArray(d?.tags) ? d.tags : [],
-      medications: Array.isArray(d?.medications) ? d.medications : [], // ⬅️ novo
+      medications: Array.isArray(d?.medications) ? d.medications : [],
       updatedAt: d?.updatedAt,
     };
   }, [hookDraft]);
@@ -606,7 +617,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           conduct: parseConduct(draft.P) ?? null,
           observations: parseObservations(draft.O, draft.S) ?? null,
           next_steps: undefined,
-          // medications será tentado abaixo
           data_json: {
             vitals,
             S: draft.S || "",
@@ -614,7 +624,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             A: draft.A || "",
             P: draft.P || "",
             tags: draft.tags || [],
-            medications: meds, // espelho
+            medications: meds,
             updatedAt: draft.updatedAt || new Date().toISOString(),
           },
           s_text: draft.S || null,
@@ -700,7 +710,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           conduct: null as string | null,
           observations: null as string | null,
           next_steps: undefined,
-          // medications: opcional
           data_json: {
             S: "",
             O: "",
@@ -710,7 +719,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             tags: [] as string[],
             medications: [] as Med[],
             updatedAt: new Date().toISOString(),
-            pending: true, // ⬅️ marcador usado na timeline
+            pending: true, // marcador usado na timeline
           },
           s_text: null,
           o_text: null,
@@ -722,6 +731,15 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         await supabase.from("patient_evolution").insert([evoInsert]);
       } catch (err) {
         console.warn("evolution blank creation warning:", err);
+      }
+
+      // ✅ avisa a Agenda para atualizar o card imediatamente
+      if (appointmentId) {
+        window.dispatchEvent(
+          new CustomEvent("agenda:slot:update", {
+            detail: { appointmentId, status: "concluido" },
+          })
+        );
       }
 
       try {
@@ -835,7 +853,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
                 {showVitals ? "Ocultar" : "Mostrar"} sinais vitais
               </span>
               <button
-                onClick={() => setShowVitals((v) => !v)}
+                onClick={toggleVitals}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   showVitals ? "bg-blue-600" : "bg-gray-300"
                 }`}

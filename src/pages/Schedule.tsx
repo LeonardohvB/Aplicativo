@@ -1,6 +1,6 @@
 // src/pages/Schedule.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import CreateJourneyModal from '../components/Schedule/CreateJourneyModal';
 import EditJourneyModal from '../components/Schedule/EditJourneyModal';
 import SchedulePatientModal from '../components/Schedule/SchedulePatientModal';
@@ -12,6 +12,7 @@ import { useProfessionals } from '../hooks/useProfessionals';
 import { AppointmentSlot, AppointmentJourney } from '../types';
 import KanbanAgenda from '../components/Schedule/KanbanAgenda';
 import { supabase } from '../lib/supabase';
+import { useConfirm } from '../providers/ConfirmProvider';
 
 /* ===== Helpers (datas no fuso LOCAL) ===== */
 const localISODate = (d = new Date()) => {
@@ -25,6 +26,7 @@ const toLocalDateTime = (dateISO: string, timeHHMM: string) => {
   d.setHours(hh, mm, 0, 0);
   return d;
 };
+
 /** Extrai o id do agendamento a partir de um slot (tolerante a nomes) */
 const getAppointmentIdFromSlot = (s: any): string | undefined =>
   s?.appointmentId ?? s?.appointment_id ?? s?.id;
@@ -114,36 +116,34 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:filter', handler as EventListener);
   }, []);
 
-// ✅ Atualiza a agenda sem recarregar quando o LiveEncounter avisar que concluiu
-useEffect(() => {
-  const onSlotUpdate = async (e: Event) => {
-    const detail = (e as CustomEvent<{ appointmentId?: string; status?: string }>).detail;
-    const appointmentId = detail?.appointmentId;
-    const status = (detail?.status || 'concluido') as
-      | 'concluido' | 'em_andamento' | 'cancelado' | 'no_show';
+  // ✅ Atualiza a agenda sem recarregar quando o LiveEncounter avisar que concluiu
+  useEffect(() => {
+    const onSlotUpdate = async (e: Event) => {
+      const detail = (e as CustomEvent<{ appointmentId?: string; status?: string }>).detail;
+      const appointmentId = detail?.appointmentId;
+      const status = (detail?.status || 'concluido') as
+        | 'concluido' | 'em_andamento' | 'cancelado' | 'no_show';
 
-    if (!appointmentId) return;
+      if (!appointmentId) return;
 
-    // Procura o slot correspondente por id/appointmentId
-    const slot: any = slots.find(
-      (s: any) =>
-        s.id === appointmentId ||
-        s.appointmentId === appointmentId ||
-        s.appointment_id === appointmentId
-    );
-    if (!slot) return;
+      const slot: any = slots.find(
+        (s: any) =>
+          s.id === appointmentId ||
+          s.appointmentId === appointmentId ||
+          s.appointment_id === appointmentId
+      );
+      if (!slot) return;
 
-    try {
-      await updateSlotStatus(slot.id, status); // isto já atualiza o estado do hook/local
-    } catch (err) {
-      console.warn('slot:update failed', err);
-    }
-  };
+      try {
+        await updateSlotStatus(slot.id, status);
+      } catch (err) {
+        console.warn('slot:update failed', err);
+      }
+    };
 
-  window.addEventListener('agenda:slot:update', onSlotUpdate as EventListener);
-  return () => window.removeEventListener('agenda:slot:update', onSlotUpdate as EventListener);
-}, [slots, updateSlotStatus]);
-
+    window.addEventListener('agenda:slot:update', onSlotUpdate as EventListener);
+    return () => window.removeEventListener('agenda:slot:update', onSlotUpdate as EventListener);
+  }, [slots, updateSlotStatus]);
 
   // ✅ Abrir histórico (menu suspenso OU Dashboard)
   useEffect(() => {
@@ -164,14 +164,12 @@ useEffect(() => {
     };
   }, []);
 
-  // Abrir cadastro rápido de paciente (se algum lugar disparar o evento)
+  // Abrir cadastro rápido de paciente
   useEffect(() => {
     const openNewPatient = () => setIsAddPatientOpen(true);
     window.addEventListener('patient:new', openNewPatient as EventListener);
     return () => window.removeEventListener('patient:new', openNewPatient as EventListener);
   }, []);
-
-
 
   const todayStr = localISODate(new Date());
   const { end } = startEndOfThisWeek();
@@ -205,9 +203,31 @@ useEffect(() => {
     return [...journeys].filter(j => ids.has(j.id)).sort(sortJourneysByDateTime);
   }, [journeys, filteredSlots]);
 
-  /* ====== Passo B: garantir 1 encontro por agendamento ====== */
+  /* =================== CONFIRM helper (padronizado) =================== */
+  const askConfirm = useConfirm();
+  async function confirmAction(opts: {
+    title: string;
+    description?: string;
+    confirmText?: string;
+    cancelText?: string;
+    tone?: 'default' | 'danger';
+    icon?: React.ReactNode;
+  }) {
+    // Monta apenas os campos "oficiais" e injeta os extras com cast para evitar erro do TS
+    const payload: any = {
+      title: opts.title,
+      description: opts.description,
+      confirmText: opts.confirmText ?? 'Confirmar',
+      cancelText: opts.cancelText ?? 'Cancelar',
+    };
+    // extras opcionais (suportados por alguns temas do ConfirmProvider)
+    if (opts.tone) payload.tone = opts.tone;
+    if (opts.icon) payload.icon = opts.icon;
 
-  // Abre o prontuário chamando a RPC ensure_encounter
+    return await (askConfirm as any)(payload);
+  }
+
+  /* ====== Passo B: garantir 1 encontro por agendamento ====== */
   const handleOpenProntuarioFromSlot = async (slotId: string) => {
     const s: any = slots.find(x => x.id === slotId);
     if (!s) return;
@@ -238,10 +258,8 @@ useEffect(() => {
       return;
     }
 
-    // (opcional) marca visualmente como em andamento
     try { await updateSlotStatus(slotId, 'em_andamento'); } catch {}
 
-    // abre a tela LiveEncounter (o componente já ouve esse evento)
     window.dispatchEvent(
       new CustomEvent('encounter:open', {
         detail: { encounterId, appointmentId, ...meta },
@@ -259,24 +277,34 @@ useEffect(() => {
     return () => window.removeEventListener('agenda:openProntuario', handler as EventListener);
   }, [slots, professionals]);
 
-  /* ===== Ações existentes ===== */
+  /* ===== Ações (somente alerts padronizados) ===== */
   const handleEditJourney = (journeyId: string) => {
     const j = journeys.find(x => x.id === journeyId);
     if (j) { setSelectedJourney(j); setIsEditModalOpen(true); }
   };
+
   const handleDeleteJourney = async (journeyId: string) => {
-    if (confirm('Tem certeza que deseja excluir esse agendamento?')) {
-      await deleteJourney(journeyId);
-    }
+    const ok = await confirmAction({
+      title: 'Excluir este agendamento?',
+      description: 'Esta ação não pode ser desfeita.',
+      confirmText: 'Excluir',
+      cancelText: 'Cancelar',
+      tone: 'danger',
+      icon: <Trash2 className="w-5 h-5" />,
+    });
+    if (ok) await deleteJourney(journeyId);
   };
+
   const handleSchedulePatient = (slotId: string) => {
     const s = slots.find(x => x.id === slotId);
     if (s) { setSelectedSlot(s); setIsScheduleModalOpen(true); }
   };
+
   const handleEditPatient = (slotId: string) => {
     const s = slots.find(x => x.id === slotId);
     if (s) { setSelectedSlot(s); setIsEditPatientModalOpen(true); }
   };
+
   const handleConfirmSchedulePatient = async (slotId: string, data: {
     patientName: string; patientPhone: string; service: string; price: number; notes?: string;
   }) => { await schedulePatient(slotId, data); };
@@ -294,16 +322,17 @@ useEffect(() => {
     setFinishingSlot(slotId);
 
     try {
-      const gerarEvolucao = confirm(
-        'Finalizar este atendimento.\n\nDeseja também gerar a evolução agora?'
-      );
+      const gerarEvolucao = await confirmAction({
+        title: 'Finalizar este atendimento.',
+        description: 'Deseja também gerar a evolução agora?',
+        confirmText: 'Sim',
+        cancelText: 'Cancelar',
+      });
 
       if (gerarEvolucao) {
-        // 1) tenta descobrir o appointmentId do slot
         const slot = slots.find(s => s.id === slotId);
         const appointmentId = getAppointmentIdFromSlot(slot) ?? slotId;
 
-        // 2) garante que existe encounter para esse agendamento
         const { data: ensuredId, error: ensureErr } = await supabase.rpc(
           'ensure_encounter',
           {
@@ -321,18 +350,13 @@ useEffect(() => {
         );
         if (ensureErr) throw ensureErr;
 
-        // 3) finaliza (congela nota e fecha encontro/agenda base)
         const { error: finErr } = await supabase.rpc('finalize_encounter', {
           p_encounter_id: ensuredId as string,
         });
         if (finErr) throw finErr;
       }
 
-      // 4) marca o SLOT como concluído na sua agenda (sempre)
       await updateSlotStatus(slotId, 'concluido');
-
-      // 5) notifica outras telas (ex.: LiveEncounter já fecha e dispara também)
-      
     } catch (err) {
       console.warn(err);
       alert('Não foi possível concluir. Tente novamente.');
@@ -342,14 +366,25 @@ useEffect(() => {
   };
 
   const handleCancelAppointment = async (slotId: string) => {
-    if (confirm('Tem certeza que deseja cancelar este atendimento?')) {
-      await updateSlotStatus(slotId, 'cancelado');
-    }
+    const ok = await confirmAction({
+      title: 'Cancelar este atendimento?',
+      description: 'O paciente será removido deste horário.',
+      confirmText: 'Cancelar atendimento',
+      cancelText: 'Voltar',
+      tone: 'danger',
+    });
+    if (ok) await updateSlotStatus(slotId, 'cancelado');
   };
+
   const handleMarkNoShow = async (slotId: string) => {
-    if (confirm('Marcar como faltou?')) {
-      await updateSlotStatus(slotId, 'no_show');
-    }
+    const ok = await confirmAction({
+      title: 'Marcar como “faltou”?',
+      description: 'O horário será mantido no histórico como “no-show”.',
+      confirmText: 'Confirmar',
+      cancelText: 'Voltar',
+      tone: 'danger',
+    });
+    if (ok) await updateSlotStatus(slotId, 'no_show');
   };
 
   if (loading) {
@@ -391,8 +426,6 @@ useEffect(() => {
         onEditJourney={handleEditJourney}
         onDeleteJourney={handleDeleteJourney}
         sortSlotsByTime={sortSlotsByTime}
-        // Se o componente aceitar, você pode passar:
-        // onOpenProntuario={handleOpenProntuarioFromSlot}
       />
 
       {/* Modais */}

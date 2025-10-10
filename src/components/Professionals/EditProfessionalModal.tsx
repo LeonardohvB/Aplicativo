@@ -4,28 +4,29 @@ import { X } from 'lucide-react';
 import { Professional } from '../../types';
 import { formatBRCell } from '../../lib/phone-br';
 
-interface EditProfessionalModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onUpdate: (
-    id: string,
-    professional: {
-      name?: string;
-      specialty?: string;
-      phone?: string;
-      registrationCode?: string;
-      commissionRate?: number;
-      isActive?: boolean;
-    }
-  ) => void;
-  // mantido por compatibilidade, mas a exclusão agora é feita no card (swipe + useConfirm)
-  onDelete: (id: string) => Promise<void> | void;
-  professional: Professional | null;
-}
+/* ========= helpers ========= */
+const onlyDigits = (v: string) => (v || '').replace(/\D+/g, '');
 
 const COUNCILS = [
-  'CRM', 'CREA', 'CREFITO', 'CRP', 'CRO', 'COREN', 'CRF', 'CRFa', 'CRN', 'CRESS', 'CREF',
+  'CRM','CREA','CREFITO','CRP','CRO','COREN','CRF','CRFa','CRN','CRESS','CREF','CRMV','CRBM','OUTRO'
 ];
+
+/** Mapeamento Conselho -> Profissão/Especialidade (auto) */
+const COUNCIL_TO_PROFESSION: Record<string, string> = {
+  CRM: 'Médico(a)',
+  CRP: 'Psicólogo(a)',
+  CRO: 'Dentista',
+  CREFITO: 'Fisioterapeuta',
+  CRFa: 'Fonoaudiólogo(a)',
+  CRN: 'Nutricionista',
+  COREN: 'Enfermeiro(a)',
+  CRESS: 'Assistente Social',
+  CREF: 'Profissional de Educação Física',
+  CRF: 'Farmacêutico(a)',
+  CRMV: 'Médico(a) Veterinário(a)',
+  CRBM: 'Biomédico(a)',
+  CREA: 'Engenheiro(a)',
+};
 
 function splitRegistration(s: string | undefined | null) {
   const raw = (s ?? '').trim();
@@ -34,10 +35,8 @@ function splitRegistration(s: string | undefined | null) {
   return { council: 'CRM', number: raw };
 }
 
-/* ===== Title Case PT-BR ===== */
+/* ===== Title Case (mesmo do seu arquivo) ===== */
 const PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e', "d'", "d’"]);
-
-// enquanto digita
 function titleCaseLive(input: string) {
   const tokens = input.split(/(\s+)/);
   let wordIndex = 0;
@@ -58,26 +57,44 @@ function titleCaseLive(input: string) {
     })
     .join('');
 }
-// no blur/salvar
 function titleCaseFinalize(input: string) {
   const trimmed = input.replace(/\s+/g, ' ').trim();
   if (!trimmed) return '';
   return titleCaseLive(trimmed);
 }
-/* =========================== */
+
+/* ========= props ========= */
+interface EditProfessionalModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: (
+    id: string,
+    professional: {
+      name?: string;
+      specialty?: string;        // <- enviado automaticamente
+      phone?: string;            // <- apenas dígitos
+      registrationCode?: string; // <- "SIGLA - número"
+      commissionRate?: number;
+      isActive?: boolean;
+    }
+  ) => void;
+  onDelete: (id: string) => Promise<void> | void; // (mantido, não usado aqui)
+  professional: Professional | null;
+}
 
 export default function EditProfessionalModal({
   isOpen,
   onClose,
   onUpdate,
-  onDelete: _onDeleteNotUsed, // não usamos aqui
+  onDelete: _onDeleteNotUsed,
   professional,
 }: EditProfessionalModalProps) {
   const [name, setName] = useState('');
-  const [specialty, setSpecialty] = useState('');
+  const [specialty, setSpecialty] = useState(''); // <- BLOQUEADO (auto)
   const [phone, setPhone] = useState('');
   const [commissionRate, setCommissionRate] = useState<number | ''>('');
 
+  // Registro
   const [council, setCouncil] = useState<string>('CRM');
   const [customCouncil, setCustomCouncil] = useState('');
   const [regNumber, setRegNumber] = useState('');
@@ -95,26 +112,36 @@ export default function EditProfessionalModal({
     };
   }, [isOpen, onClose]);
 
+  // Preenche estado inicial a partir do profissional
   useEffect(() => {
     if (professional && isOpen) {
       setName(professional.name ?? '');
-      setSpecialty(professional.specialty ?? '');
       setPhone(formatBRCell(professional.phone ?? ''));
       setCommissionRate(
         typeof professional.commissionRate === 'number' ? professional.commissionRate : ''
       );
 
       const { council: c, number: n } = splitRegistration(professional.registrationCode);
-      if (COUNCILS.includes(c.toUpperCase())) {
+      if (COUNCILS.includes((c || '').toUpperCase())) {
         setCouncil(c.toUpperCase());
         setCustomCouncil('');
       } else {
         setCouncil('OUTRO');
-        setCustomCouncil(c.toUpperCase());
+        setCustomCouncil((c || '').toUpperCase());
       }
       setRegNumber(n ?? '');
+
+      // especialidade sempre automática pelo conselho
+      const auto = COUNCIL_TO_PROFESSION[(c || '').toUpperCase()] ?? '';
+      setSpecialty(auto);
     }
   }, [professional, isOpen]);
+
+  // Quando o conselho mudar, recalcula especialidade automaticamente
+  useEffect(() => {
+    const auto = COUNCIL_TO_PROFESSION[council] ?? '';
+    setSpecialty(auto);
+  }, [council]);
 
   if (!isOpen || !professional) return null;
 
@@ -122,24 +149,22 @@ export default function EditProfessionalModal({
     e.preventDefault();
 
     const nameFinal = titleCaseFinalize(name);
-    const specialtyFinal = titleCaseFinalize(specialty);
-
     if (!nameFinal) return alert('Nome é obrigatório.');
-    if (!specialtyFinal) return alert('Profissão/Especialidade é obrigatória.');
 
     const chosenCouncil =
-      council === 'OUTRO'
-        ? (customCouncil || '').trim().toUpperCase()
-        : council.toUpperCase();
+      council === 'OUTRO' ? (customCouncil || '').trim().toUpperCase() : council.toUpperCase();
     if (!chosenCouncil) return alert('Informe a sigla do conselho (ex.: CRM, CREA, CREFITO).');
     if (!regNumber.trim()) return alert('Informe o número do registro.');
 
     const registrationCode = `${chosenCouncil} - ${regNumber.trim()}`;
 
+    // especialidade vem do mapeamento; se OUTRO, fica vazia mesmo (coerente com "Adicionar")
+    const autoSpecialty = COUNCIL_TO_PROFESSION[council] ?? '';
+
     onUpdate(professional.id, {
       name: nameFinal,
-      specialty: specialtyFinal,
-      phone,
+      specialty: autoSpecialty,
+      phone: onlyDigits(phone),            // envia apenas dígitos
       registrationCode,
       commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
     });
@@ -148,7 +173,7 @@ export default function EditProfessionalModal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center" onClick={onClose}>
-      {/* Backdrop com blur + fade padrão */}
+      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] animate-[fadeIn_.18s_ease-out]" />
 
       {/* Painel */}
@@ -180,7 +205,7 @@ export default function EditProfessionalModal({
             />
           </div>
 
-           {/* Telefone */}
+          {/* Telefone */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Telefone</label>
             <input
@@ -188,6 +213,7 @@ export default function EditProfessionalModal({
               onChange={(e) => setPhone(formatBRCell(e.target.value))}
               type="tel"
               className="mt-1 w-full rounded-lg border px-3 py-2"
+              placeholder="(81) 9 9999-9999"
             />
           </div>
 
@@ -206,7 +232,6 @@ export default function EditProfessionalModal({
                 {COUNCILS.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-                <option value="OUTRO">Outro…</option>
               </select>
 
               {council === 'OUTRO' && (
@@ -221,7 +246,7 @@ export default function EditProfessionalModal({
               <input
                 value={regNumber}
                 onChange={(e) => setRegNumber(e.target.value)}
-                placeholder="número (ex.: 02/14676)"
+                placeholder="número (ex.: 26465 / SP)"
                 className="flex-1 rounded-lg border px-3 py-2"
               />
             </div>
@@ -229,27 +254,24 @@ export default function EditProfessionalModal({
             <div className="mt-1 text-xs text-gray-500">
               Pré-visualização:{' '}
               <span className="font-medium text-gray-700">
-                {(council === 'OUTRO' ? (customCouncil || '').toUpperCase() : council.toUpperCase()) || '—'}{' '}
-                - {regNumber || '—'}
+                {(council === 'OUTRO' ? (customCouncil || '').toUpperCase() : council.toUpperCase()) || '—'} - {regNumber || '—'}
               </span>
             </div>
           </div>
 
-          {/* Profissão/Especialidade */}
+          {/* Profissão/Especialidade — BLOQUEADO e automático */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
               value={specialty}
-              onChange={(e) => setSpecialty(titleCaseLive(e.target.value))}
-              onBlur={(e) => setSpecialty(titleCaseFinalize(e.target.value))}
-              className="mt-1 w-full rounded-lg border px-3 py-2"
-              placeholder="Ex.: Psicólogo(a)"
-              required
+              readOnly
+              disabled
+              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
+              placeholder="Preenchido automaticamente pelo registro"
             />
           </div>
 
-
-          {/* Rodapé — sem botão Excluir (exclusão via swipe do card) */}
+          {/* Rodapé */}
           <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
             <button
               type="button"
@@ -269,16 +291,10 @@ export default function EditProfessionalModal({
         </form>
       </div>
 
-      {/* Keyframes usados pelas classes animate-[...] */}
+      {/* keyframes das animações inline usadas acima */}
       <style>{`
-        @keyframes zoomIn {
-          0% { transform: scale(.92); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes fadeIn {
-          0% { opacity: 0; }
-          100% { opacity: 1; }
-        }
+        @keyframes zoomIn { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes fadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
       `}</style>
     </div>
   );
