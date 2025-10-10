@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
-  Menu as MenuIcon,
+ 
   Calendar as CalendarIcon,
   UploadCloud,
   FileText,
@@ -415,12 +415,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           Evolução do Paciente
         </h1>
 
-        <button
-          className="ml-auto h-9 w-9 rounded-xl bg-white shadow ring-1 ring-black/5 flex items-center justify-center"
-          title="Menu"
-        >
-          <MenuIcon className="h-5 w-5 text-slate-700" />
-        </button>
+        
       </div>
 
       {/* busca */}

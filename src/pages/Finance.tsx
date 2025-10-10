@@ -473,8 +473,10 @@ const Finance: React.FC = () => {
           <h1 className="text-2xl font-bold text-white">Financeiro</h1>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="p-3 bg-white/20 backdrop-blur-sm text-white rounded-2xl hover:bg-white/30 transition-all shadow-lg hover:shadow-xl"
-          >
+            title="Adicionar transação"
+            aria-label="Adicionar transação"
+           className="h-10 w-10 flex items-center justify-center bg-white/20 backdrop-blur-sm text-white rounded-full hover:bg-white/30 transition-all shadow-lg hover:shadow-xl mr-14 md:mr-24 -mt-1"
+           >
             <Plus className="w-6 h-6" />
           </button>
         </div>
