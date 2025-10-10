@@ -180,20 +180,7 @@ export default function EditProfessionalModal({
             />
           </div>
 
-          {/* Profissão/Especialidade */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
-            <input
-              value={specialty}
-              onChange={(e) => setSpecialty(titleCaseLive(e.target.value))}
-              onBlur={(e) => setSpecialty(titleCaseFinalize(e.target.value))}
-              className="mt-1 w-full rounded-lg border px-3 py-2"
-              placeholder="Ex.: Psicólogo(a)"
-              required
-            />
-          </div>
-
-          {/* Telefone */}
+           {/* Telefone */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Telefone</label>
             <input
@@ -248,24 +235,19 @@ export default function EditProfessionalModal({
             </div>
           </div>
 
-          {/* Comissão */}
+          {/* Profissão/Especialidade */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Comissão (%) <span className="text-gray-400">(opcional)</span>
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
-              value={commissionRate}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === '') return setCommissionRate('');
-                const n = Number(v);
-                if (!Number.isNaN(n)) setCommissionRate(n);
-              }}
+              value={specialty}
+              onChange={(e) => setSpecialty(titleCaseLive(e.target.value))}
+              onBlur={(e) => setSpecialty(titleCaseFinalize(e.target.value))}
               className="mt-1 w-full rounded-lg border px-3 py-2"
-              placeholder="20"
-              inputMode="numeric"
+              placeholder="Ex.: Psicólogo(a)"
+              required
             />
           </div>
+
 
           {/* Rodapé — sem botão Excluir (exclusão via swipe do card) */}
           <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
