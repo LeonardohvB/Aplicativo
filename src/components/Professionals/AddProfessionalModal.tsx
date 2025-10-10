@@ -235,21 +235,6 @@ export default function AddProfessionalModal({
             </p>
           </div>
 
-          {/* Profissão/Especialidade — TRAVADO (auto) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
-            <input
-              value={specialty}
-              readOnly
-              disabled
-              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
-              placeholder="Preencha o registro profissional para definir automaticamente"
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              Este campo é preenchido automaticamente pelo registro profissional.
-            </p>
-          </div>
-
           {/* Telefone */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Telefone (celular)</label>
@@ -274,7 +259,7 @@ export default function AddProfessionalModal({
             </p>
           </div>
 
-          {/* Registro Profissional */}
+           {/* Registro Profissional */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Registro Profissional (obrigatório)</label>
 
@@ -337,24 +322,26 @@ export default function AddProfessionalModal({
             </div>
           </div>
 
-          {/* Comissão */}
+
+          {/* Profissão/Especialidade — TRAVADO (auto) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Comissão (%) <span className="text-gray-400">(opcional)</span>
-            </label>
+            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
-              value={commissionRate}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === '') return setCommissionRate('');
-                const n = Number(v);
-                if (!Number.isNaN(n)) setCommissionRate(n);
-              }}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-              placeholder="20"
-              inputMode="numeric"
+              value={specialty}
+              readOnly
+              disabled
+              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
+              placeholder="Preencha o registro profissional para definir automaticamente"
             />
+            <p className="mt-1 text-xs text-gray-400">
+              Este campo é preenchido automaticamente pelo registro profissional.
+            </p>
           </div>
+
+          
+
+         
+         
 
           {/* Ações */}
           <div className="flex gap-2 pt-2">
