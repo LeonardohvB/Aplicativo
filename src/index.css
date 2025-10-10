@@ -1,22 +1,19 @@
-
 @import 'animate.css';      
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* =================== Safe Area / TabBar global =================== */
+/* Altura da sua BottomNavigation; ajuste se necessário */
+:root {
+  --tabbar-h: 88px;
+}
 
-
-/* ───────────────────────────────────────────────────────────
-   iOS safe-area (PWA em modo stand-alone)
-   Use as classes: pt-safe / pb-safe
-   ─────────────────────────────────────────────────────────── */
-@supports (padding: env(safe-area-inset-bottom)) {
-  @layer utilities {
-    .pt-safe { padding-top: calc(env(safe-area-inset-top) + 8px); }
-    /* ajuste o 88px conforme a altura da sua bottom-nav */
-    .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 88px); }
-  }
+/* Utilitário opcional caso queira usar em pontos específicos */
+@layer utilities {
+  .pt-safe { padding-top: calc(env(safe-area-inset-top) + 8px); }
+  .pb-safe { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 }
 
 /* ───────────────────────────────────────────────────────────
@@ -38,15 +35,6 @@
   .print\:border-gray-300 { @apply border-gray-300 !important; }
   .print\:rounded-md { @apply rounded-md !important; }
   .print\:break-inside-avoid { break-inside: avoid; }
-}
-
-/* ========= Safe Area iOS ========= */
-:root {
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-.pb-safe {
-  padding-bottom: var(--safe-bottom);
 }
 
 /* Shake suave para erros no modal */
@@ -110,13 +98,17 @@ body {
   height: 100%;
 }
 
-/* Contêiner interno que VAI rolar */
+/* ================== CONTAINER QUE ROLA A PÁGINA ================== */
+/* ✅ Aqui está a correção global para não “quebrar” no rodapé */
 .app-viewport {
   height: 100%;
   overflow-y: auto;                  /* rolagem só aqui */
   -webkit-overflow-scrolling: touch; /* scroll suave iOS */
   overscroll-behavior: contain;      /* bloqueia rubber-band */
-  background-color: #f9fafb;         /* redundante, mas garante consistência */
+  background-color: #f9fafb;
+
+  /* Reserva espaço da TabBar + home indicator do iOS */
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
 
 /* Pinta a faixa da safe area superior (iOS) com a mesma cor do app */
@@ -141,7 +133,6 @@ body::before {
   display: none;            /* Chrome/Safari */
   background: transparent;
 }
-
 
 /* (opcional) se quiser uniformizar também a bottom safe area:
 body::after {
