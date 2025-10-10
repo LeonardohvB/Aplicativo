@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Info,
+  Pill as PillIcon,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useEncounterDraft } from "../hooks/useEncounterDraft";
@@ -174,6 +175,8 @@ const FinalizeDialog: React.FC<{
 /* ==========================================================
    Tipos leves p/ UI
    ========================================================== */
+type Med = { name: string; freq?: string | null; duration?: string | null };
+
 type DraftUI = {
   vitals: { bp?: string; hr?: string; temp?: string; weight?: string; height?: string };
   S: string;
@@ -181,6 +184,7 @@ type DraftUI = {
   A: string;
   P: string;
   tags: string[];
+  medications: Med[]; // ⬅️ novo
   updatedAt?: string;
 };
 
@@ -395,6 +399,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // pedido de auto-finalização (quando vem da Agenda)
+  
   const [autoFinalizeRequested, setAutoFinalizeRequested] = useState(false);
 
   // autosave (Supabase + cache local)
@@ -417,6 +422,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       A: toStr(d?.A),
       P: toStr(d?.P),
       tags: Array.isArray(d?.tags) ? d.tags : [],
+      medications: Array.isArray(d?.medications) ? d.medications : [], // ⬅️ novo
       updatedAt: d?.updatedAt,
     };
   }, [hookDraft]);
@@ -437,6 +443,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         A: toStr(prev?.A),
         P: toStr(prev?.P),
         tags: Array.isArray(prev?.tags) ? prev.tags : [],
+        medications: Array.isArray(prev?.medications) ? prev.medications : [],
         updatedAt: prev?.updatedAt,
       };
       const next = updater(before);
@@ -533,6 +540,15 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
     return eid;
   };
 
+  const cleanMeds = (arr: Med[]) =>
+    (arr || [])
+      .map((m) => ({
+        name: (m.name || "").trim(),
+        freq: (m.freq || "")?.trim() || null,
+        duration: (m.duration || "")?.trim() || null,
+      }))
+      .filter((m) => m.name.length > 0);
+
   /** Finaliza e cria evolução a partir do rascunho (fluxo “Gerar agora”) */
   const finalizeNow = async () => {
     try {
@@ -572,8 +588,9 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         };
 
         const userId = (await supabase.auth.getUser()).data.user?.id as string;
+        const meds = cleanMeds(draft.medications || []);
 
-        const evoInsert = {
+        const evoInsertBase: any = {
           owner_id: userId,
           patient_id,
           appointment_id: appointmentId || null,
@@ -589,7 +606,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           conduct: parseConduct(draft.P) ?? null,
           observations: parseObservations(draft.O, draft.S) ?? null,
           next_steps: undefined,
-          medications: [] as any[],
+          // medications será tentado abaixo
           data_json: {
             vitals,
             S: draft.S || "",
@@ -597,6 +614,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             A: draft.A || "",
             P: draft.P || "",
             tags: draft.tags || [],
+            medications: meds, // espelho
             updatedAt: draft.updatedAt || new Date().toISOString(),
           },
           s_text: draft.S || null,
@@ -606,13 +624,24 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: draft.tags || [],
         };
 
-        if (evoInsert.patient_id) {
-          const { error: evoErr } = await supabase
+        // tenta inserir COM medications
+        let insErr = null;
+        {
+          const { error } = await supabase
             .from("patient_evolution")
-            .insert([evoInsert]);
-          if (evoErr) console.warn("evolution insert failed:", evoErr);
-        } else {
-          console.warn("patient_evolution skipped: patient_id não encontrado");
+            .insert([{ ...evoInsertBase, medications: meds }]);
+          insErr = error || null;
+        }
+
+        // se coluna não existir, re-tenta SEM medications
+        const medColMissing =
+          insErr &&
+          (insErr.code === "PGRST204" ||
+            /medications.*(does not exist|could not find)/i.test(insErr.message || ""));
+        if (medColMissing) {
+          await supabase.from("patient_evolution").insert([evoInsertBase]);
+        } else if (insErr) {
+          console.warn("evolution insert failed:", insErr);
         }
       } catch (err) {
         console.warn("evolution creation warning:", err);
@@ -671,7 +700,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           conduct: null as string | null,
           observations: null as string | null,
           next_steps: undefined,
-          medications: [] as any[],
+          // medications: opcional
           data_json: {
             S: "",
             O: "",
@@ -679,6 +708,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             P: "",
             vitals: {},
             tags: [] as string[],
+            medications: [] as Med[],
             updatedAt: new Date().toISOString(),
             pending: true, // ⬅️ marcador usado na timeline
           },
@@ -689,14 +719,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: [] as string[],
         };
 
-        if (evoInsert.patient_id) {
-          const { error: evoErr } = await supabase
-            .from("patient_evolution")
-            .insert([evoInsert]);
-          if (evoErr) console.warn("evolution blank insert failed:", evoErr);
-        } else {
-          console.warn("patient_evolution blank skipped: patient_id não encontrado");
-        }
+        await supabase.from("patient_evolution").insert([evoInsert]);
       } catch (err) {
         console.warn("evolution blank creation warning:", err);
       }
@@ -723,6 +746,16 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
 
   const removeTag = (tag: string) =>
     setDraft((d) => ({ ...d, tags: (d.tags || []).filter((t) => t !== tag) }));
+
+  const addMed = () =>
+    setDraft((d) => ({ ...d, medications: [...(d.medications || []), { name: "" }] }));
+  const setMed = (idx: number, patch: Partial<Med>) =>
+    setDraft((d) => ({
+      ...d,
+      medications: (d.medications || []).map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+    }));
+  const delMed = (idx: number) =>
+    setDraft((d) => ({ ...d, medications: (d.medications || []).filter((_, i) => i !== idx) }));
 
   /* ===================== Render ===================== */
   return (
@@ -928,6 +961,52 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
               onAdd={(tag) => addTag(tag)}
               suggestions={["Ansiedade leve", "Insônia", "Cefaleia", "Check-up"]}
             />
+          </div>
+
+          {/* MEDICAÇÕES */}
+          <div className="mt-6 rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <PillIcon className="w-4 h-4 text-violet-600" />
+              <div className="text-sm font-semibold text-slate-700">Medicações</div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {(draft.medications || []).map((m, i) => (
+                <div key={i} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                  <input
+                    className="md:col-span-5 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Nome (ex.: sertralina 50mg)"
+                    value={m.name || ""}
+                    onChange={(e) => setMed(i, { name: e.target.value })}
+                  />
+                  <input
+                    className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Frequência (ex.: 8/8h)"
+                    value={m.freq || ""}
+                    onChange={(e) => setMed(i, { freq: e.target.value })}
+                  />
+                  <input
+                    className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Duração (ex.: 7 dias)"
+                    value={m.duration || ""}
+                    onChange={(e) => setMed(i, { duration: e.target.value })}
+                  />
+                  <button
+                    className="md:col-span-1 rounded-lg border border-rose-200 text-rose-700 px-3 py-2 text-sm hover:bg-rose-50"
+                    onClick={() => delMed(i)}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 text-sm"
+              onClick={addMed}
+            >
+              + Adicionar medicação
+            </button>
           </div>
         </div>
       </div>

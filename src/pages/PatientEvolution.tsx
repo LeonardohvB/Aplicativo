@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEvolutionFiles } from "../hooks/useEvolutionFiles";
 import PatientEvolutionTimeline from "../components/Patients/PatientEvolutionTimeline";
+import LiveEncounter from "./LiveEncounter";
 
 /* =============== helpers =============== */
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
@@ -23,9 +24,7 @@ const maskCell = (v?: string | null) => {
   if (!d) return "";
   // (11) 9 9999-9999
   const dd = d.padEnd(11, " ");
-  return `(${dd.slice(0, 2)}) ${dd.slice(2, 3)} ${dd.slice(3, 7)}-${dd
-    .slice(7, 11)
-    .trim()}`;
+  return `(${dd.slice(0, 2)}) ${dd.slice(2, 3)} ${dd.slice(3, 7)}-${dd.slice(7, 11).trim()}`;
 };
 
 const maskCPF = (v?: string | null) => {
@@ -33,12 +32,8 @@ const maskCPF = (v?: string | null) => {
   if (!d) return "";
   if (d.length <= 3) return d;
   if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9)
-    return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(
-    9,
-    11
-  )}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
 };
 
 const initials = (name?: string | null) =>
@@ -105,9 +100,7 @@ function TabButton({
       onClick={onClick}
       className={[
         "px-1 pb-2 -mb-px inline-flex items-center gap-2 text-sm whitespace-nowrap",
-        active
-          ? "text-blue-700 border-b-2 border-blue-600"
-          : "text-gray-700 hover:text-gray-900",
+        active ? "text-blue-700 border-b-2 border-blue-600" : "text-gray-700 hover:text-gray-900",
       ].join(" ")}
     >
       {icon}
@@ -153,8 +146,46 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   /* ---------- arquivos da evolução (placeholder geral) ---------- */
   // quando você ligar anexos por evolução específica, troque 'evolutionId'
   const evolutionId = undefined;
-  const { files, uploadFile, removeFile, loading: loadingFiles } =
-    useEvolutionFiles(evolutionId);
+  const { files, uploadFile, removeFile, loading: loadingFiles } = useEvolutionFiles(evolutionId);
+
+  /* ===== overlay do LiveEncounter (edição com o mesmo layout do atendimento) ===== */
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [liveInitial, setLiveInitial] = useState<any | null>(null);
+
+  useEffect(() => {
+    // abre overlay quando alguém dispara encounter:open
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<any>)?.detail || {};
+      // d pode conter: appointmentId, patientName, professionalName, serviceName, encounterId, autoFinalize
+      setLiveInitial({
+        appointmentId: d.appointmentId ?? "",
+        patientName: d.patientName ?? (patient?.name || "Paciente"),
+        professionalName: d.professionalName ?? "Profissional",
+        serviceName: d.serviceName ?? "Consulta",
+        encounterId: d.encounterId, // quando vier de um card existente
+      });
+      setLiveOpen(true);
+    };
+
+    const onClose = () => setLiveOpen(false);
+
+    window.addEventListener("encounter:open", onOpen as EventListener);
+    window.addEventListener("encounter:close", onClose as EventListener);
+    return () => {
+      window.removeEventListener("encounter:open", onOpen as EventListener);
+      window.removeEventListener("encounter:close", onClose as EventListener);
+    };
+  }, [patient?.name]);
+
+  // trava/destrava scroll do body quando overlay está aberto
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    if (liveOpen) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = prev || "";
+    return () => {
+      document.body.style.overflow = prev || "";
+    };
+  }, [liveOpen]);
 
   /* ===== fechar sugestões ao clicar fora / ESC ===== */
   useEffect(() => {
@@ -236,7 +267,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         .eq("id", id)
         .maybeSingle();
 
-      if (error) throw error;
+    if (error) throw error;
       setPatient((data || null) as Patient | null);
       setTab("timeline"); // foca na aba timeline
       setRefreshTick((x) => x + 1); // força a timeline montar limpa
@@ -318,11 +349,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
       return {
         total: countErr ? null : typeof count === "number" ? count : null,
-        last: lastErr
-          ? null
-          : (lastRow as any)?.date
-          ? formatDateBR((lastRow as any).date)
-          : null,
+        last: lastErr ? null : (lastRow as any)?.date ? formatDateBR((lastRow as any).date) : null,
       };
     };
 
@@ -379,10 +406,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
     <div className="p-4 pb-24 bg-gray-50 min-h-screen">
       {/* topo */}
       <div className="relative flex items-center mb-3">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center text-blue-600 hover:text-blue-800"
-        >
+        <button onClick={onBack} className="inline-flex items-center text-blue-600 hover:text-blue-800">
           <ArrowLeft className="w-5 h-5 mr-2" />
           Voltar
         </button>
@@ -403,7 +427,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
       <div className="relative mb-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
+          <input
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -419,16 +443,10 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
             ref={sugBoxRef}
             className="absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg"
           >
-            {loadingSug && (
-              <div className="px-3 py-2 text-sm text-gray-500">
-                Carregando…
-              </div>
-            )}
+            {loadingSug && <div className="px-3 py-2 text-sm text-gray-500">Carregando…</div>}
 
             {!loadingSug && suggestions.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gray-500">
-                Nenhum paciente encontrado
-              </div>
+              <div className="px-3 py-2 text-sm text-gray-500">Nenhum paciente encontrado</div>
             )}
 
             {!loadingSug &&
@@ -469,34 +487,20 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
             {/* min-w-0 permite o texto encolher dentro do flex */}
             <div className="flex-1 min-w-0">
-              <div className="text-base md:text-lg font-semibold text-gray-900 break-words">
-                {displayName}
-              </div>
-              <div className="text-xs md:text-sm text-gray-500 break-words">
-                CPF: {displayCPF || "—"}
-              </div>
+              <div className="text-base md:text-lg font-semibold text-gray-900 break-words">{displayName}</div>
+              <div className="text-xs md:text-sm text-gray-500 break-words">CPF: {displayCPF || "—"}</div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-gray-500">
-                    Idade
-                  </div>
-                  <div className="text-gray-900">
-                    {displayAge !== null ? `${displayAge} anos` : "—"}
-                  </div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">Idade</div>
+                  <div className="text-gray-900">{displayAge !== null ? `${displayAge} anos` : "—"}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-gray-500">
-                    Total de consultas
-                  </div>
-                  <div className="text-gray-900">
-                    {totalConsults !== null ? totalConsults : "—"}
-                  </div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">Total de consultas</div>
+                  <div className="text-gray-900">{totalConsults !== null ? totalConsults : "—"}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-gray-500">
-                    Última consulta
-                  </div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">Última consulta</div>
                   <div className="text-gray-900">{lastConsult || "—"}</div>
                 </div>
               </div>
@@ -546,14 +550,9 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         <div className="space-y-4 evo-wrap">
           {/* Timeline de evoluções */}
           {patient ? (
-            <PatientEvolutionTimeline
-              key={`${patient.id}:${refreshTick}`}
-              patientId={patient.id}
-            />
+            <PatientEvolutionTimeline key={`${patient.id}:${refreshTick}`} patientId={patient.id} />
           ) : (
-            <div className="text-sm text-gray-600">
-              Selecione um paciente para ver a linha do tempo.
-            </div>
+            <div className="text-sm text-gray-600">Selecione um paciente para ver a linha do tempo.</div>
           )}
 
           {/* Anexos gerais (placeholder) */}
@@ -561,9 +560,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
             <div className="rounded-lg border border-gray-200 bg-white">
               <div className="flex items-center justify-between px-3 py-2">
                 <div>
-                  <div className="text-sm font-medium text-gray-800">
-                    Anexos da evolução
-                  </div>
+                  <div className="text-sm font-medium text-gray-800">Anexos da evolução</div>
                   <div className="text-xs text-gray-500">
                     {loadingFiles
                       ? "Carregando…"
@@ -596,20 +593,12 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
               {files.length > 0 && (
                 <ul className="divide-y divide-gray-100">
                   {files.map((f) => (
-                    <li
-                      key={f.id}
-                      className="flex items-center justify-between px-3 py-2 text-sm"
-                    >
+                    <li key={f.id} className="flex items-center justify-between px-3 py-2 text-sm">
                       <div className="flex items-center gap-2 min-w-0">
                         <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-800 break-words">
-                          {f.file_name}
-                        </span>
+                        <span className="text-gray-800 break-words">{f.file_name}</span>
                       </div>
-                      <button
-                        className="text-red-600 hover:underline"
-                        onClick={() => removeFile(f.id, f.file_path)}
-                      >
+                      <button className="text-red-600 hover:underline" onClick={() => removeFile(f.id, f.file_path)}>
                         Remover
                       </button>
                     </li>
@@ -621,17 +610,9 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {tab === "metrics" && (
-        <div className="text-sm text-gray-600">
-          Em breve: gráficos de sinais vitais, evolução de medidas, etc.
-        </div>
-      )}
+      {tab === "metrics" && <div className="text-sm text-gray-600">Em breve: gráficos de sinais vitais, evolução de medidas, etc.</div>}
 
-      {tab === "documents" && (
-        <div className="text-sm text-gray-600">
-          Em breve: prescrições, relatórios e documentos gerados.
-        </div>
-      )}
+      {tab === "documents" && <div className="text-sm text-gray-600">Em breve: prescrições, relatórios e documentos gerados.</div>}
 
       {/* Escopo CSS local para forçar quebra dentro da aba timeline */}
       <style>{`
@@ -641,6 +622,25 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           min-width: 0; /* ajuda em flex containers aninhados */
         }
       `}</style>
+
+      {/* ===== Overlay do LiveEncounter ===== */}
+      {liveOpen && (
+        <div className="fixed inset-0 z-[100] bg-white">
+          {/* opcional: botão de fechar no topo */}
+          <div className="absolute top-0 left-0 right-0 h-12 flex items-center justify-between px-3 sm:px-4 bg-white/80 backdrop-blur-sm border-b border-slate-200 z-[101]">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
+              className="text-blue-600 hover:text-blue-700 font-medium"
+              title="Fechar edição"
+            >
+              Fechar
+            </button>
+          </div>
+          <div className="pt-12 h-full overflow-auto">
+            <LiveEncounter initialData={liveInitial || undefined} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

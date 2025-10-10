@@ -1,5 +1,5 @@
 // src/components/Patients/PatientEvolutionTimeline.tsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   User2,
@@ -13,12 +13,13 @@ import {
   Trash2,
   Stethoscope,
   Clock,
+  Heart,
   X,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { usePatientEvolutionFeed, EvolutionItem } from "../../hooks/usePatientEvolutionFeed";
 
-/* ============ helpers ============ */
+/* ================= helpers ================= */
 function fmtDate(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -32,8 +33,8 @@ function fmtTime(iso?: string) {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 function splitUnit(v: string): [string, string] {
-  const m = v.trim().match(/^(\d+(?:[\.,]\d+)?(?:\/\d+(?:[\.,]\d+)?)?)\s*(.*)$/);
-  if (!m) return [v, ""];
+  const m = (v || "").trim().match(/^(\d+(?:[\.,]\d+)?(?:\/\d+(?:[\.,]\d+)?)?)\s*(.*)$/);
+  if (!m) return [v || "", ""];
   return [m[1], m[2] || ""];
 }
 const parseLines = (s: string) =>
@@ -41,6 +42,16 @@ const parseLines = (s: string) =>
     .split(/\r?\n| - |•|,|;/g)
     .map((x) => x.trim())
     .filter(Boolean);
+
+function fromObs(obs: string, key: "S" | "O"): string {
+  // tenta pegar "Subjetivo: ..." e "Objetivo: ..."
+  const re = key === "S" ? /Subjetivo:\s*([\s\S]*)/i : /Objetivo:\s*([\s\S]*)/i;
+  const m = (obs || "").match(re);
+  if (!m) return "";
+  // se houver também a outra seção, corta ali
+  const cutRe = key === "S" ? /Objetivo:/i : /Subjetivo:/i;
+  return m[1].split(cutRe)[0].trim();
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{children}</div>;
@@ -108,28 +119,10 @@ function VitalInline({
   );
 }
 
-/* ============ tipos ============ */
+/* ================= tipos ================= */
 type Med = { name: string; freq?: string | null; duration?: string | null };
 
-type EditState = {
-  id: string;
-  title: string;
-  pending: boolean; // exibido, mas calculado automaticamente
-  vitals: { bp?: string; hr?: string; temp?: string; weight?: string; height?: string };
-  // S/O/A/P
-  subjective: string; // S
-  objective: string; // O
-  assessment: string; // A
-  plan: string; // P
-  // extras usados pelo card
-  symptomsText: string;  // tags
-  diagnosisText: string; // diagnóstico como lista (um por linha)
-  conduct: string;
-  observations: string;
-  next_steps: string;
-};
-
-/* ============ Confirm Dialog ============ */
+/* ================= ConfirmDialog ================= */
 function ConfirmDialog({
   open,
   title = "Confirmar",
@@ -173,7 +166,21 @@ function ConfirmDialog({
   );
 }
 
-/* ============ Modal de edição – layout semelhante ao atendimento ============ */
+/* ================= Editor (igual ao LiveEncounter) ================= */
+type EditState = {
+  id: string;
+  title: string;
+  vitals: { bp?: string; hr?: string; temp?: string; weight?: string; height?: string };
+  S: string;
+  O: string;
+  A: string;
+  P: string;
+  tagsText: string;
+  tags: string[];
+  medications: Med[];
+  pending?: boolean;
+};
+
 function Chip({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
     <button
@@ -185,7 +192,6 @@ function Chip({ children, onClick }: { children: React.ReactNode; onClick: () =>
     </button>
   );
 }
-
 function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-slate-200 p-3">
@@ -228,89 +234,134 @@ function EditModal({
     };
   }, [open, onClose]);
 
+  // ⚠️ NENHUM HOOK DEPOIS DO RETURN
+  const computedPending = useMemo(() => {
+    const f = form;
+    if (!f) return true;
+    const hasVitals =
+      !!f.vitals.bp || !!f.vitals.hr || !!f.vitals.temp || !!f.vitals.weight || !!f.vitals.height;
+    const hasSOAP =
+      f.S.trim() || f.O.trim() || f.A.trim() || f.P.trim() ||
+      (f.tags?.length ?? 0) > 0 || (f.medications?.length ?? 0) > 0;
+    return !(hasVitals || hasSOAP);
+  }, [form]);
+
   if (!open || !form) return null;
 
   const setVital = (k: keyof EditState["vitals"], v: string) =>
     setForm((f) => (f ? { ...f, vitals: { ...(f.vitals || {}), [k]: v } } : f));
 
-  // status calculado
-  const computedPending = (() => {
-    const hasVitals =
-      !!form.vitals.bp || !!form.vitals.hr || !!form.vitals.temp || !!form.vitals.weight || !!form.vitals.height;
-    const hasSOAP =
-      (form.subjective?.trim()?.length ?? 0) > 0 ||
-      (form.objective?.trim()?.length ?? 0) > 0 ||
-      (form.assessment?.trim()?.length ?? 0) > 0 ||
-      (form.plan?.trim()?.length ?? 0) > 0 ||
-      (form.symptomsText?.trim()?.length ?? 0) > 0 ||
-      (form.diagnosisText?.trim()?.length ?? 0) > 0 ||
-      (form.conduct?.trim()?.length ?? 0) > 0 ||
-      (form.observations?.trim()?.length ?? 0) > 0 ||
-      (form.next_steps?.trim()?.length ?? 0) > 0;
-    return !(hasVitals || hasSOAP);
-  })();
+  const addTag = (t: string) =>
+    setForm((f) =>
+      f
+        ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])), tagsText: [...(f.tags || []), t].join("\n") }
+        : f
+    );
+  const removeTag = (t: string) =>
+    setForm((f) =>
+      f
+        ? { ...f, tags: (f.tags || []).filter((x) => x !== t), tagsText: (f.tags || []).filter((x) => x !== t).join("\n") }
+        : f
+    );
 
+  const addMed = () =>
+    setForm((f) => (f ? { ...f, medications: [...(f.medications || []), { name: "" }] } : f));
+  const setMed = (idx: number, patch: Partial<Med>) =>
+    setForm((f) =>
+      f
+        ? {
+            ...f,
+            medications: (f.medications || []).map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+          }
+        : f
+    );
+  const delMed = (idx: number) =>
+    setForm((f) => (f ? { ...f, medications: (f.medications || []).filter((_, i) => i !== idx) } : f));
+
+  // === Salvamento com mesmo caminho do LiveEncounter ===
   const doSave = async () => {
     try {
       setSaving(true);
 
-      const subjective = (form.subjective || "").trim();
-      const objective  = (form.objective  || "").trim();
-      const assessment = (form.assessment || "").trim(); // um por linha
-      const plan       = (form.plan       || "").trim();
+      const S = (form.S || "").trim();
+      const O = (form.O || "").trim();
+      const A = (form.A || "").trim();
+      const P = (form.P || "").trim();
 
-      // diagnóstico como lista (usa “Diagnóstico (lista)” se preenchido; senão usa A)
-      const diagnosisArr = form.diagnosisText?.trim()
-        ? parseLines(form.diagnosisText)
-        : parseLines(assessment);
+      const diagnosisArr = parseLines(A);
+      const symptomsArr = (form.tags || []).filter(Boolean);
 
-      const symptomsArr = parseLines(form.symptomsText || "");
+      const observations =
+        [
+          O ? `Objetivo: ${O}` : "",
+          S ? `Subjetivo: ${S}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n") || null;
 
-      // mapeamento p/ colunas lidas pela timeline
-      const observations = objective || form.observations || null; // O
-      const conduct      = plan || form.conduct || null;           // P
-      const nextSteps    = plan || form.next_steps || null;        // P
+      const conduct = P || null;
+      const nextSteps = null;
 
-      // recálculo de pending
-      const hasVitals =
-        !!form.vitals.bp || !!form.vitals.hr || !!form.vitals.temp ||
-        !!form.vitals.weight || !!form.vitals.height;
+      const cleanMeds =
+        (form.medications || [])
+          .map((m) => ({
+            name: (m.name || "").trim(),
+            freq: (m.freq || "")?.trim() || null,
+            duration: (m.duration || "")?.trim() || null,
+          }))
+          .filter((m) => m.name.length > 0);
 
-      const hasContent =
-        subjective || objective || assessment || plan ||
-        symptomsArr.length || diagnosisArr.length ||
-        (observations ?? "").toString().trim() ||
-        (conduct ?? "").toString().trim() ||
-        (nextSteps ?? "").toString().trim();
+      const pending =
+        !(
+          S || O || A || P ||
+          symptomsArr.length || diagnosisArr.length ||
+          cleanMeds.length ||
+          form.vitals.bp || form.vitals.hr || form.vitals.temp || form.vitals.weight || form.vitals.height
+        );
 
-      const pending = !(hasVitals || hasContent);
-
-      const data_json: any = {
-        vitals: form.vitals || {},
-        tags: symptomsArr,
-        subjective,
-        objective,
-        assessment,
-        plan,
-        updatedAt: new Date().toISOString(),
-        pending,
-      };
-
-      const update = {
+      const baseUpdate: any = {
         title: form.title || "Consulta",
         vitals: form.vitals || {},
         symptoms: symptomsArr,
         diagnosis: diagnosisArr,
-        observations,         // O
-        conduct,              // P
-        next_steps: nextSteps, // P
-        data_json,
+        observations,
+        conduct,
+        next_steps: nextSteps,
+        // espelho do LiveEncounter:
+        data_json: {
+          vitals: form.vitals || {},
+          S, O, A, P,
+          tags: symptomsArr,
+          medications: cleanMeds,
+          updatedAt: new Date().toISOString(),
+          pending,
+        },
+        // colunas auxiliares usadas no LiveEncounter
+        s_text: S || null,
+        o_text: O || null,
+        a_text: A || null,
+        p_text: P || null,
+        tags: symptomsArr,
       };
 
-      const { error } = await supabase
+      // tenta com medications (se a coluna existir)
+      let { error } = await supabase
         .from("patient_evolution")
-        .update(update)
+        .update({ ...baseUpdate, medications: cleanMeds })
         .eq("id", form.id);
+
+      // fallback: sem a coluna medications
+      const missingMedCol =
+        error &&
+        (error.code === "PGRST204" ||
+          /medications.*(does not exist|could not find)/i.test(error.message || ""));
+      if (missingMedCol) {
+        const retry = await supabase
+          .from("patient_evolution")
+          .update(baseUpdate)
+          .eq("id", form.id);
+        error = retry.error || null;
+      }
 
       if (error) throw error;
 
@@ -323,11 +374,6 @@ function EditModal({
     } finally {
       setSaving(false);
     }
-  };
-
-  const ph = {
-    tags: "Adicionar tag (ex.: ‘Ansiedade leve’)\nou separe por vírgula/linha",
-    diag: "Um por linha\nEx.: F41.1 Transtorno de ansiedade",
   };
 
   return (
@@ -353,14 +399,14 @@ function EditModal({
             <span
               className={[
                 "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1",
-                computedPending
+                (form.pending ?? computedPending)
                   ? "bg-amber-50 text-amber-700 ring-amber-200"
                   : "bg-emerald-50 text-emerald-700 ring-emerald-200",
               ].join(" ")}
               title="Status calculado automaticamente"
             >
               <Clock className="w-3.5 h-3.5" />
-              {computedPending ? "Pendente" : "Concluída"}
+              {(form.pending ?? computedPending) ? "Pendente" : "Concluída"}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -394,7 +440,7 @@ function EditModal({
             />
           </div>
 
-          {/* SINAIS VITAIS */}
+          {/* VITAIS */}
           <Card title="SINAIS VITAIS" icon={<Activity className="w-4 h-4 text-indigo-600" />}>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               <div>
@@ -407,13 +453,10 @@ function EditModal({
                 />
                 <div className="mt-2 flex gap-2">
                   {["120/80", "130/85", "110/70"].map((v) => (
-                    <Chip key={v} onClick={() => setVital("bp", v)}>
-                      {v}
-                    </Chip>
+                    <Chip key={v} onClick={() => setVital("bp", v)}>{v}</Chip>
                   ))}
                 </div>
               </div>
-
               <div>
                 <div className="text-xs font-medium text-slate-600 mb-1">FC</div>
                 <input
@@ -424,13 +467,10 @@ function EditModal({
                 />
                 <div className="mt-2 flex gap-2">
                   {["68 bpm", "72 bpm", "78 bpm"].map((v) => (
-                    <Chip key={v} onClick={() => setVital("hr", v)}>
-                      {v}
-                    </Chip>
+                    <Chip key={v} onClick={() => setVital("hr", v)}>{v}</Chip>
                   ))}
                 </div>
               </div>
-
               <div>
                 <div className="text-xs font-medium text-slate-600 mb-1">Temp.</div>
                 <input
@@ -441,13 +481,10 @@ function EditModal({
                 />
                 <div className="mt-2 flex gap-2">
                   {["36.3 °C", "36.5 °C", "37.0 °C"].map((v) => (
-                    <Chip key={v} onClick={() => setVital("temp", v)}>
-                      {v}
-                    </Chip>
+                    <Chip key={v} onClick={() => setVital("temp", v)}>{v}</Chip>
                   ))}
                 </div>
               </div>
-
               <div>
                 <div className="text-xs font-medium text-slate-600 mb-1">Peso</div>
                 <input
@@ -458,13 +495,10 @@ function EditModal({
                 />
                 <div className="mt-2 flex gap-2">
                   {["70 kg", "78.5 kg", "80 kg"].map((v) => (
-                    <Chip key={v} onClick={() => setVital("weight", v)}>
-                      {v}
-                    </Chip>
+                    <Chip key={v} onClick={() => setVital("weight", v)}>{v}</Chip>
                   ))}
                 </div>
               </div>
-
               <div>
                 <div className="text-xs font-medium text-slate-600 mb-1">Altura</div>
                 <input
@@ -475,22 +509,20 @@ function EditModal({
                 />
                 <div className="mt-2 flex gap-2">
                   {["170 cm", "175 cm", "180 cm"].map((v) => (
-                    <Chip key={v} onClick={() => setVital("height", v)}>
-                      {v}
-                    </Chip>
+                    <Chip key={v} onClick={() => setVital("height", v)}>{v}</Chip>
                   ))}
                 </div>
               </div>
             </div>
           </Card>
 
-          {/* S / O / A / P */}
+          {/* SOAP */}
           <Card title="S — Subjetivo (relato do paciente)">
             <textarea
               className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
               placeholder="Digite aqui…"
-              value={form.subjective}
-              onChange={(e) => setForm({ ...form, subjective: e.target.value })}
+              value={form.S}
+              onChange={(e) => setForm({ ...form, S: e.target.value })}
             />
           </Card>
 
@@ -498,8 +530,8 @@ function EditModal({
             <textarea
               className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
               placeholder="Digite aqui…"
-              value={form.objective}
-              onChange={(e) => setForm({ ...form, objective: e.target.value })}
+              value={form.O}
+              onChange={(e) => setForm({ ...form, O: e.target.value })}
             />
           </Card>
 
@@ -507,8 +539,8 @@ function EditModal({
             <textarea
               className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
               placeholder="Digite aqui… (um por linha)"
-              value={form.assessment}
-              onChange={(e) => setForm({ ...form, assessment: e.target.value })}
+              value={form.A}
+              onChange={(e) => setForm({ ...form, A: e.target.value })}
             />
           </Card>
 
@@ -516,8 +548,8 @@ function EditModal({
             <textarea
               className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
               placeholder="Digite aqui…"
-              value={form.plan}
-              onChange={(e) => setForm({ ...form, plan: e.target.value })}
+              value={form.P}
+              onChange={(e) => setForm({ ...form, P: e.target.value })}
             />
           </Card>
 
@@ -526,40 +558,67 @@ function EditModal({
             <SectionTitle>Sintomas/Tags</SectionTitle>
             <textarea
               className="w-full min-h-[90px] rounded-lg border border-slate-300 px-3 py-2"
-              placeholder={ph.tags}
-              value={form.symptomsText}
-              onChange={(e) => setForm({ ...form, symptomsText: e.target.value })}
+              placeholder={"Adicionar tag (ex.: ‘Ansiedade leve’)\nou separe por vírgula/linha"}
+              value={form.tagsText}
+              onChange={(e) => setForm({ ...form, tagsText: e.target.value, tags: parseLines(e.target.value) })}
             />
             <div className="mt-2 flex flex-wrap gap-2">
               {["Ansiedade leve", "Insônia", "Cefaleia", "Check-up"].map((tag) => (
-                <Chip
-                  key={tag}
-                  onClick={() =>
-                    setForm((f) =>
-                      f
-                        ? {
-                            ...f,
-                            symptomsText: f.symptomsText ? `${f.symptomsText.trim()}\n${tag}` : tag,
-                          }
-                        : f
-                    )
-                  }
-                >
-                  {tag}
-                </Chip>
+                <Chip key={tag} onClick={() => addTag(tag)}>{tag}</Chip>
+              ))}
+              {(form.tags || []).map((t) => (
+                <span key={t} className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs inline-flex items-center gap-2">
+                  {t}
+                  <button onClick={() => removeTag(t)} aria-label={`Remover ${t}`}>×</button>
+                </span>
               ))}
             </div>
           </div>
 
-          {/* Diagnóstico (lista) */}
-          <div>
-            <SectionTitle>Diagnóstico (lista)</SectionTitle>
-            <textarea
-              className="w-full min-h-[90px] rounded-lg border border-slate-300 px-3 py-2"
-              placeholder={ph.diag}
-              value={form.diagnosisText}
-              onChange={(e) => setForm({ ...form, diagnosisText: e.target.value })}
-            />
+          {/* Medicações */}
+          <div className="rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <PillIcon className="w-4 h-4 text-violet-600" />
+              <div className="text-sm font-semibold text-slate-700">Medicações</div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {(form.medications || []).map((m, i) => (
+                <div key={i} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+                  <input
+                    className="sm:col-span-5 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Nome (ex.: sertralina 50mg)"
+                    value={m.name || ""}
+                    onChange={(e) => setMed(i, { name: e.target.value })}
+                  />
+                  <input
+                    className="sm:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Frequência (ex.: 8/8h)"
+                    value={m.freq || ""}
+                    onChange={(e) => setMed(i, { freq: e.target.value })}
+                  />
+                  <input
+                    className="sm:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Duração (ex.: 7 dias)"
+                    value={m.duration || ""}
+                    onChange={(e) => setMed(i, { duration: e.target.value })}
+                  />
+                  <button
+                    className="sm:col-span-1 rounded-lg border border-rose-200 text-rose-700 px-3 py-2 text-sm hover:bg-rose-50"
+                    onClick={() => delMed(i)}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 text-sm"
+              onClick={addMed}
+            >
+              + Adicionar medicação
+            </button>
           </div>
         </div>
 
@@ -584,7 +643,7 @@ function EditModal({
   );
 }
 
-/* ============ Timeline ============ */
+/* ================= Timeline (cards) ================= */
 export default function PatientEvolutionTimeline({ patientId }: { patientId: string }) {
   const { data, loading, error } = usePatientEvolutionFeed(patientId);
 
@@ -597,18 +656,17 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
   const openEditor = (item: EvolutionItem, isPending: boolean) => {
     const dj: any = (item as any)?.data_json || {};
     const v = (item as any).vitals || dj.vitals || {};
-    const symptoms = (item as any).symptoms || dj.tags || [];
-    const diagnosis = (item as any).diagnosis || [];
+    const tagsArr: string[] = (item as any).symptoms || dj.tags || [];
+    const meds: Med[] = (item as any).medications || dj.medications || [];
+    const observations = (item as any).observations || "";
 
-    const assessmentText =
-      typeof dj.assessment === "string" && dj.assessment.trim().length
-        ? dj.assessment
-        : Array.isArray(diagnosis) ? diagnosis.join("\n") : "";
+    // S/O: tenta nas colunas especializadas, depois data_json, depois extrai de 'observations'
+    const S_raw = dj.S || dj.subjective || (item as any).s_text || fromObs(observations, "S");
+    const O_raw = dj.O || dj.objective || (item as any).o_text || fromObs(observations, "O");
 
     setEditInitial({
       id: item.id,
       title: item.title || "Consulta",
-      pending: isPending || dj.pending === true,
       vitals: {
         bp: v.bp || "",
         hr: v.hr || "",
@@ -616,15 +674,14 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
         weight: v.weight || "",
         height: v.height || "",
       },
-      subjective: dj.subjective || "",
-      objective: dj.objective || "",
-      assessment: assessmentText,
-      plan: dj.plan || ((item as any).conduct || (item as any).next_steps || ""),
-      symptomsText: Array.isArray(symptoms) ? symptoms.join("\n") : "",
-      diagnosisText: Array.isArray(diagnosis) ? diagnosis.join("\n") : "",
-      conduct: (item as any).conduct || "",
-      observations: (item as any).observations || "",
-      next_steps: (item as any).next_steps || "",
+      S: S_raw || "",
+      O: O_raw || "",
+      A: dj.A || dj.assessment || (((item as any).diagnosis || []) as string[]).join("\n"),
+      P: dj.P || dj.plan || ((item as any).conduct || (item as any).next_steps || ""),
+      tags: Array.isArray(tagsArr) ? tagsArr : [],
+      tagsText: Array.isArray(tagsArr) ? tagsArr.join("\n") : "",
+      medications: Array.isArray(meds) ? meds : [],
+      pending: isPending || dj.pending === true,
     });
     setEditOpen(true);
   };
@@ -804,7 +861,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                     <VitalGroup
                       items={[
                         { icon: <Activity className="w-4 h-4 text-slate-400" />, label: "Pressão", value: v.bp },
-                        { icon: <Activity className="w-4 h-4 text-slate-400" />, label: "FC", value: v.hr },
+                        { icon: <Heart className="w-4 h-4 text-slate-400" />, label: "FC", value: v.hr },
                         { icon: <Thermometer className="w-4 h-4 text-slate-400" />, label: "Temp.", value: v.temp },
                         { icon: <Scale className="w-4 h-4 text-slate-400" />, label: "Peso", value: v.weight },
                         { icon: <Ruler className="w-4 h-4 text-slate-400" />, label: "Altura", value: v.height },
@@ -862,17 +919,12 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                               >
                                 <PillIcon className="w-4 h-4 mt-0.5" />
                                 <div className="text-sm min-w-0">
-                                  <div
-                                    className="font-semibold text-gray-800 break-words"
-                                    style={{ overflowWrap: "anywhere" }}
-                                  >
+                                  <div className="font-semibold text-gray-800 break-words" style={{ overflowWrap: "anywhere" }}>
                                     {m.name}
                                   </div>
                                   {(m.freq || m.duration) && (
                                     <div className="text-[12px] text-gray-700/80 break-words">
-                                      {m.freq ?? ""}
-                                      {m.freq && m.duration ? " • " : ""}
-                                      {m.duration ?? ""}
+                                      {m.freq ?? ""}{m.freq && m.duration ? " • " : ""}{m.duration ?? ""}
                                     </div>
                                   )}
                                 </div>
@@ -898,9 +950,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         <div className="rounded-xl border border-slate-200 p-3">
                           <div className="flex items-center gap-2">
                             <ClipboardList className="w-4 h-4 text-blue-500" />
-                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                              Próximos passos
-                            </div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Próximos passos</div>
                           </div>
                           <div
                             className="mt-1 text-sm font-normal text-gray-800 whitespace-pre-wrap leading-relaxed break-words"
