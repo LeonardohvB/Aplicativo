@@ -112,7 +112,7 @@ body {
       e ainda cria um respiro interno no fim do scroll (16px) */
 .app-viewport .min-h-screen {
   min-height: 100%;
-  padding-bottom: 100px; /* margem DENTRO do conteúdo rolável */
+  padding-bottom: 110px; /* margem DENTRO do conteúdo rolável */
 }
 
 /* Pinta a faixa da safe area superior (iOS) com a mesma cor do app */
