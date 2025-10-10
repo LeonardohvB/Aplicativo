@@ -400,7 +400,7 @@ function EditModal({
               className={[
                 "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1",
                 (form.pending ?? computedPending)
-                  ? "bg-amber-50 text-amber-700 ring-amber-200"
+                  ? "bg-amber-50 text-amber-700 ring-orange-600"
                   : "bg-emerald-50 text-emerald-700 ring-emerald-200",
               ].join(" ")}
               title="Status calculado automaticamente"
@@ -774,7 +774,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                 <div
                   className={[
                     "rounded-2xl bg-white border p-4 shadow-sm transform transition-transform duration-300 ease-in-out group-[.show]:-translate-x-20",
-                    isPending ? "border-amber-300 ring-1 ring-amber-200/60" : "border-slate-200",
+                    isPending ? "border-orange-700 ring-1 ring-orange-600/60" : "border-slate-200",
                   ].join(" ")}
                   onTouchStart={(e) => {
                     (e.currentTarget as any).dataset.startX = e.touches[0].clientX.toString();
@@ -809,7 +809,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         </div>
 
                         {isPending && (
-                          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-semibold ring-1 ring-amber-200">
+                          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-orange-50 text-orange-700 px-2 py-0.5 text-[11px] font-semibold ring-1 ring-orange-600">
                             <Clock className="w-3.5 h-3.5" />
                             Pendente
                           </span>
@@ -848,7 +848,7 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                       </div>
 
                       {isPending && (
-                        <div className="mt-2 inline-flex items-center gap-2 rounded-lg bg-amber-50 text-amber-800 px-2 py-1 ring-1 ring-amber-200">
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-lg orange-50 text-orange-700 px-2 py-1 ring-1 ring-orange-600">
                           <Clock className="w-4 h-4" />
                           <span className="text-xs font-medium">Evolução pendente de preenchimento</span>
                         </div>

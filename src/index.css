@@ -126,7 +126,25 @@ body::before {
   pointer-events: none;
 }
 
-/* esconde scrollbars */
+/* ================== Oculta barras de rolagem GLOBALMENTE ================== */
+/* Mantém o scroll ativo, apenas esconde a UI das barras */
+html,
+body,
+.app-viewport {
+  -ms-overflow-style: none;   /* IE/Edge legado */
+  scrollbar-width: none;      /* Firefox */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.app-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;              /* Chrome/Safari/Edge (Chromium) */
+  background: transparent;
+}
+
+/* (ainda disponível caso queira ocultar em contêineres específicos) */
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;

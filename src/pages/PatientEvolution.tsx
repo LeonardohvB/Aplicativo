@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
- 
   Calendar as CalendarIcon,
   UploadCloud,
   FileText,
@@ -414,8 +413,6 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         <h1 className="absolute left-1/2 -translate-x-1/2 text-xl font-bold text-gray-900 whitespace-nowrap">
           Evolução do Paciente
         </h1>
-
-        
       </div>
 
       {/* busca */}
@@ -517,7 +514,8 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
       {/* Abas (fora de “pílula”) */}
       <div className="mb-3 border-b border-gray-200">
-        <div className="flex gap-4 overflow-x-auto">
+        {/* ADIÇÃO: no-scrollbar para ocultar a barrinha sob as abas */}
+        <div className="flex gap-4 overflow-x-auto no-scrollbar">
           <TabButton
             active={tab === "timeline"}
             onClick={() => setTab("timeline")}
@@ -631,7 +629,8 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
               Fechar
             </button>
           </div>
-          <div className="pt-12 h-full overflow-auto">
+          {/* ADIÇÃO: no-scrollbar para esconder a barra vertical do overlay */}
+          <div className="pt-12 h-full overflow-auto no-scrollbar">
             <LiveEncounter initialData={liveInitial || undefined} />
           </div>
         </div>
