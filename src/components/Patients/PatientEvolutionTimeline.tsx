@@ -1,5 +1,5 @@
 // src/components/Patients/PatientEvolutionTimeline.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   User2,
@@ -76,7 +76,11 @@ function Box({ title, children }: { title: string; children: React.ReactNode }) 
 }
 
 /* ============ vitais (render da timeline) ============ */
-function VitalGroup({ items }: { items: Array<{ icon: React.ReactNode; label: string; value?: string }> }) {
+function VitalGroup({
+  items,
+}: {
+  items: Array<{ icon: React.ReactNode; label: string; value?: string }>;
+}) {
   const visible = items.filter((i) => i.value && String(i.value).trim().length);
   if (!visible.length) return null;
   return (
@@ -89,7 +93,15 @@ function VitalGroup({ items }: { items: Array<{ icon: React.ReactNode; label: st
     </div>
   );
 }
-function VitalInline({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function VitalInline({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
   const [num, unit] = splitUnit(value);
   return (
     <div className="text-center">
@@ -109,7 +121,15 @@ function VitalInline({ icon, label, value }: { icon: React.ReactNode; label: str
 type Med = { name: string; freq?: string | null; duration?: string | null };
 
 /* ================= ConfirmDialog ================= */
-function ConfirmDialog({ open, title = "Confirmar", message, confirmText = "Confirmar", cancelText = "Cancelar", onConfirm, onCancel }: {
+function ConfirmDialog({
+  open,
+  title = "Confirmar",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+}: {
   open: boolean;
   title?: string;
   message: string;
@@ -132,7 +152,10 @@ function ConfirmDialog({ open, title = "Confirmar", message, confirmText = "Conf
           <button onClick={onCancel} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
             {cancelText}
           </button>
-          <button onClick={onConfirm} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700">
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700"
+          >
             {confirmText}
           </button>
         </div>
@@ -141,7 +164,7 @@ function ConfirmDialog({ open, title = "Confirmar", message, confirmText = "Conf
   );
 }
 
-/* ================= Editor ================= */
+/* ================= Editor (igual ao LiveEncounter) ================= */
 type EditState = {
   id: string;
   title: string;
@@ -167,8 +190,25 @@ function Chip({ children, onClick }: { children: React.ReactNode; onClick: () =>
     </button>
   );
 }
+function Card({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        {icon}
+        {title}
+      </div>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
 
-function EditModal({ open, initial, onClose, onSaved, askDelete }: {
+function EditModal({
+  open,
+  initial,
+  onClose,
+  onSaved,
+  askDelete,
+}: {
   open: boolean;
   initial: EditState | null;
   onClose: () => void;
@@ -192,33 +232,109 @@ function EditModal({ open, initial, onClose, onSaved, askDelete }: {
     };
   }, [open, onClose]);
 
+  const computedPending = useMemo(() => {
+    const f = form;
+    if (!f) return true;
+    const hasVitals =
+      !!f.vitals.bp || !!f.vitals.hr || !!f.vitals.temp || !!f.vitals.weight || !!f.vitals.height;
+    const hasSOAP =
+      f.S.trim() || f.O.trim() || f.A.trim() || f.P.trim() ||
+      (f.tags?.length ?? 0) > 0 || (f.medications?.length ?? 0) > 0;
+    return !(hasVitals || hasSOAP);
+  }, [form]);
+
+  if (!open || !form) return null;
+
+  // vitais
+  const setVital = (k: keyof EditState["vitals"], v: string) =>
+    setForm((f) => (f ? { ...f, vitals: { ...(f.vitals || {}), [k]: v } } : f));
+
+  // tags
+  const addQuickTag = (t: string) =>
+    setForm((f) =>
+      f
+        ? { ...f, tags: Array.from(new Set([...(f.tags || []), t])), tagsText: [...(f.tags || []), t].join("\n") }
+        : f
+    );
+  const removeTag = (t: string) =>
+    setForm((f) =>
+      f
+        ? { ...f, tags: (f.tags || []).filter((x) => x !== t), tagsText: (f.tags || []).filter((x) => x !== t).join("\n") }
+        : f
+    );
+
+  // meds
+  const addMed = () =>
+    setForm((f) => (f ? { ...f, medications: [...(f.medications || []), { name: "" }] } : f));
+  const setMed = (idx: number, patch: Partial<Med>) =>
+    setForm((f) =>
+      f
+        ? {
+            ...f,
+            medications: (f.medications || []).map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+          }
+        : f
+    );
+  const delMed = (idx: number) =>
+    setForm((f) => (f ? { ...f, medications: (f.medications || []).filter((_, i) => i !== idx) } : f));
+
+  // salvar
   const doSave = async () => {
     try {
       setSaving(true);
-      const S = (form?.S || "").trim();
-      const O = (form?.O || "").trim();
-      const A = (form?.A || "").trim();
-      const P = (form?.P || "").trim();
-      const diagnosisArr = parseLines(A);
-      const symptomsArr = (form?.tags || []).filter(Boolean);
-      const observations = [O ? `Objetivo: ${O}` : "", S ? `Subjetivo: ${S}` : ""].filter(Boolean).join("\n") || null;
-      const conduct = P || null;
-      const cleanMeds = (form?.medications || [])
-        .map((m) => ({
-          name: (m.name || "").trim(),
-          freq: (m.freq || "")?.trim() || null,
-          duration: (m.duration || "")?.trim() || null,
-        }))
-        .filter((m) => m.name.length > 0);
 
-      const baseUpdate = {
-        title: form?.title || "Consulta",
-        vitals: form?.vitals || {},
+      const S = (form.S || "").trim();
+      const O = (form.O || "").trim();
+      const A = (form.A || "").trim();
+      const P = (form.P || "").trim();
+
+      const diagnosisArr = parseLines(A);
+      const symptomsArr = (form.tags || []).filter(Boolean);
+
+      const observations =
+        [
+          O ? `Objetivo: ${O}` : "",
+          S ? `Subjetivo: ${S}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n") || null;
+
+      const conduct = P || null;
+      const nextSteps = null;
+
+      const cleanMeds =
+        (form.medications || [])
+          .map((m) => ({
+            name: (m.name || "").trim(),
+            freq: (m.freq || "")?.trim() || null,
+            duration: (m.duration || "")?.trim() || null,
+          }))
+          .filter((m) => m.name.length > 0);
+
+      const pending =
+        !(
+          S || O || A || P ||
+          symptomsArr.length || diagnosisArr.length ||
+          cleanMeds.length ||
+          form.vitals.bp || form.vitals.hr || form.vitals.temp || form.vitals.weight || form.vitals.height
+        );
+
+      const baseUpdate: any = {
+        title: form.title || "Consulta",
+        vitals: form.vitals || {},
         symptoms: symptomsArr,
         diagnosis: diagnosisArr,
         observations,
         conduct,
-        data_json: { vitals: form?.vitals || {}, S, O, A, P, tags: symptomsArr, medications: cleanMeds },
+        next_steps: nextSteps,
+        data_json: {
+          vitals: form.vitals || {},
+          S, O, A, P,
+          tags: symptomsArr,
+          medications: cleanMeds,
+          updatedAt: new Date().toISOString(),
+          pending,
+        },
         s_text: S || null,
         o_text: O || null,
         a_text: A || null,
@@ -226,45 +342,80 @@ function EditModal({ open, initial, onClose, onSaved, askDelete }: {
         tags: symptomsArr,
       };
 
-      const { error } = await supabase.from("patient_evolution").update(baseUpdate).eq("id", form!.id);
+      let { error } = await supabase
+        .from("patient_evolution")
+        .update({ ...baseUpdate, medications: cleanMeds })
+        .eq("id", form.id);
+
+      const missingMedCol =
+        error &&
+        (error.code === "PGRST204" ||
+          /medications.*(does not exist|could not find)/i.test(error.message || ""));
+      if (missingMedCol) {
+        const retry = await supabase
+          .from("patient_evolution")
+          .update(baseUpdate)
+          .eq("id", form.id);
+        error = retry.error || null;
+      }
+
       if (error) throw error;
+
       onSaved?.();
       onClose();
       window.dispatchEvent(new CustomEvent("timeline:refresh"));
     } catch (e) {
+      console.warn("save evolution error:", e);
       alert("Não foi possível salvar. Tente novamente.");
     } finally {
       setSaving(false);
     }
   };
 
-  if (!open || !form) return null;
-
   return (
-    <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-2 sm:p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-2 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-0" />
       <div
-        className="relative z-10 w-full sm:w-auto max-w-[100vw] sm:max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl ring-1 ring-black/10 max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col"
+        className="
+          relative z-10 w-full sm:w-auto max-w-[100vw] sm:max-w-3xl
+          bg-white rounded-t-2xl sm:rounded-2xl shadow-xl ring-1 ring-black/10
+          max-h-[92vh] sm:max-h-[85vh] overflow-hidden flex flex-col
+        "
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
         <div className="px-3 sm:px-4 py-3 border-b flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h3 className="text-base sm:text-lg font-semibold text-slate-900">Editar evolução</h3>
+            <span
+              className={[
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1",
+                (form?.pending ?? computedPending)
+                  ? "bg-amber-50 text-amber-700 ring-orange-600"
+                  : "bg-emerald-50 text-emerald-700 ring-emerald-200",
+              ].join(" ")}
+              title="Status calculado automaticamente"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              {(form?.pending ?? computedPending) ? "Pendente" : "Concluída"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => askDelete(form.id)}
-              className="inline-flex items-center gap-2 rounded-lg border border-rose-200 text-rose-700 px-2.5 py-1.5 text-sm hover:bg-rose-50 disabled:opacity-60"
-              disabled={saving}
+              onClick={() => askDelete(form!.id)}
+              className="inline-flex items-center gap-2 rounded-lg border border-rose-200 text-rose-700 px-2.5 py-1.5 text-sm hover:bg-rose-50"
             >
               <Trash2 className="w-4 h-4" />
               <span className="hidden sm:inline">Excluir</span>
             </button>
             <button
               onClick={onClose}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 text-slate-700 px-2.5 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 text-slate-700 px-2.5 py-1.5 text-sm hover:bg-slate-50"
             >
               <X className="w-4 h-4" />
               <span className="hidden sm:inline">Fechar</span>
@@ -272,19 +423,212 @@ function EditModal({ open, initial, onClose, onSaved, askDelete }: {
           </div>
         </div>
 
-        <fieldset disabled={saving} className={saving ? "opacity-60" : ""}>
-          <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-4">
-            {/* campos mantidos idênticos — vitais, SOAP, tags, medicações */}
-            {/* (conteúdo idêntico ao original, apenas removidas funções não usadas) */}
+        {/* conteúdo */}
+        <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 space-y-4">
+          {/* título */}
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Título</label>
+            <input
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={form?.title || ""}
+              onChange={(e) => setForm({ ...(form as EditState), title: e.target.value })}
+              placeholder="Ex.: Consulta de acompanhamento"
+            />
           </div>
-        </fieldset>
+
+          {/* VITAIS */}
+          <Card title="SINAIS VITAIS" icon={<Activity className="w-4 h-4 text-indigo-600" />}>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Pressão</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="120/80"
+                  value={form?.vitals.bp || ""}
+                  onChange={(e) => setVital("bp", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["120/80", "130/85", "110/70"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("bp", v)}>{v}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">FC</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="72 bpm"
+                  value={form?.vitals.hr || ""}
+                  onChange={(e) => setVital("hr", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["68 bpm", "72 bpm", "78 bpm"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("hr", v)}>{v}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Temp.</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="36.5 °C"
+                  value={form?.vitals.temp || ""}
+                  onChange={(e) => setVital("temp", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["36.3 °C", "36.5 °C", "37.0 °C"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("temp", v)}>{v}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Peso</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="78.5 kg"
+                  value={form?.vitals.weight || ""}
+                  onChange={(e) => setVital("weight", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["70 kg", "78.5 kg", "80 kg"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("weight", v)}>{v}</Chip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-600 mb-1">Altura</div>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="175 cm"
+                  value={form?.vitals.height || ""}
+                  onChange={(e) => setVital("height", e.target.value)}
+                />
+                <div className="mt-2 flex gap-2">
+                  {["170 cm", "175 cm", "180 cm"].map((v) => (
+                    <Chip key={v} onClick={() => setVital("height", v)}>{v}</Chip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* SOAP */}
+          <Card title="S — Subjetivo (relato do paciente)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form?.S || ""}
+              onChange={(e) => setForm({ ...(form as EditState), S: e.target.value })}
+            />
+          </Card>
+
+          <Card title="O — Objetivo (exame/achados)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form?.O || ""}
+              onChange={(e) => setForm({ ...(form as EditState), O: e.target.value })}
+            />
+          </Card>
+
+          <Card title="A — Avaliação (diagnóstico/CID)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui… (um por linha)"
+              value={form?.A || ""}
+              onChange={(e) => setForm({ ...(form as EditState), A: e.target.value })}
+            />
+          </Card>
+
+          <Card title="P — Plano (conduta/medicação/próximos passos)">
+            <textarea
+              className="w-full min-h-[100px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Digite aqui…"
+              value={form?.P || ""}
+              onChange={(e) => setForm({ ...(form as EditState), P: e.target.value })}
+            />
+          </Card>
+
+          {/* Tags */}
+          <div>
+            <SectionTitle>Sintomas/Tags</SectionTitle>
+            <textarea
+              className="w-full min-h-[90px] rounded-lg border border-slate-300 px-3 py-2"
+              placeholder={"Adicionar tag (ex.: ‘Ansiedade leve’)\nou separe por vírgula/linha"}
+              value={form?.tagsText || ""}
+              onChange={(e) =>
+                setForm({
+                  ...(form as EditState),
+                  tagsText: e.target.value,
+                  tags: parseLines(e.target.value),
+                })
+              }
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              {["Ansiedade leve", "Insônia", "Cefaleia", "Check-up"].map((tag) => (
+                <Chip key={tag} onClick={() => addQuickTag(tag)}>{tag}</Chip>
+              ))}
+              {(form?.tags || []).map((t) => (
+                <span key={t} className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs inline-flex items-center gap-2">
+                  {t}
+                  <button onClick={() => removeTag(t)} aria-label={`Remover ${t}`}>×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Medicações */}
+          <div className="rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <PillIcon className="w-4 h-4 text-violet-600" />
+              <div className="text-sm font-semibold text-slate-700">Medicações</div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {(form?.medications || []).map((m, i) => (
+                <div key={i} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+                  <input
+                    className="sm:col-span-5 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Nome (ex.: sertralina 50mg)"
+                    value={m.name || ""}
+                    onChange={(e) => setMed(i, { name: e.target.value })}
+                  />
+                  <input
+                    className="sm:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Frequência (ex.: 8/8h)"
+                    value={m.freq || ""}
+                    onChange={(e) => setMed(i, { freq: e.target.value })}
+                  />
+                  <input
+                    className="sm:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Duração (ex.: 7 dias)"
+                    value={m.duration || ""}
+                    onChange={(e) => setMed(i, { duration: e.target.value })}
+                  />
+                  <button
+                    className="sm:col-span-1 rounded-lg border border-rose-200 text-rose-700 px-3 py-2 text-sm hover:bg-rose-50"
+                    onClick={() => delMed(i)}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 text-sm"
+              onClick={addMed}
+            >
+              + Adicionar medicação
+            </button>
+          </div>
+        </div>
 
         {/* footer */}
         <div className="border-t px-3 sm:px-4 py-2 sm:py-3 bg-white flex flex-col sm:flex-row gap-2 sm:gap-3">
           <button
             onClick={onClose}
-            disabled={saving}
-            className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-slate-700 disabled:opacity-60"
+            className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 text-slate-700"
           >
             Cancelar
           </button>
@@ -300,7 +644,6 @@ function EditModal({ open, initial, onClose, onSaved, askDelete }: {
     </div>
   );
 }
-
 
 /* ================= Timeline (cards) ================= */
 export default function PatientEvolutionTimeline({ patientId }: { patientId: string }) {
@@ -501,30 +844,45 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                     if (delta < -30) e.currentTarget.parentElement?.classList.remove("show");
                   }}
                 >
-                  {/* header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 flex flex-col gap-1 min-w-0">
-                      <div className="text-lg font-bold text-gray-900 break-words" style={{ overflowWrap: "anywhere" }}>
-                        {item.title || "Consulta de Acompanhamento"}
+                  {/* header (título + badge na mesma linha, responsivo) */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {/* Linha 1: título e badge (quebra controlada no mobile) */}
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div
+                          className="text-lg font-bold text-gray-900 w-full sm:flex-auto min-w-0 whitespace-normal"
+                          style={{ overflowWrap: "anywhere" }}
+                        >
+                          {item.title || "Consulta de Acompanhamento"}
+                        </div>
+                        {specialty && (
+                          <span
+                            className="shrink-0 inline-flex items-center rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-semibold border border-blue-200 sm:ml-auto"
+                            title={specialty}
+                          >
+                            {specialty}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-start justify-between text-sm text-gray-600 font-normal flex-wrap gap-x-3 gap-y-1">
-                        <div className="inline-flex items-start gap-2">
+                      {/* Linha 2: data/hora + nome do profissional por extenso */}
+                      <div className="mt-1 flex flex-wrap items-start gap-x-3 gap-y-1 text-sm text-gray-600">
+                        <span className="inline-flex items-start gap-2">
                           <CalendarDays className="w-4 h-4 text-slate-400 mt-0.5" />
-                          <div className="leading-tight">
+                          <span className="leading-tight">
                             <div>{fmtDate(item.occurred_at)}</div>
                             <div className="text-xs">{fmtTime(item.occurred_at)}</div>
-                          </div>
-                        </div>
+                          </span>
+                        </span>
 
                         {item.professional_name && (
-                          <span className="inline-flex items-start gap-2 ml-auto min-w-0">
+                          <span className="inline-flex items-start gap-2 min-w-0">
                             <User2 className="w-4 h-4 text-slate-400 mt-[2px]" />
                             <span
-                              className="leading-tight text-right break-words"
-                              style={{ overflowWrap: "anywhere" }}
+                              className="leading-tight text-gray-700 max-w-[68vw] sm:max-w-[360px] truncate"
+                              title={item.professional_name}
                             >
-                              <div className="font-normal text-gray-600">{item.professional_name}</div>
+                              {item.professional_name}
                             </span>
                           </span>
                         )}
@@ -537,29 +895,17 @@ export default function PatientEvolutionTimeline({ patientId }: { patientId: str
                         </div>
                       )}
                     </div>
-
-                    {/* badge de profissão/especialidade */}
-                    <div className="shrink-0 flex items-center gap-2 ml-2">
-                      {specialty && (
-                        <span
-                          className="inline-flex items-center rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-semibold border border-blue-200"
-                          title={specialty}
-                        >
-                          {specialty}
-                        </span>
-                      )}
-                    </div>
                   </div>
 
                   {/* vitais */}
                   {(v.bp || v.hr || v.temp || v.weight || v.height) && (
                     <VitalGroup
                       items={[
-                        { icon: <Activity className="w-4 h-4 text-slate-400" />, label: "Pressão", value: v.bp },
-                        { icon: <Heart className="w-4 h-4 text-slate-400" />, label: "FC", value: v.hr },
-                        { icon: <Thermometer className="w-4 h-4 text-slate-400" />, label: "Temp.", value: v.temp },
-                        { icon: <Scale className="w-4 h-4 text-slate-400" />, label: "Peso", value: v.weight },
-                        { icon: <Ruler className="w-4 h-4 text-slate-400" />, label: "Altura", value: v.height },
+                        { icon: <Activity className="w-4 h-4 text-slate-400" />, label: "Pressão", value: (v as any).bp },
+                        { icon: <Heart className="w-4 h-4 text-slate-400" />, label: "FC", value: (v as any).hr },
+                        { icon: <Thermometer className="w-4 h-4 text-slate-400" />, label: "Temp.", value: (v as any).temp },
+                        { icon: <Scale className="w-4 h-4 text-slate-400" />, label: "Peso", value: (v as any).weight },
+                        { icon: <Ruler className="w-4 h-4 text-slate-400" />, label: "Altura", value: (v as any).height },
                       ]}
                     />
                   )}
