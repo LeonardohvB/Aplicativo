@@ -225,12 +225,9 @@ function parseConduct(p: string): string | undefined {
   return t || undefined;
 }
 function parseObservations(o: string, s: string): string | undefined {
-  const out = [
-    o?.trim() ? `Objetivo: ${o.trim()}` : "",
-    s?.trim() ? `Subjetivo: ${s.trim()}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const S = (s ?? "").toString().trim();
+  const O = (o ?? "").toString().trim();
+  const out = [O ? `Objetivo: ${O}` : "", S ? `Subjetivo: ${S}` : ""].filter(Boolean).join("\n");
   return out || undefined;
 }
 
@@ -262,6 +259,47 @@ async function findPatientId(patientName?: string, phoneMasked?: string) {
   }
 
   return patient_id;
+}
+
+/** Busca dados do profissional logado.
+ *  - especialidade vem de `professionals.specialty`
+ *  - nome vem de `professionals.name` (fallback: `profiles.name`)
+ *  - proId é o `professionals.id` (usado para gravar em patient_evolution.professional_id)
+ */
+async function getProfessionalInfo() {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id || null;
+
+  let proId: string | null = null;
+  let specialty: string | null = null;
+  let profName: string | null = null;
+
+  if (userId) {
+    // busca o registro do profissional: preferir owner_id = userId; fallback: id = userId (legado)
+    const { data: pro } = await supabase
+      .from("professionals")
+      .select("id, owner_id, name, specialty")
+      .or(`owner_id.eq.${userId},id.eq.${userId}`)
+      .maybeSingle();
+
+    if (pro) {
+      proId = (pro as any)?.id ?? null;
+      specialty = (pro as any)?.specialty ?? null;
+      profName = (pro as any)?.name ?? null;
+    }
+
+    // fallback: nome do perfil
+    if (!profName) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", userId)
+        .maybeSingle();
+      profName = (prof as any)?.name || null;
+    }
+  }
+
+  return { userId, proId, role: specialty, profName };
 }
 
 /* ==========================================================
@@ -563,7 +601,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   /** Finaliza e cria evolução a partir do rascunho (fluxo “Gerar agora”) */
   const finalizeNow = async () => {
     try {
-      // plain text (opcional)
       const plain =
         [
           draft.S && `S: ${draft.S}`,
@@ -583,12 +620,14 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       });
       if (!eid) return;
 
+      // pega profissão/cargo e id do registro do profissional
+      const { userId, proId, role, profName } = await getProfessionalInfo();
+
       // Cria evolução preenchida
       try {
         const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
         const title = serviceName || "Consulta";
-        const specialty = serviceName || null;
 
         const vitals = {
           bp: draft.vitals.bp || undefined,
@@ -598,17 +637,16 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           height: draft.vitals.height || undefined,
         };
 
-        const userId = (await supabase.auth.getUser()).data.user?.id as string;
         const meds = cleanMeds(draft.medications || []);
 
         const evoInsertBase: any = {
-          owner_id: userId,
+          owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
-          professional_id: userId,
-          professional_name: professionalName || "Profissional",
-          specialty,
-          title,
+          professional_id: proId ?? userId!, // <-- usa professionals.id
+          professional_name: professionalName || profName || "Profissional",
+          specialty: role, // profissão/cargo
+          title,           // “Consulta (online)” permanece no título
           type: "consultation",
           occurred_at,
           vitals,
@@ -687,20 +725,22 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       });
       if (!eid) return;
 
+      // pega profissão/cargo e id do registro do profissional
+      const { userId, proId, role, profName } = await getProfessionalInfo();
+
       // Cria evolução “vazia” com flag de pendência
       try {
         const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
         const title = serviceName || "Consulta";
-        const userId = (await supabase.auth.getUser()).data.user?.id as string;
 
         const evoInsert = {
-          owner_id: userId,
+          owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
-          professional_id: userId,
-          professional_name: professionalName || "Profissional",
-          specialty: serviceName || null,
+          professional_id: proId ?? userId!, // <-- usa professionals.id
+          professional_name: professionalName || profName || "Profissional",
+          specialty: role, // profissão/cargo
           title,
           type: "consultation",
           occurred_at,
