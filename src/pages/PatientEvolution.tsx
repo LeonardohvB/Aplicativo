@@ -10,7 +10,7 @@ import {
   Search,
   Phone,
   Mail,
-  FileDown,
+  Download,
 } from "lucide-react";
 import { useEvolutionFiles } from "../hooks/useEvolutionFiles";
 import PatientEvolutionTimeline from "../components/Patients/PatientEvolutionTimeline";
@@ -25,17 +25,11 @@ import PDFMedicalReport, {
 const onlyDigits = (v: string) => (v || "").replace(/\D+/g, "");
 
 const maskCell = (v?: string | null) => {
-  const d = onlyDigits(v || "");
+  const d = onlyDigits(v || "").slice(0, 11);
   if (!d) return "";
-  if (d.length <= 10) {
-    const p = d.padEnd(10, " ");
-    return `(${p.slice(0, 2)}) ${p.slice(2, 6)}-${p.slice(6, 10).trim()}`;
-  }
-  const p = d.padEnd(11, " ");
-  return `(${p.slice(0, 2)}) ${p.slice(2, 3)} ${p.slice(3, 7)}-${p.slice(7, 11).trim()}`;
+  const dd = d.padEnd(11, " ");
+  return `(${dd.slice(0, 2)}) ${dd.slice(2, 3)} ${dd.slice(3, 7)}-${dd.slice(7, 11).trim()}`;
 };
-
-const maskPhoneAny = maskCell;
 
 const maskCPF = (v?: string | null) => {
   const d = onlyDigits(v || "").slice(0, 11);
@@ -46,27 +40,30 @@ const maskCPF = (v?: string | null) => {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9, 11)}`;
 };
 
-const maskCNPJ = (v?: string | null) => {
-  const d = onlyDigits(v || "").slice(0, 14);
-  if (!d) return "—";
-  if (d.length <= 2) return d;
-  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
-  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
-  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
-};
+const initials = (name?: string | null) =>
+  (name || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || "")
+    .join("");
 
 // Calcula idade a partir de birth_date no formato ISO "YYYY-MM-DD"
 const ageFromISO = (iso?: string | null): number | null => {
   if (!iso) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return null;
-  const yyyy = +m[1], mm = +m[2], dd = +m[3];
+  const yyyy = +m[1],
+    mm = +m[2],
+    dd = +m[3];
+
   const today = new Date();
   let age = today.getFullYear() - yyyy;
-  const month = today.getMonth() + 1;
+
+  const month = today.getMonth() + 1; // 1..12
   const day = today.getDate();
   if (month < mm || (month === mm && day < dd)) age--;
+
   return age >= 0 ? age : null;
 };
 
@@ -77,15 +74,6 @@ const formatDateBR = (iso?: string | null) => {
   if (!m) return iso;
   return `${m[3]}/${m[2]}/${m[1]}`;
 };
-
-// extrai S/O de um campo observations
-function fromObs(obs: string, key: "S" | "O"): string {
-  const re = key === "S" ? /Subjetivo:\s*([\s\S]*)/i : /Objetivo:\s*([\s\S]*)/i;
-  const m = (obs || "").match(re);
-  if (!m) return "";
-  const cutRe = key === "S" ? /Objetivo:/i : /Subjetivo:/i;
-  return m[1].split(cutRe)[0].trim();
-}
 
 /* =============== types =============== */
 type Patient = {
@@ -163,7 +151,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   const evolutionId = undefined;
   const { files, uploadFile, removeFile, loading: loadingFiles } = useEvolutionFiles(evolutionId);
 
-  /* ===== overlay do LiveEncounter (edição com o mesmo layout do atendimento) ===== */
+  /* ===== overlay do LiveEncounter ===== */
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveInitial, setLiveInitial] = useState<any | null>(null);
 
@@ -413,222 +401,108 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
   const displayEmail = useMemo(() => patient?.email || "", [patient]);
   const displayAge = useMemo(() => ageFromISO(patient?.birth_date), [patient]);
 
-  /* ======= Estados/efeito do PDF ======= */
+  /* ====== PDF: estados ====== */
   const [pdfOpen, setPdfOpen] = useState(false);
-  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [pdfConsults, setPdfConsults] = useState<PDFConsultation[]>([]);
   const [pdfClinic, setPdfClinic] = useState<PDFClinic | null>(null);
-  const [pdfPatient, setPdfPatient] = useState<PDFPatient | null>(null);
-  const [pdfConsultations, setPdfConsultations] = useState<PDFConsultation[]>([]);
 
-  useEffect(() => {
-    if (!pdfOpen || !patient?.id) return;
+  // Carrega CONSULTAS de patient_evolution
+  const loadPdfData = useCallback(async () => {
+    if (!patient?.id) return;
 
-    let alive = true;
-    const loadAll = async () => {
-      setLoadingPdf(true);
-      try {
-        // -------- 1) PERFIL DA CLÍNICA ----------
-        const { data: me } = await supabase.auth.getUser();
-        const uid = me.user?.id;
+    const { data, error } = await supabase
+      .from("patient_evolution")
+      .select(
+        "id, occurred_at, professional_name, specialty, title, symptoms, diagnosis, conduct, observations, data_json, vitals, medications, s_text, o_text, a_text, p_text"
+      )
+      .eq("patient_id", patient.id)
+      .order("occurred_at", { ascending: false });
 
-        let { data: clinicRow } = await supabase
-          .from("profiles")
-          .select("clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_path")
-          .eq("id", uid || "")
-          .maybeSingle();
+    if (error) {
+      console.warn("pdf load error:", error);
+      setPdfConsults([]);
+      return;
+    }
 
-        if (!clinicRow) {
-          const { data: firstRow } = await supabase
-            .from("profiles")
-            .select("clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_path")
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          clinicRow = firstRow || null;
-        }
+    const items = (data || []).map((row: any): PDFConsultation => {
+      const dj = row.data_json || {};
+      const v = row.vitals || dj.vitals || {};
+      // Observações reais (sem repetir S/O):
+      const rawObs = String(row.observations ?? dj.observations ?? "").trim();
 
-        const clinic: PDFClinic = {
-          name: clinicRow?.clinic_name || "—",
-          cnpj: maskCNPJ(clinicRow?.clinic_cnpj) || "—",
-          address: clinicRow?.clinic_address || "—",
-          city: "—",
-          phone: maskPhoneAny(clinicRow?.clinic_phone) || "—",
-          email: clinicRow?.clinic_email || "—",
-          shortId: "SI",
-        };
-        if (alive) setPdfClinic(clinic);
+      return {
+        id: row.id,
+        occurred_at: row.occurred_at, // ISO UTC do banco
+        professional: row.professional_name || "Profissional",
+        specialty: row.specialty || null,
+        type: row.title || "Consulta",
+        symptoms: row.symptoms || dj.tags || [],
+        diagnosis: row.diagnosis || [],
+        conduct: row.conduct ?? null,
+        observations: rawObs || null,
+        S: dj.S || row.s_text || "",
+        O: dj.O || row.o_text || "",
+        A: dj.A || row.a_text || (row.diagnosis || []).join("\n"),
+        P: dj.P || row.p_text || row.conduct || "",
+        vitals: {
+          pressure: v.bp,
+          heartRate: v.hr,
+          temperature: v.temp,
+          weight: v.weight,
+          height: v.height,
+        },
+        medications: row.medications || dj.medications || [],
+      };
+    });
 
-        // -------- 2) PACIENTE ----------
-        const pp: PDFPatient = {
-          id: patient.id,
-          name: patient.name || "Paciente",
-          cpf: displayCPF || undefined,
-          phone: displayPhone || undefined,
-          email: displayEmail || undefined,
-          birthDate: patient.birth_date ? formatDateBR(patient.birth_date) : undefined,
-          registrationDate: undefined,
-          age: displayAge ?? undefined,
-          totalConsultations: totalConsults ?? undefined,
-          lastConsultation: lastConsult ?? undefined,
-        };
-        if (alive) setPdfPatient(pp);
+    setPdfConsults(items);
+  }, [patient?.id]);
 
-        // -------- 3) EVOLUÇÕES (tabela) ----------
-        const { data: evo } = await supabase
-          .from("patient_evolution")
-          .select(`
-            id,
-            title,
-            occurred_at,
-            professional_name,
-            professional_role,
-            vitals,
-            symptoms,
-            diagnosis,
-            conduct,
-            observations,
-            next_steps,
-            medications,
-            data_json
-          `)
-          .eq("patient_id", patient.id)
-          .order("occurred_at", { ascending: true });
+  // Carrega CLÍNICA a partir de profiles do usuário logado
+  const loadPdfClinic = useCallback(async () => {
+    const { data: auth } = await supabase.auth.getUser();
+    const userId = auth.user?.id;
+    if (!userId) {
+      setPdfClinic(null);
+      return;
+    }
 
-        const toPDF = (rows: any[] | null | undefined): PDFConsultation[] => {
-          if (!rows || rows.length === 0) return [];
-          return rows.map((row: any): PDFConsultation => {
-            const dj = row?.data_json || {};
-            const v = row?.vitals || dj.vitals || {};
-            const S = dj.S || dj.subjective || row.s_text || fromObs(row.observations || "", "S");
-            const O = dj.O || dj.objective || row.o_text || fromObs(row.observations || "", "O");
-            const A =
-              dj.A ||
-              dj.assessment ||
-              (Array.isArray(row?.diagnosis) ? row.diagnosis.join("\n") : row?.diagnosis || "");
-            const P = dj.P || dj.plan || row.conduct || row.next_steps || "";
+    const { data: prof, error } = await supabase
+      .from("profiles")
+      .select("clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email")
+      .eq("id", userId)
+      .maybeSingle();
 
-            const occurred = row.occurred_at ? new Date(row.occurred_at) : null;
-            const date = occurred ? occurred.toLocaleDateString("pt-BR") : "—";
-            const time = occurred
-              ? occurred.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-              : "—";
+    if (error) {
+      console.warn("profile load error:", error);
+      setPdfClinic(null);
+      return;
+    }
 
-            return {
-              id: row.id,
-              date,
-              time,
-              professional: row.professional_name || "—",
-              specialty: row.professional_role || "—",
-              type: row.title || "Consulta",
-              symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
-              diagnosis: A || "—",
-              conduct: row.conduct || "",
-              observations: row.observations || "",
-              subjective: S || "",
-              objective: O || "",
-              assessment: A || "",
-              plan: P || "",
-              medications: Array.isArray(row.medications) ? row.medications : dj.medications || [],
-              vitals: {
-                pressure: v.bp,
-                heartRate: v.hr,
-                temperature: v.temp,
-                weight: v.weight,
-              },
-            };
-          });
-        };
-
-        let mapped = toPDF(evo);
-
-        // -------- Fallback para a VIEW usada na timeline ----------
-        if (mapped.length === 0) {
-          const { data: feed } = await supabase
-            .from("patient_evolution_feed")
-            .select(`
-              note_id,
-              ts,
-              title,
-              professional_name,
-              professional_role,
-              symptoms,
-              diagnosis,
-              conduct,
-              observations
-            `)
-            .eq("patient_id", patient.id)
-            .order("ts", { ascending: true });
-
-          if (feed && feed.length) {
-            mapped = feed.map((row: any): PDFConsultation => {
-              const occurred = row.ts ? new Date(row.ts) : null;
-              const date = occurred ? occurred.toLocaleDateString("pt-BR") : "—";
-              const time = occurred
-                ? occurred.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-                : "—";
-              const A = Array.isArray(row.diagnosis) ? row.diagnosis.join("\n") : row.diagnosis || "";
-              return {
-                id: row.note_id || row.ts,
-                date,
-                time,
-                professional: row.professional_name || "—",
-                specialty: row.professional_role || "—",
-                type: row.title || "Consulta",
-                symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
-                diagnosis: A,
-                conduct: row.conduct || "",
-                observations: row.observations || "",
-                subjective: "",
-                objective: "",
-                assessment: A,
-                plan: row.conduct || "",
-                medications: [],
-                vitals: {},
-              };
-            });
-          }
-        }
-
-        if (alive) setPdfConsultations(mapped);
-      } catch (e) {
-        console.warn("PDF load error:", e);
-        if (alive) {
-          setPdfClinic({
-            name: "—",
-            cnpj: "—",
-            address: "—",
-            city: "—",
-            phone: "—",
-            email: "—",
-            shortId: "SI",
-          });
-          setPdfConsultations([]);
-        }
-      } finally {
-        if (alive) setLoadingPdf(false);
-      }
+    const clinic: PDFClinic = {
+      name: prof?.clinic_name || "—",
+      cnpj: prof?.clinic_cnpj || "—",
+      address: prof?.clinic_address || "—",
+      phone: prof?.clinic_phone || "—",
+      email: prof?.clinic_email || "—",
+      shortId: (prof?.clinic_name || "SI").slice(0, 2).toUpperCase(),
+      city: "",
     };
 
-    loadAll();
-    return () => {
-      alive = false;
-    };
-  }, [
-    pdfOpen,
-    patient?.id,
-    displayAge,
-    displayCPF,
-    displayEmail,
-    displayPhone,
-    lastConsult,
-    totalConsults,
-  ]);
+    setPdfClinic(clinic);
+  }, []);
+
+  // Abrir modal já carregando tudo
+  const openPdfModal = useCallback(async () => {
+    await Promise.all([loadPdfData(), loadPdfClinic()]);
+    setPdfOpen(true);
+  }, [loadPdfData, loadPdfClinic]);
 
   /* ===== UI ===== */
   return (
     <div className="p-4 pb-24 bg-gray-50 min-h-screen">
       {/* topo */}
-      <div className="relative flex items-center mb-3">
+      <div className="relative flex items-center mb-6">
         <button onClick={onBack} className="inline-flex items-center text-blue-600 hover:text-blue-800">
           <ArrowLeft className="w-5 h-5 mr-2" />
           Voltar
@@ -638,19 +512,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           Evolução do Paciente
         </h1>
 
-        {/* Botão PDF à direita */}
-        {patient && (
-          <div className="ml-auto">
-            <button
-              onClick={() => setPdfOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
-              title="Gerar PDF do histórico"
-            >
-              <FileDown className="w-4 h-4" />
-              Gerar PDF
-            </button>
-          </div>
-        )}
+       
       </div>
 
       {/* busca */}
@@ -712,14 +574,10 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         ) : (
           <div className="flex items-start gap-3 md:gap-4">
             <div className="h-14 w-14 md:h-16 md:w-16 rounded-full bg-blue-600 text-white flex items-center justify-center text-lg font-bold">
-              {displayName
-                .trim()
-                .split(/\s+/)
-                .slice(0, 2)
-                .map((p) => p[0]?.toUpperCase() || "")
-                .join("")}
+              {initials(displayName)}
             </div>
 
+            {/* min-w-0 permite o texto encolher dentro do flex */}
             <div className="flex-1 min-w-0">
               <div className="text-base md:text-lg font-semibold text-gray-900 break-words">{displayName}</div>
               <div className="text-xs md:text-sm text-gray-500 break-words">CPF: {displayCPF || "—"}</div>
@@ -754,7 +612,7 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* Abas */}
+      {/* Abas (fora de “pílula”) */}
       <div className="mb-3 border-b border-gray-200">
         <div className="flex gap-4 overflow-x-auto no-scrollbar">
           <TabButton
@@ -777,6 +635,20 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           />
         </div>
       </div>
+
+       {/* Botão PDF à direita */}
+      
+  <div className="mb-3 flex justify-end">
+    <button
+      onClick={openPdfModal}
+      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+      title="Gerar PDF do prontuário"
+    >
+      <Download className="w-4 h-4" />
+      Baixar PDF
+    </button>
+  </div>
+
 
       {/* Conteúdo das abas */}
       {tab === "timeline" && (
@@ -877,14 +749,14 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* ===== Overlay do PDF ===== */}
+      {/* ===== Modal de Pré-visualização do PDF ===== */}
       {pdfOpen && patient && (
         <div
           className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3"
           onClick={() => setPdfOpen(false)}
         >
           <div
-            className="w-full max-w-[1120px] max-h-[95vh] bg-white rounded-xl shadow-2xl overflow-auto"
+            className="bg-white rounded-xl w-full max-w-[1120px] max-h-[95vh] overflow-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="border-b px-3 py-2 flex items-center justify-between sticky top-0 bg-white z-10">
@@ -894,33 +766,34 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
               </button>
             </div>
 
-            <div className="p-0">
-              <PDFMedicalReport
-                clinic={
-                  (pdfClinic as PDFClinic) || {
-                    name: "—",
-                    cnpj: "—",
-                    address: "—",
-                    city: "—",
-                    phone: "—",
-                    email: "—",
-                    shortId: "SI",
-                  }
+            <PDFMedicalReport
+              clinic={
+                (pdfClinic as PDFClinic) || {
+                  name: "—",
+                  cnpj: "—",
+                  address: "—",
+                  city: undefined,
+                  phone: "—",
+                  email: "—",
+                  shortId: "SI",
                 }
-                patient={
-                  (pdfPatient as PDFPatient) || {
-                    id: patient.id,
-                    name: displayName || "Paciente",
-                    cpf: displayCPF || undefined,
-                  }
-                }
-                consultations={pdfConsultations}
-              />
-            </div>
-
-            {loadingPdf && (
-              <div className="p-3 text-sm text-gray-500 border-t bg-gray-50">Carregando informações…</div>
-            )}
+              }
+              patient={
+                {
+                  id: patient.id,
+                  name: patient.name || "Paciente",
+                  cpf: patient.cpf,
+                  phone: patient.phone,
+                  email: patient.email,
+                  age: displayAge,
+                  birthDate: patient.birth_date,
+                  registrationDate: undefined,
+                  totalConsultations: totalConsults,
+                  lastConsultation: lastConsult ? `${lastConsult.split("/").reverse().join("-")}T00:00:00Z` : null,
+                } as PDFPatient
+              }
+              consultations={pdfConsults}
+            />
           </div>
         </div>
       )}
