@@ -1,3 +1,4 @@
+// src/components/Certificates/CertificatePreview.tsx
 import { forwardRef } from "react";
 
 export type CertificateFormData = {
@@ -5,8 +6,8 @@ export type CertificateFormData = {
   patientName: string;
   patientCPF?: string;
   patientRG?: string;
-  patientPhone?: string;      // <- ADICIONADO
-  patientBirthISO?: string;   // <- ADICIONADO (YYYY-MM-DD)
+  patientPhone?: string;
+  patientBirthISO?: string;
 
   // Profissional
   professionalName: string;
@@ -25,11 +26,11 @@ export type CertificateFormData = {
     | "aptidao"
     | "incapacidade";
   reason: string;
-  startDate?: string; // ISO (yyyy-mm-dd)
-  endDate?: string;   // ISO
+  startDate?: string;  // yyyy-mm-dd
+  endDate?: string;    // yyyy-mm-dd
   daysOfAbsence?: number;
   observations?: string;
-  issueDate: string;  // ISO (yyyy-mm-dd)
+  issueDate: string;   // yyyy-mm-dd
 
   // Opções
   isPaid?: boolean;
@@ -46,17 +47,22 @@ const formatCPF = (v?: string | null) => {
   if (d.length !== 11) return v || "";
   return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
 };
-const formatPhoneBR = (v?: string | null) => {
+const formatCNPJ = (v?: string | null) => {
   const d = onlyDigits(v);
-  if (d.length === 11) return d.replace(/^(\d{2})(\d)(\d{4})(\d{4})$/, "($1) $2 $3-$4");
-  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
-  return v || "";
+  if (d.length !== 14) return v || "";
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 };
 const isoToBR = (iso?: string | null) => {
   if (!iso) return "";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return "";
   return `${m[3]}/${m[2]}/${m[1]}`;
+};
+const formatPhoneBR = (v?: string | null) => {
+  const d = onlyDigits(v);
+  if (d.length === 11) return d.replace(/^(\d{2})(\d)(\d{4})(\d{4})$/, "($1) $2 $3-$4");
+  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
+  return v || "";
 };
 
 const CERT_TYPES: Record<
@@ -80,8 +86,7 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
       {/* Header */}
       <div className="border-b-4 border-blue-600 p-12 text-center bg-white">
         <div className="mb-6">
-          {/* removi inline-block (aviso de CSS) */}
-          <div className="w-20 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-2xl mb-4">
+          <div className="inline-block w-20 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-2xl mb-4">
             SI
           </div>
         </div>
@@ -106,9 +111,8 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
           <p className="text-lg font-bold">{data.patientName}</p>
           <p className="text-sm">
             {data.patientCPF ? <>CPF: {formatCPF(data.patientCPF)}</> : null}
-            {data.patientPhone ? <> {" "}| {" "}Tel: {formatPhoneBR(data.patientPhone)}</> : null}
-            {data.patientBirthISO ? <> {" "}| {" "}Nasc.: {isoToBR(data.patientBirthISO)}</> : null}
-            {data.patientRG ? <> {" "}| {" "}RG: {data.patientRG}</> : null}
+            {data.patientPhone ? <>{" "} | {" "}Tel: {formatPhoneBR(data.patientPhone)}</> : null}
+            {data.patientBirthISO ? <>{" "} | {" "}Nasc.: {isoToBR(data.patientBirthISO)}</> : null}
           </p>
         </div>
 
@@ -116,10 +120,14 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
         <div className="space-y-4 text-gray-800 leading-relaxed">
           <p>
             Compareceu a esta instituição em{" "}
-            <span className="font-bold underline">{isoToBR(data.issueDate)}</span>{" "}
-            para <span className="font-bold underline">{data.reason}</span>.
+            <span className="font-bold underline">
+              {isoToBR(data.issueDate)}
+            </span>{" "}
+            para{" "}
+            <span className="font-bold underline">{data.reason}</span>.
           </p>
 
+          {/* Bloco específico de afastamento/incapacidade */}
           {["afastamento", "incapacidade"].includes(data.certificateType) && (
             <>
               <p>
@@ -129,21 +137,21 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
                 <span className="font-bold underline">{data.daysOfAbsence ?? 1} dias</span>.
               </p>
 
-              {data.restrictedActivities ? (
-                <p>
-                  Atividades restritas:{" "}
-                  <span className="font-bold">{data.restrictedActivities}</span>
-                </p>
-              ) : null}
-
               {data.requiresRest ? (
                 <p>
-                  <span className="font-bold">REPOUSO OBRIGATÓRIO</span> é necessário durante o período de
-                  afastamento.
+                  <span className="font-bold">REPOUSO OBRIGATÓRIO</span> é necessário durante o período de afastamento.
                 </p>
               ) : null}
             </>
           )}
+
+          {/* ⚠️ Agora SEMPRE mostramos se houver conteúdo */}
+          {data.restrictedActivities ? (
+            <p>
+              Atividades restritas:{" "}
+              <span className="font-bold">{data.restrictedActivities}</span>
+            </p>
+          ) : null}
 
           {data.observations ? (
             <p className="italic text-gray-700">Observações: {data.observations}</p>
@@ -166,11 +174,15 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
           <div className="grid grid-cols-2 text-center text-sm">
             <div>
               <p className="text-gray-600 mb-4">Documento emitido em:</p>
-              <p className="font-semibold text-gray-900">{isoToBR(data.issueDate)}</p>
+              <p className="font-semibold text-gray-900">
+                {isoToBR(data.issueDate)}
+              </p>
             </div>
             <div>
-              <p className="text-gray-600 mb-4">{data.clinicName || "Clínica"}</p>
-              {data.clinicCNPJ ? <p className="text-xs text-gray-600">{data.clinicCNPJ}</p> : null}
+              <p className="text-gray-600 mb-1">{data.clinicName || "Clínica"}</p>
+              {data.clinicCNPJ ? (
+                <p className="text-xs text-gray-600">{formatCNPJ(data.clinicCNPJ)}</p>
+              ) : null}
             </div>
           </div>
         </div>
