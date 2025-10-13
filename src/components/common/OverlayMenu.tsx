@@ -1,4 +1,3 @@
-// src/components/common/OverlayMenu.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   X,
@@ -7,6 +6,7 @@ import {
   UserPlus,
   Briefcase,
   History,
+  FileText, // <- novo ícone
 } from "lucide-react";
 import { ClipboardList } from "lucide-react";
 
@@ -15,6 +15,9 @@ type Props = {
   onOpenNewPatient: () => void;
   onOpenNewProfessional: () => void;
   onOpenHistory: () => void;
+
+  // NOVO (opcional): abrir o módulo de atestado
+  onOpenCertificateNew?: () => void;
 };
 
 export default function OverlayMenu({
@@ -22,6 +25,7 @@ export default function OverlayMenu({
   onOpenNewPatient,
   onOpenNewProfessional,
   onOpenHistory,
+  onOpenCertificateNew, // <- novo
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -198,25 +202,45 @@ export default function OverlayMenu({
                   </button>
                 </li>
 
+                {/* Evolução do paciente */}
                 <li>
-                 <button
-                 role="menuitem"
-                 onClick={() => {
-                 setOpen(false);
-                 window.dispatchEvent(new CustomEvent('evolution:open'));
-           }}
-                 className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-              >
-                 <ClipboardList className="h-4 w-4" />
-                 <span>Evolução do paciente</span>
-                 </button>
-                 </li>
+                  <button
+                    role="menuitem"
+                    ref={(el) => registerItemRef(el, 3)}
+                    onClick={() => {
+                      setOpen(false);
+                      window.dispatchEvent(new CustomEvent('evolution:open'));
+                    }}
+                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                  >
+                    <ClipboardList className="h-4 w-4" />
+                    <span>Evolução do paciente</span>
+                  </button>
+                </li>
+
+                {/* Atestado (novo) */}
+                {onOpenCertificateNew && (
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, 4)}
+                      onClick={() => {
+                        setOpen(false);
+                        onOpenCertificateNew();
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span>Atestado</span>
+                    </button>
+                  </li>
+                )}
 
                 {/* Histórico de atendimentos */}
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 3)}
+                    ref={(el) => registerItemRef(el, 5)}
                     onClick={() => {
                       setOpen(false);
                       onOpenHistory();

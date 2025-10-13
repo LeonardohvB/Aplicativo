@@ -17,8 +17,17 @@ import LiveEncounter from './pages/LiveEncounter'
 import { ConfirmProvider } from './providers/ConfirmProvider'
 // import { ToastContainer } from './components/ui/toast' // REMOVIDO
 
+// === IMPORT ATESTADOS (apenas o que existe) ===
+import CertificateNew from './pages/CertificateNew'
+
 // Aceita também “rotas” internas de tela cheia
-type AppTab = Tab | 'perfil' | 'patients_new' | 'evolucao'
+type AppTab =
+  | Tab                       // suas abas da BottomNav
+  | 'perfil'
+  | 'patients_new'
+  | 'evolucao'
+  | 'certificate_new'         // apenas esta, por enquanto
+  ;
 
 // Dados passados para o prontuário (overlay)
 type EncounterData = {
@@ -35,10 +44,13 @@ export default function App() {
 
   const onlyFirst = (full?: string | null) => {
     if (!full) return null
-    const p = full.trim().split(/\s+/)
+    const p = full?.trim().split(/\s+/)
     return p[0] || null
   }
   const [firstName, setFirstName] = useState<string | null>(null)
+
+  // ======= ESTADOS ATESTADOS =======
+  const [certificateInitialData, setCertificateInitialData] = useState<any | null>(null)
 
   // ===== estado do prontuário em overlay =====
   const [liveOpen, setLiveOpen] = useState(false)
@@ -65,6 +77,18 @@ export default function App() {
     const close = () => setLiveOpen(false)
     window.addEventListener('encounter:close', close as EventListener)
     return () => window.removeEventListener('encounter:close', close as EventListener)
+  }, [])
+
+  // ===== LISTENER ATESTADOS (apenas 'certificate:new' por enquanto) =====
+  useEffect(() => {
+    const onCertificateNew = (e: any) => {
+      setCertificateInitialData(e?.detail || null) // { patientId, professionalId, title, ... }
+      setActiveTab('certificate_new')
+    }
+    window.addEventListener('certificate:new', onCertificateNew as EventListener)
+    return () => {
+      window.removeEventListener('certificate:new', onCertificateNew as EventListener)
+    }
   }, [])
 
   // ===== sessão / auth =====
@@ -158,6 +182,21 @@ export default function App() {
         return <PatientEvolution onBack={() => setActiveTab('agenda')} />
       case 'perfil':
         return <Profile onBack={() => setActiveTab('inicio')} />
+
+      // ====== NOVA TELA (Atestado - criar) ======
+      case 'certificate_new':
+        return (
+          <CertificateNew
+            onBack={() => setActiveTab('inicio')}
+            initialData={certificateInitialData || undefined}
+            // no momento, não abriremos view/list (ainda não existem)
+            onCreated={(_id) => {
+              // futuro: poderíamos disparar um 'certificates:refresh' ou voltar pra início
+              setActiveTab('inicio')
+            }}
+          />
+        )
+
       default:
         return (
           <DashboardComp
@@ -194,6 +233,8 @@ export default function App() {
                 window.dispatchEvent(new CustomEvent('agenda:openHistory'));
               }, 0);
             }}
+            // Quando quiser, adicionamos os itens de Atestado aqui:
+            onOpenCertificateNew={() => setActiveTab('certificate_new')}
           />
         </div>
 
@@ -203,7 +244,10 @@ export default function App() {
         {!liveOpen && (
           <BottomNavigation
             activeTab={
-              activeTab === 'perfil' || activeTab === 'patients_new' || activeTab === 'evolucao'
+              activeTab === 'perfil' ||
+              activeTab === 'patients_new' ||
+              activeTab === 'evolucao' ||
+              activeTab === 'certificate_new'
                 ? 'inicio'
                 : (activeTab as Tab)
             }
