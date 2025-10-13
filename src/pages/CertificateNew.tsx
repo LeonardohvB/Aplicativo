@@ -1,25 +1,25 @@
 // src/pages/CertificateNew.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { ArrowLeft, Eye, Download, Printer, Plus, AlertCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import CertificatePreview, { CertificateFormData as PreviewFormData } from "../components/Certificates/CertificatePreview";
+import CertificatePreview from "../components/Certificates/CertificatePreview";
 
 /* ============================================================
    Tipos
    ============================================================ */
 type CertificateType = "saude" | "comparecimento" | "afastamento" | "aptidao" | "incapacidade";
 
-type CertificateFormData = {
-  // Paciente (preenchidos pela seleção)
+export type CertificateFormData = {
+  // Paciente
   patientName: string;
   patientCPF?: string;
   patientPhone?: string;
-  patientBirthISO?: string; // YYYY-MM-DD
+  patientBirthISO?: string;
 
   // Profissional
   professionalName: string;
   professionalSpecialty?: string;
-  professionalCRM?: string; // registration_code
+  professionalCRM?: string;
 
   // Clínica
   clinicName?: string;
@@ -28,11 +28,11 @@ type CertificateFormData = {
   // Atestado
   certificateType: CertificateType;
   reason: string;
-  startDate?: string; // yyyy-mm-dd
-  endDate?: string;   // yyyy-mm-dd
+  startDate?: string;
+  endDate?: string;
   daysOfAbsence?: number;
   observations?: string;
-  issueDate: string; // yyyy-mm-dd
+  issueDate: string;
 
   // Opções
   isPaid?: boolean;
@@ -51,7 +51,7 @@ type Props = {
 type SavedRow = CertificateFormData & { id: string; createdAt: string };
 
 /* ============================================================
-   Helpers (debounce, datas, formatações BR)
+   Helpers
    ============================================================ */
 function useDebouncedValue<T>(value: T, delay = 250) {
   const [debounced, setDebounced] = useState(value);
@@ -62,7 +62,6 @@ function useDebouncedValue<T>(value: T, delay = 250) {
   return debounced;
 }
 
-// dias entre duas datas (inclusivo). Ex.: 12/10 a 16/10 => 5
 const daysBetweenInclusive = (start?: string, end?: string) => {
   if (!start || !end) return undefined;
   const s = new Date(start + "T00:00:00");
@@ -72,6 +71,18 @@ const daysBetweenInclusive = (start?: string, end?: string) => {
   return Math.max(1, Math.floor(ms / 86400000) + 1);
 };
 
+const onlyDigits = (s?: string | null) => (s || "").replace(/\D+/g, "");
+const formatCPF = (v?: string | null) => {
+  const d = onlyDigits(v);
+  if (d.length !== 11) return v || "";
+  return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+};
+const formatPhoneBR = (v?: string | null) => {
+  const d = onlyDigits(v);
+  if (d.length === 11) return d.replace(/^(\d{2})(\d)(\d{4})(\d{4})$/, "($1) $2 $3-$4");
+  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
+  return v || "";
+};
 const isoToBR = (iso?: string | null) => {
   if (!iso) return "";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -79,44 +90,11 @@ const isoToBR = (iso?: string | null) => {
   return `${m[3]}/${m[2]}/${m[1]}`;
 };
 
-// --- utils de formatação BR ---
-const onlyDigits = (s?: string | null) => (s || "").replace(/\D+/g, "");
-
-const formatCPF = (v?: string | null) => {
-  const d = onlyDigits(v);
-  if (d.length !== 11) return v || "";
-  return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
-};
-
-const formatPhoneBR = (v?: string | null) => {
-  const d = onlyDigits(v);
-  if (d.length === 11) return d.replace(/^(\d{2})(\d)(\d{4})(\d{4})$/, "($1) $2 $3-$4");
-  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
-  return v || "";
-};
-
-const formatCNPJ = (v?: string | null) => {
-  const d = onlyDigits(v);
-  if (d.length !== 14) return v || "";
-  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-};
-
-// pega o primeiro campo existente entre várias opções
-const pickFirst = (row: any, candidates: string[], fallback = "") => {
-  for (const k of candidates) {
-    const val = row?.[k];
-    if (val !== undefined && val !== null && String(val).trim() !== "") {
-      return String(val);
-    }
-  }
-  return fallback;
-};
-
+/* ============================================================
+   AsyncSearchSelect
+   ============================================================ */
 type AsyncOption<T> = { key: string; label: React.ReactNode; raw: T };
 
-/* ============================================================
-   Busca assíncrona (UI)
-   ============================================================ */
 function AsyncSearchSelect<T>({
   label,
   placeholder,
@@ -154,7 +132,9 @@ function AsyncSearchSelect<T>({
         if (!canceled) setLoading(false);
       }
     })();
-    return () => { canceled = true; };
+    return () => {
+      canceled = true;
+    };
   }, [debounced, onSearch]);
 
   return (
@@ -166,7 +146,12 @@ function AsyncSearchSelect<T>({
           <div className="truncate text-sm">{valueLabel}</div>
           <button
             className="text-xs text-blue-600 hover:underline ml-3"
-            onClick={() => { onClear?.(); setQ(""); setOptions([]); setOpen(false); }}
+            onClick={() => {
+              onClear?.();
+              setQ("");
+              setOptions([]);
+              setOpen(false);
+            }}
           >
             limpar
           </button>
@@ -194,7 +179,12 @@ function AsyncSearchSelect<T>({
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2 hover:bg-gray-50"
-                    onClick={() => { onSelect(o); setOpen(false); setQ(""); setOptions([]); }}
+                    onClick={() => {
+                      onSelect(o);
+                      setOpen(false);
+                      setQ("");
+                      setOptions([]);
+                    }}
                   >
                     {o.label}
                   </button>
@@ -208,34 +198,8 @@ function AsyncSearchSelect<T>({
   );
 }
 
-// Cartões de resumo só-leitura
-function SummaryRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className="text-sm font-medium text-gray-900 ml-4">{value}</span>
-    </div>
-  );
-}
-function SummaryCard({
-  title, onChange, children,
-}: { title: string; onChange: () => void; children: React.ReactNode; }) {
-  return (
-    <div className="rounded-lg border bg-white">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-        <button type="button" className="text-xs font-medium text-blue-600 hover:underline" onClick={onChange}>
-          Trocar
-        </button>
-      </div>
-      <div className="px-4 py-3">{children}</div>
-    </div>
-  );
-}
-
 /* ============================================================
-   Buscas Supabase (pacientes e profissionais)
+   Busca no Supabase
    ============================================================ */
 async function searchPatientsSupabase(q: string) {
   const { data: auth } = await supabase.auth.getUser();
@@ -247,7 +211,7 @@ async function searchPatientsSupabase(q: string) {
     .limit(50)
     .order("name");
 
-  // Se a tabela tiver owner_id:
+  // Remova se sua tabela não tiver owner_id
   if (uid) query = query.eq("owner_id", uid);
 
   const digits = q.replace(/\D+/g, "");
@@ -321,7 +285,7 @@ async function searchProfessionalsSupabase(q: string) {
 }
 
 /* ============================================================
-   Componentes de UI controlados
+   Campos controlados (fix travamentos)
    ============================================================ */
 type FieldProps = React.InputHTMLAttributes<HTMLInputElement> & { label: string };
 const Field = ({ label, className, value, onChange, ...rest }: FieldProps) => (
@@ -356,7 +320,41 @@ const TextArea = ({ label, className, value, onChange, ...rest }: TextAreaProps)
 );
 
 /* ============================================================
-   Página: CertificateNew
+   Cartões de resumo
+   ============================================================ */
+function SummaryRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-sm font-medium text-gray-900 ml-4">{value}</span>
+    </div>
+  );
+}
+function SummaryCard({
+  title,
+  onChange,
+  children,
+}: {
+  title: string;
+  onChange: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border bg-white">
+      <div className="flex items-center justify-between px-4 py-3 border-b">
+        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+        <button type="button" className="text-xs font-medium text-blue-600 hover:underline" onClick={onChange}>
+          Trocar
+        </button>
+      </div>
+      <div className="px-4 py-3">{children}</div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Página
    ============================================================ */
 export default function CertificateNew({ onBack, onCreated, initialData }: Props) {
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "history">("form");
@@ -392,7 +390,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
   const [history, setHistory] = useState<SavedRow[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // html2pdf
+  // Carrega html2pdf
   useEffect(() => {
     if ((window as any).html2pdf) return;
     const s = document.createElement("script");
@@ -401,49 +399,41 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     document.body.appendChild(s);
   }, []);
 
-  // Carregar nome e CNPJ da clínica do perfil (robusto a diferenças de schema)
+  // Carrega nome da clínica/CNPJ do perfil do usuário
   useEffect(() => {
-    async function loadClinicFromProfile() {
+    let canceled = false;
+    (async () => {
       try {
         const { data: auth } = await supabase.auth.getUser();
         const uid = auth.user?.id;
         if (!uid) return;
 
-        const { data: row, error } = await supabase
+        const { data, error } = await supabase
           .from("profiles")
-          .select("*")
+          .select("company_name, company_cnpj")
           .eq("id", uid)
           .maybeSingle();
 
-        if (error) {
-          console.warn("load clinic from profile error:", error);
-          return;
+        if (error) throw error;
+        if (!canceled && data) {
+          setForm((prev) => ({
+            ...prev,
+            clinicName: prev.clinicName || data.company_name || "Clínica",
+            clinicCNPJ: prev.clinicCNPJ || data.company_cnpj || "",
+          }));
         }
-
-        const clinicName = pickFirst(row, [
-          "company_name", "company", "clinic_name", "business_name", "fantasy_name", "nome_fantasia",
-          "name" // fallback extremo
-        ], form.clinicName || "Clínica");
-
-        const clinicCNPJRaw = pickFirst(row, [
-          "company_cnpj", "cnpj", "clinic_cnpj", "tax_id", "document"
-        ]);
-
-        setForm(prev => ({
-          ...prev,
-          clinicName: clinicName || prev.clinicName || "Clínica",
-          clinicCNPJ: clinicCNPJRaw ? formatCNPJ(clinicCNPJRaw) : (prev.clinicCNPJ || ""),
-        }));
-      } catch (e) {
-        console.warn("loadClinicFromProfile exception:", e);
+      } catch (err) {
+        console.warn("load clinic from profile error:", err);
       }
-    }
-    loadClinicFromProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   // Ações
   const handlePrint = () => window.print();
+
   const handleDownloadPDF = () => {
     const w = (window as any);
     if (w.html2pdf && printRef.current) {
@@ -460,6 +450,15 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     }
   };
 
+  // Cabeçalho: voltar com comportamento inteligente
+  const handleHeaderBack = useCallback(() => {
+    if (activeTab !== "form") {
+      setActiveTab("form");
+      return;
+    }
+    onBack();
+  }, [activeTab, onBack]);
+
   // Mapeamento -> DB
   const CERT_TYPES_LABEL_DB: Record<CertificateType, string> = {
     saude: "Atestado de Saúde",
@@ -468,9 +467,12 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     aptidao: "Atestado de Aptidão",
     incapacidade: "Atestado de Incapacidade",
   };
-  const buildDbTitle = (d: CertificateFormData) => `${CERT_TYPES_LABEL_DB[d.certificateType] || "Atestado"} - ${d.patientName}`;
+  const buildDbTitle = (d: CertificateFormData) =>
+    `${CERT_TYPES_LABEL_DB[d.certificateType] || "Atestado"} - ${d.patientName}`;
   const buildDbDuration = (d: CertificateFormData) =>
-    ["afastamento", "incapacidade"].includes(d.certificateType) ? `${d.daysOfAbsence ?? 1} dia${(d.daysOfAbsence ?? 1) > 1 ? "s" : ""}` : null;
+    ["afastamento", "incapacidade"].includes(d.certificateType)
+      ? `${d.daysOfAbsence ?? 1} dia${(d.daysOfAbsence ?? 1) > 1 ? "s" : ""}`
+      : null;
   const buildDbDescription = (d: CertificateFormData) => {
     const parts: string[] = [];
     parts.push(`Motivo: ${d.reason}.`);
@@ -480,6 +482,8 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
       if (d.restrictedActivities) parts.push(`Restrições: ${d.restrictedActivities}.`);
       if (d.requiresRest) parts.push(`Repouso obrigatório.`);
       if (d.isPaid) parts.push(`Repouso remunerado.`);
+    } else if (d.restrictedActivities) {
+      parts.push(`Restrições: ${d.restrictedActivities}.`);
     }
     if (d.observations) parts.push(`Observações: ${d.observations}.`);
     return parts.join(" ");
@@ -538,7 +542,11 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
 
       {/* Cabeçalho */}
       <div className="sticky top-0 z-10 flex items-center gap-3 p-3 border-b bg-white/80 backdrop-blur">
-        <button onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition" title="Voltar">
+        <button
+          onClick={handleHeaderBack}
+          className="p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition"
+          title="Voltar"
+        >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold">Gerador de Atestados</h1>
@@ -600,8 +608,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                           {key === "saude" ? "Atestado de Saúde" :
                            key === "comparecimento" ? "Atestado de Comparecimento" :
                            key === "afastamento" ? "Atestado de Afastamento" :
-                           key === "aptidao" ? "Atestado de Aptidão" :
-                           "Atestado de Incapacidade"}
+                           key === "aptidao" ? "Atestado de Aptidão" : "Atestado de Incapacidade"}
                         </p>
                       </div>
                     </label>
@@ -701,7 +708,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Dados do Atestado</h2>
 
                 <div className="space-y-4">
-                  {/* Motivo */}
                   <TextArea
                     label="Motivo/Descrição *"
                     rows={3}
@@ -710,7 +716,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     placeholder="Ex: Consulta médica"
                   />
 
-                  {/* Datas e dias */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Field
                       label="Data Início"
@@ -750,7 +755,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     />
                   </div>
 
-                  {/* Restrições */}
                   <Field
                     label="Atividades Restritas"
                     value={form.restrictedActivities}
@@ -758,7 +762,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     placeholder="Ex: Trabalho pesado, Dirigir, Levantamento de peso..."
                   />
 
-                  {/* Checkboxes */}
                   <div className="flex items-center gap-6">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -778,7 +781,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     </label>
                   </div>
 
-                  {/* Observações */}
                   <TextArea
                     label="Observações Adicionais"
                     rows={3}
@@ -787,7 +789,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     placeholder="Paciente apresenta melhora clínica satisfatória. Recomenda-se repouso relativo."
                   />
 
-                  {/* Emissão */}
                   <Field
                     label="Data da Emissão"
                     type="date"
@@ -803,16 +804,29 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
               <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-24">
                 <h3 className="font-bold text-gray-900 mb-4">Ações</h3>
                 <div className="space-y-2">
-                  <button onClick={() => setActiveTab("preview")} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                  <button
+                    onClick={() => setActiveTab("preview")}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                  >
                     <Eye className="w-4 h-4" /> Visualizar
                   </button>
-                  <button onClick={handleDownloadPDF} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+                  <button
+                    onClick={handleDownloadPDF}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  >
                     <Download className="w-4 h-4" /> Baixar PDF
                   </button>
-                  <button onClick={handlePrint} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium">
+                  <button
+                    onClick={handlePrint}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
+                  >
                     <Printer className="w-4 h-4" /> Imprimir
                   </button>
-                  <button onClick={handleSave} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-medium disabled:opacity-60">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-medium disabled:opacity-60"
+                  >
                     <Plus className="w-4 h-4" /> {saving ? "Salvando..." : "Salvar"}
                   </button>
                 </div>
@@ -840,25 +854,33 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
         {activeTab === "preview" && (
           <div className="space-y-4">
             <div className="no-print flex gap-3 mb-6">
-              <button onClick={() => setActiveTab("form")} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium">
+              <button
+                onClick={() => setActiveTab("form")}
+                className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
+              >
                 Voltar
               </button>
-              <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium">
+              <button
+                onClick={handlePrint}
+                className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
+              >
                 <Printer className="w-4 h-4" /> Imprimir
               </button>
-              <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+              <button
+                onClick={handleDownloadPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+              >
                 <Download className="w-4 h-4" /> Baixar PDF
               </button>
             </div>
 
-            <div ref={printRef} className="pb-24">
-              {/* Usa o tipo do Preview para garantir compatibilidade */}
-              <CertificatePreview data={form as PreviewFormData} />
+            <div ref={printRef} className="pb-8">
+              <CertificatePreview data={form} />
             </div>
           </div>
         )}
 
-        {/* HISTORY (mock local) */}
+        {/* HISTORY */}
         {activeTab === "history" && (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-gray-900">Histórico de Atestados</h2>
@@ -877,7 +899,10 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => { setForm(h); setActiveTab("preview"); }}
+                          onClick={() => {
+                            setForm(h);
+                            setActiveTab("preview");
+                          }}
                           className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
                         >
                           Visualizar
