@@ -4,6 +4,7 @@ import StatCard from '../components/Dashboard/StatCard';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
+import ConsultasDeHoje from "../components/Dashboard/ConsultasDeHoje";
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -245,8 +246,11 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
         </CardButton>
       </div>
 
+      {/* Consultas de Hoje (bloco de tabela) */}
+      <ConsultasDeHoje onGotoSchedule={onGotoSchedule} />
+
       {/* Próximos Atendimentos */}
-      <div>
+      <div className="mt-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Próximos Atendimentos</h2>
         <div className="space-y-3">
           {upcomingAppointments.length > 0 ? (
