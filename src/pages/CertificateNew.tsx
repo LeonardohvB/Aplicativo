@@ -371,7 +371,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     professionalName: initialData?.professionalName || "",
     professionalSpecialty: initialData?.professionalSpecialty || "",
     professionalCRM: initialData?.professionalCRM || "",
-    clinicName: initialData?.clinicName || "Clínica",
+    clinicName: initialData?.clinicName || "",
     clinicCNPJ: initialData?.clinicCNPJ || "",
     certificateType: (initialData?.certificateType as CertificateType) || "saude",
     reason: initialData?.reason || "Consulta médica",
@@ -400,36 +400,41 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
   }, []);
 
   // Carrega nome da clínica/CNPJ do perfil do usuário
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      try {
-        const { data: auth } = await supabase.auth.getUser();
-        const uid = auth.user?.id;
-        if (!uid) return;
+ // Carrega nome da clínica/CNPJ do perfil do usuário
+useEffect(() => {
+  let canceled = false;
+  (async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id;
+      if (!uid) return;
 
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("company_name, company_cnpj")
-          .eq("id", uid)
-          .maybeSingle();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('clinic_name, clinic_cnpj')
+        .eq('id', uid)
+        .maybeSingle();
 
-        if (error) throw error;
-        if (!canceled && data) {
-          setForm((prev) => ({
-            ...prev,
-            clinicName: prev.clinicName || data.company_name || "Clínica",
-            clinicCNPJ: prev.clinicCNPJ || data.company_cnpj || "",
-          }));
-        }
-      } catch (err) {
-        console.warn("load clinic from profile error:", err);
+      if (error) throw error;
+      if (!canceled && data) {
+        setForm(prev => ({
+          ...prev,
+          // se já tiver um valor "bom", mantém; se estiver vazio/placeholder, usa o do perfil
+          clinicName: prev.clinicName?.trim()
+            ? prev.clinicName
+            : (data.clinic_name ?? ''),
+          clinicCNPJ: prev.clinicCNPJ?.trim()
+            ? prev.clinicCNPJ
+            : (data.clinic_cnpj ?? ''),
+        }));
       }
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, []);
+    } catch (err) {
+      console.warn('load clinic from profile error:', err);
+    }
+  })();
+  return () => { canceled = true; };
+}, []);
+
 
   // Ações
   const handlePrint = () => window.print();
