@@ -1,10 +1,13 @@
+// src/pages/Dashboard.tsx
 import React from 'react';
 import { Users, DollarSign, Calendar, Eye, EyeOff } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import StatCard from '../components/Dashboard/StatCard';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 import ConsultasDeHoje from "../components/Dashboard/ConsultasDeHoje";
+import { supabase } from '../lib/supabase';
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -43,7 +46,6 @@ function parseBrDateToDate(s?: any): Date | null {
 function normalizeAmount(v: any): number {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
   if (typeof v === 'string') {
-    // remove separador de milhar e troca vírgula decimal por ponto
     const s = v.replace(/\./g, '').replace(',', '.');
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
@@ -51,6 +53,9 @@ function normalizeAmount(v: any): number {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
+
+/** Paleta estável para o donut */
+const DONUT_COLORS = ['#8B5CF6', '#10B981', '#F59E0B', '#3B82F6', '#14B8A6', '#F43F5E'];
 
 const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
   const { slots } = useAppointmentJourneys();
@@ -61,18 +66,18 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
   });
   const todayDate = new Date().toISOString().split('T')[0];
 
-  // Atendimentos HOJE (finalizados/cancelados/no-show)
+  // Atendimentos HOJE (finalizados/cancelados/no-show) → para abrir HISTÓRICO
   const todayAppointments = (slots || []).filter(
     (slot) =>
       slot.date === todayDate &&
-      ['concluido', 'cancelado', 'no_show'].includes(slot.status)
+      ['concluido', 'cancelado', 'no_show'].includes((slot.status || '').toLowerCase())
   );
 
-  // Faltam hoje (pendentes)
+  // Faltam hoje (pendentes) → abrir LISTA
   const todayPending = (slots || []).filter(
     (slot) =>
       slot.date === todayDate &&
-      ['agendado', 'em_andamento'].includes(slot.status)
+      ['agendado', 'em_andamento'].includes((slot.status || '').toLowerCase())
   ).length;
 
   // Semana atual e a partir de amanhã
@@ -88,12 +93,11 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     return (
       slotDate >= startTomorrow &&
       slotDate <= endOfWeek &&
-      ['agendado', 'em_andamento'].includes(slot.status)
+      ['agendado', 'em_andamento'].includes((slot.status || '').toLowerCase())
     );
   });
 
-  // ================= Receita do mês (MESMA REGRA DO FINANCEIRO) =================
-  // Usa date || created_at || createdAt, considera somente income e status === 'paid'
+  // ================= Receita do mês =================
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -136,7 +140,7 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     .filter(
       (slot) =>
         slot.date >= todayDate &&
-        ['agendado', 'em_andamento'].includes(slot.status)
+        ['agendado', 'em_andamento'].includes((slot.status || '').toLowerCase())
     )
     .sort((a, b) =>
       a.date === b.date
@@ -165,6 +169,87 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     </div>
   );
 
+  /* ===================== Distribuição por Especialidade (180 dias) ===================== */
+  type DonutItem = { name: string; value: number; color: string };
+  const [distData, setDistData] = React.useState<DonutItem[]>([]);
+  const [distLoading, setDistLoading] = React.useState(true);
+  const timeframeDays = 180;
+
+  React.useEffect(() => {
+    let canceled = false;
+
+    (async () => {
+      setDistLoading(true);
+
+      const from = new Date();
+      from.setDate(from.getDate() - timeframeDays);
+      const fromISO = from.toISOString();
+
+      let rows: Array<{ specialty?: string | null; created_at?: string | null }> = [];
+      let error: any = null;
+
+      // 1) tenta filtrar por created_at
+      try {
+        const { data, error: e } = await supabase
+          .from('patient_evolution')
+          .select('specialty, created_at')
+          .gte('created_at', fromISO);
+        rows = data || [];
+        error = e || null;
+      } catch (e) {
+        error = e;
+      }
+
+      // 2) fallback sem filtro se não houver created_at
+      if (error) {
+        try {
+          const { data, error: e2 } = await supabase
+            .from('patient_evolution')
+            .select('specialty');
+          rows = data || [];
+          error = e2 || null;
+        } catch (e2) {
+          error = e2;
+        }
+      }
+
+      if (canceled) return;
+
+      if (error) {
+        console.warn('patient_evolution fetch error:', error);
+        setDistData([]);
+        setDistLoading(false);
+        return;
+      }
+
+      const counts = new Map<string, number>();
+      for (const r of rows) {
+        const spec = String(r?.specialty || '').trim();
+        if (!spec) continue;
+        counts.set(spec, (counts.get(spec) || 0) + 1);
+      }
+      const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+      if (total === 0) {
+        setDistData([]);
+        setDistLoading(false);
+        return;
+      }
+
+      const items: DonutItem[] = Array.from(counts.entries())
+        .map(([name, count], idx) => ({
+          name,
+          value: Math.round((count / total) * 100),
+          color: DONUT_COLORS[idx % DONUT_COLORS.length],
+        }))
+        .sort((a, b) => b.value - a.value);
+
+      setDistData(items);
+      setDistLoading(false);
+    })();
+
+    return () => { canceled = true; };
+  }, [timeframeDays]);
+
   return (
     <div className="p-6 pb-24 min-h-screen bg-slate-50">
       {/* Header */}
@@ -184,21 +269,14 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
 
       {/* KPIs topo */}
       <div className="grid grid-cols-2 gap-4 mb-4">
-        {/* Atendimentos Hoje → abre histórico automaticamente */}
+        {/* Atendimentos Hoje → ABRE HISTÓRICO de hoje */}
         <CardButton
           onClick={() => {
-            // flag para a rota Agenda abrir o histórico ao montar
-            sessionStorage.setItem('schedule:openHistory', 'today');
-
-            // sua navegação atual para Agenda
+            sessionStorage.setItem('schedule:openHistory','today');
             onGotoSchedule?.('today');
-
-            // reforço para quem já está na Agenda montada
             setTimeout(() => {
-              window.dispatchEvent(
-                new CustomEvent('agenda:history', { detail: { range: 'today' } })
-              );
-            }, 200);
+              window.dispatchEvent(new CustomEvent('agenda:openHistory', { detail: { range: 'today' } }));
+            }, 50);
           }}
           label="Ver atendimentos de hoje"
         >
@@ -207,7 +285,18 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
           </div>
         </CardButton>
 
-        <CardButton onClick={() => onGotoSchedule?.('today')} label="Ver pendentes de hoje">
+        {/* Faltam Hoje → ABRE LISTA */}
+        <CardButton
+          onClick={() => {
+            sessionStorage.removeItem('schedule:openHistory');
+            onGotoSchedule?.('today');
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('agenda:closeHistory'));
+              window.dispatchEvent(new CustomEvent('agenda:filter', { detail: 'today' }));
+            }, 50);
+          }}
+          label="Ver pendentes de hoje"
+        >
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
             <StatCard title="Faltam Hoje" value={todayPending} icon={Users} color="purple" />
           </div>
@@ -246,6 +335,156 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
         </CardButton>
       </div>
 
+      {/* Distribuição por Especialidade (últimos 180 dias) */}
+      <div className="mb-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <div className="px-6 pt-5 pb-3">
+            <h2 className="text-lg font-semibold text-slate-900">Distribuição por Especialidade</h2>
+            <p className="text-xs text-slate-500 mt-1">Baseado em evoluções (concluídos){' '}
+              <span className="whitespace-nowrap">• últimos {timeframeDays} dias</span>
+            </p>
+          </div>
+
+          {distLoading ? (
+            <div className="px-6 pb-6 text-slate-500">Carregando…</div>
+          ) : distData.length === 0 ? (
+            <div className="px-6 pb-6 text-slate-500">Sem dados no período.</div>
+          ) : (
+            <div className="px-2 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+              {/* Donut */}
+              <div className="h-[200px] sm:h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={distData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      paddingAngle={2}
+                      stroke="#fff"
+                      strokeWidth={2}
+                      isAnimationActive
+                    >
+                      {distData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Legenda */}
+              <div className="px-4 sm:px-2 space-y-3">
+                {distData.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-sm text-slate-700 truncate">{item.name}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-900">{item.value}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Ações Rápidas */}
+      <div className="mb-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h2 className="text-lg font-semibold text-slate-900">Ações Rápidas</h2>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {/* Nova Consulta */}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.removeItem('schedule:openHistory');
+                  onGotoSchedule?.('today');
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('agenda:closeHistory'));
+                    window.dispatchEvent(new CustomEvent('agenda:new'));
+                  }, 50);
+                }}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="inline-flex w-8 h-8 rounded-xl bg-blue-100 text-blue-700 items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M7 11h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zM5 21q-.825 0-1.412-.587T3 19V7q0-.825.588-1.412T5 5h1V3h2v2h8V3h2v2h1q.825 0 1.413.588T21 7v12q0 .825-.587 1.413T19 21zM5 19h14V9H5z"/></svg>
+                  </span>
+                  <span className="text-slate-900 font-medium">Nova Consulta</span>
+                </span>
+                <span className="text-slate-400">›</span>
+              </button>
+            </li>
+
+            {/* Novo Paciente */}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('patients:new'));
+                }}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="inline-flex w-8 h-8 rounded-xl bg-purple-100 text-purple-700 items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M8 11q-1.65 0-2.825-1.175T4 7q0-1.65 1.175-2.825T8 3t2.825 1.175T12 7t-1.175 2.825T8 11m8 1v-2h-2V8h2V6h2v2h2v2h-2v2zm-8 2q2.1 0 3.975.8T15 16.9V19H1v-2.1q.8-1.05 2.675-1.85T8 14"/></svg>
+                  </span>
+                  <span className="text-slate-900 font-medium">Novo Paciente</span>
+                </span>
+                <span className="text-slate-400">›</span>
+              </button>
+            </li>
+
+            {/* Gerar Atestado */}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('certificate:new'));
+                }}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="inline-flex w-8 h-8 rounded-xl bg-green-100 text-green-700 items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6q-.825 0-1.412.588T4 4v16q0 .825.588 1.413T6 22h12q.825 0 1.413-.587T20 20V8zm-2 6V4l4 4z"/></svg>
+                  </span>
+                  <span className="text-slate-900 font-medium">Gerar Atestado</span>
+                </span>
+                <span className="text-slate-400">›</span>
+              </button>
+            </li>
+
+            {/* Ver Relatórios */}
+            <li>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('reports:open'));
+                }}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="inline-flex w-8 h-8 rounded-xl bg-orange-100 text-orange-700 items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M3 21V3h2v16h16v2zm4 0V9h2v12zm4 0V3h2v18zm4 0v-8h2v8z"/></svg>
+                  </span>
+                  <span className="text-slate-900 font-medium">Ver Relatórios</span>
+                </span>
+                <span className="text-slate-400">›</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
       {/* Consultas de Hoje (bloco de tabela) */}
       <ConsultasDeHoje onGotoSchedule={onGotoSchedule} />
 
@@ -273,14 +512,14 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
                     <div className="flex-shrink-0">
                       <span
                         className={`whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${
-                          slot.status === 'agendado'
+                          (slot.status || '').toLowerCase() === 'agendado'
                             ? 'bg-blue-100 text-blue-700'
-                            : slot.status === 'em_andamento'
+                            : (slot.status || '').toLowerCase() === 'em_andamento'
                             ? 'bg-amber-100 text-amber-700'
                             : 'bg-emerald-100 text-emerald-700'
                         }`}
                       >
-                        {slot.status === 'agendado'
+                        {(slot.status || '').toLowerCase() === 'agendado'
                           ? 'Agendado'
                           : 'Em Andamento'}
                       </span>

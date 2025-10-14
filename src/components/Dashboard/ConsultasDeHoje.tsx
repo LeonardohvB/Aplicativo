@@ -34,6 +34,16 @@ function isTodayLocal(dateStr: string) {
   );
 }
 
+// HH:mm + minutes -> HH:mm
+function addMinutesToTimeStr(timeStr: string, minutes: number) {
+  const [h, m] = timeStr.split(":").map(Number);
+  const d = new Date(2000, 0, 1, h || 0, m || 0, 0, 0);
+  d.setMinutes(d.getMinutes() + (minutes || 0));
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 const ConsultasDeHoje: React.FC<Props> = ({ onGotoSchedule }) => {
   const { slots } = useAppointmentJourneys();
   const { history } = useAppointmentHistory();
@@ -84,12 +94,24 @@ const ConsultasDeHoje: React.FC<Props> = ({ onGotoSchedule }) => {
         (s?.service && String(s.service)) ||
         "—";
 
+      // calcular endTime se vier apenas duração
+      const durationMinutes: number | undefined =
+        Number.isFinite(Number(s?.durationMinutes)) ? Number(s.durationMinutes) : undefined;
+
+      const endTime =
+        s.endTime ||
+        h?.endTime ||
+        (s.startTime && durationMinutes
+          ? addMinutesToTimeStr(s.startTime, durationMinutes)
+          : undefined);
+
       return {
         id: s.id,
         patientName: hasPatient ? (s.patientName ?? h?.patientName ?? "—") : "—",
         professionalName,
         specialty,
         startTime: s.startTime || "--:--",
+        endTime: endTime || "--:--",
         status,
       };
     });
@@ -218,8 +240,11 @@ const ConsultasDeHoje: React.FC<Props> = ({ onGotoSchedule }) => {
                       </td>
                       <td className="px-4 py-3 text-slate-700">{s.specialty}</td>
                       <td className="px-4 py-3 text-slate-700">{s.professionalName}</td>
-                      <td className="px-4 py-3 text-slate-900 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-2">
+
+                      {/* Horário responsivo: desktop 10:00 – 11:00 | mobile empilhado */}
+                      <td className="px-4 py-3 text-slate-900">
+                        {/* Desktop / tablet */}
+                        <div className="hidden md:flex items-center gap-2 whitespace-nowrap tabular-nums">
                           <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-60">
                             <path
                               fill="currentColor"
@@ -227,8 +252,25 @@ const ConsultasDeHoje: React.FC<Props> = ({ onGotoSchedule }) => {
                             />
                           </svg>
                           <span className="font-semibold">{s.startTime}</span>
-                        </span>
+                          <span className="opacity-60">–</span>
+                          <span className="font-semibold">{s.endTime}</span>
+                        </div>
+                        {/* Mobile */}
+                        <div className="md:hidden flex items-center gap-2">
+                          <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-60 shrink-0">
+                            <path
+                              fill="currentColor"
+                              d="M12 20q-3.35 0-5.675-2.325T4 12t2.325-5.675T12 4t5.675 2.325T20 12t-2.325 5.675T12 20m0-2q2.5 0 4.25-1.75T18 12t-1.75-4.25T12 6T7.75 7.75T6 12t1.75 4.25T12 18m1-4l3.5 2l.75-1.23L13 12V7h-1v6z"
+                            />
+                          </svg>
+                          <div className="flex flex-col leading-tight -my-0.5 tabular-nums">
+                            <span className="font-semibold">{s.startTime}</span>
+                            <span className="mx-auto text-slate-400">—</span>
+                            <span className="font-semibold">{s.endTime}</span>
+                          </div>
+                        </div>
                       </td>
+
                       <td className="px-4 py-3 align-middle">
                         <div className="min-w-[112px]">{renderBadge(s.status)}</div>
                       </td>

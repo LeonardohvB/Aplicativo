@@ -56,6 +56,9 @@ export default function App() {
   const [liveOpen, setLiveOpen] = useState(false)
   const [encounterData, setEncounterData] = useState<EncounterData | null>(null)
 
+  // 🔹 “carimbo” para forçar remount da Agenda
+  const [scheduleTs, setScheduleTs] = useState<number>(0)
+
   // Abre o prontuário via evento global (fallback/atalhos internos)
   useEffect(() => {
     const open = (e: any) => {
@@ -90,6 +93,22 @@ export default function App() {
       window.removeEventListener('certificate:new', onCertificateNew as EventListener)
     }
   }, [])
+
+
+  // Abrir "Novo Paciente" a partir do Dashboard
+useEffect(() => {
+  const openPatientsNew = () => setActiveTab('patients_new');
+  window.addEventListener('patients:new', openPatientsNew as EventListener);
+  return () => window.removeEventListener('patients:new', openPatientsNew as EventListener);
+}, []);
+
+// Abrir "Relatórios" a partir do Dashboard
+useEffect(() => {
+  const openReports = () => setActiveTab('relatorios');
+  window.addEventListener('reports:open', openReports as EventListener);
+  return () => window.removeEventListener('reports:open', openReports as EventListener);
+}, []);
+
 
   // ===== sessão / auth =====
   useEffect(() => {
@@ -164,11 +183,25 @@ export default function App() {
   // cast temporário para aceitar a prop firstName em Dashboard
   const DashboardComp: any = Dashboard
 
+  // 🔹 função única pra ir à Agenda e forçar reload
+  const gotoSchedule = (filter: 'today' | 'week', opts?: { openHistory?: boolean }) => {
+    const ts = Date.now();
+    setScheduleTs(ts);            // muda a key da Agenda → remount
+    setActiveTab('agenda');
+    // mantém seus eventos (agora com ts junto)
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('agenda:filter', { detail: { range: filter, ts } }));
+      if (opts?.openHistory) {
+        window.dispatchEvent(new CustomEvent('agenda:openHistory', { detail: { ts } }));
+      }
+    }, 0);
+  };
+
   // ===== conteúdo por aba =====
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais': return <Professionals />
-      case 'agenda':        return <Schedule />
+      case 'agenda':        return <Schedule key={scheduleTs} />  
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />
       case 'patients_new':
@@ -189,11 +222,7 @@ export default function App() {
           <CertificateNew
             onBack={() => setActiveTab('inicio')}
             initialData={certificateInitialData || undefined}
-            // no momento, não abriremos view/list (ainda não existem)
-            onCreated={(_id) => {
-              // futuro: poderíamos disparar um 'certificates:refresh' ou voltar pra início
-              setActiveTab('inicio')
-            }}
+            onCreated={(_id) => setActiveTab('inicio')}
           />
         )
 
@@ -203,10 +232,9 @@ export default function App() {
             firstName={firstName ?? undefined}
             onOpenProfile={() => setActiveTab('perfil')}
             onGotoSchedule={(filter: 'today' | 'week') => {
-              setActiveTab('agenda')
-              setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('agenda:filter', { detail: filter }))
-              }, 0)
+              // antes: setActiveTab + agenda:filter
+              // agora: remount + eventos
+              gotoSchedule(filter, { openHistory: filter === 'today' })
             }}
           />
         )
@@ -228,10 +256,8 @@ export default function App() {
               setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
             }}
             onOpenHistory={() => {
-              setActiveTab('agenda');
-              setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('agenda:openHistory'));
-              }, 0);
+              // abre Agenda já focada no histórico de hoje e força remount
+              gotoSchedule('today', { openHistory: true });
             }}
             // Quando quiser, adicionamos os itens de Atestado aqui:
             onOpenCertificateNew={() => setActiveTab('certificate_new')}
@@ -251,7 +277,11 @@ export default function App() {
                 ? 'inicio'
                 : (activeTab as Tab)
             }
-            onTabChange={(t: Tab) => setActiveTab(t)}
+            onTabChange={(t: Tab) => {
+              // se o usuário tocar "Agenda" novamente, também forçamos um reload
+              if (t === 'agenda') setScheduleTs(Date.now());
+              setActiveTab(t);
+            }}
           />
         )}
 

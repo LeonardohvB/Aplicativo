@@ -145,24 +145,36 @@ const Schedule: React.FC = () => {
     return () => window.removeEventListener('agenda:slot:update', onSlotUpdate as EventListener);
   }, [slots, updateSlotStatus]);
 
-  // ✅ Abrir histórico (menu suspenso OU Dashboard)
-  useEffect(() => {
-    const openHistory = () => setIsHistoryModalOpen(true);
-    window.addEventListener('agenda:openHistory', openHistory as EventListener);
+  // ✅ Abrir/fechar histórico (menu suspenso OU Dashboard)
+useEffect(() => {
+  const openHistory = () => setIsHistoryModalOpen(true);
+  const closeHistory = () => setIsHistoryModalOpen(false);
 
-    const flagged = sessionStorage.getItem('schedule:openHistory');
-    if (flagged) {
-      sessionStorage.removeItem('schedule:openHistory');
-      setIsHistoryModalOpen(true);
-    }
-    const handler = () => setIsHistoryModalOpen(true);
-    window.addEventListener('agenda:history', handler);
+  window.addEventListener('agenda:openHistory', openHistory as EventListener);
+  window.addEventListener('agenda:closeHistory', closeHistory as EventListener);
 
-    return () => {
-      window.removeEventListener('agenda:openHistory', openHistory as EventListener);
-      window.removeEventListener('agenda:history', handler);
-    };
-  }, []);
+  // respeita a flag SOMENTE no primeiro mount
+  const flagged = sessionStorage.getItem('schedule:openHistory');
+  if (flagged) {
+    sessionStorage.removeItem('schedule:openHistory');
+    setIsHistoryModalOpen(true);
+  }
+
+  return () => {
+    window.removeEventListener('agenda:openHistory', openHistory as EventListener);
+    window.removeEventListener('agenda:closeHistory', closeHistory as EventListener);
+  };
+}, []);
+
+
+// Abrir modal "Nova Consulta" vindo do Dashboard
+useEffect(() => {
+  const openNew = () => setIsCreateModalOpen(true);
+  window.addEventListener('agenda:new', openNew as EventListener);
+  return () => window.removeEventListener('agenda:new', openNew as EventListener);
+}, []);
+
+
 
   // Abrir cadastro rápido de paciente
   useEffect(() => {
@@ -379,7 +391,7 @@ const Schedule: React.FC = () => {
   const handleMarkNoShow = async (slotId: string) => {
     const ok = await confirmAction({
       title: 'Marcar como “faltou”?',
-      description: 'O horário será mantido no histórico como “no-show”.',
+      description: 'O horário será mantido no histórico como “faltou”.',
       confirmText: 'Confirmar',
       cancelText: 'Voltar',
       tone: 'danger',
