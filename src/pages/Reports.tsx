@@ -1,15 +1,15 @@
 // src/pages/Reports.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   TrendingUp, TrendingDown, Percent, Users, Calendar, DollarSign, CheckCircle, Download,
-  CalendarDays, CalendarRange, Filter as FilterIcon, X, Phone, FileText, Search, LucideIcon
+  CalendarDays, CalendarRange, Filter as FilterIcon, X, Phone, Search, LucideIcon
 } from 'lucide-react';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAppointmentHistory } from '../hooks/useAppointmentHistory';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { supabase } from '../lib/supabase';
-import { pdf, Document, Page, Text, View, StyleSheet, Svg, Path, Rect } from '@react-pdf/renderer';
+import { pdf } from '@react-pdf/renderer';
 import ReportDocument, { Row as PdfRow } from '../ReportDocument';
 
 /* ======================================================================
@@ -40,7 +40,6 @@ const isDone = (s?: string) => (s ?? '').toLowerCase() === 'concluido';
 const currency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 /* ===== Helpers de valores e datas ===== */
-// Parser robusto pt-BR
 function parseAmountBR(input: any): number {
   if (typeof input === 'number') return Number.isFinite(input) ? input : 0;
   if (input == null) return 0;
@@ -54,7 +53,6 @@ function parseAmountBR(input: any): number {
   if (!Number.isFinite(n)) n = 0;
   return negative ? -Math.abs(n) : n;
 }
-// aceita 'YYYY-MM-DD', ISO, ou 'DD/MM/AAAA'
 const parseStrDate = (s?: string | null): Date | null => {
   if (!s) return null;
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
@@ -71,7 +69,6 @@ const isWithin = (d: Date, fromISO: string, toISO: string) => {
   return d >= fromD && d <= toD;
 };
 
-// Tradução de status para exibição no PDF
 const STATUS_LABEL_PT: Record<string, string> = {
   concluido: 'Concluído',
   cancelado: 'Cancelado',
@@ -81,7 +78,6 @@ const STATUS_LABEL_PT: Record<string, string> = {
 /* ======================================================================
    Mini input de data
 ====================================================================== */
-// Mini input de data (responsivo)
 const DateInput: React.FC<{ label: string; value: string; onChange: (v: string) => void; }> = ({
   label, value, onChange
 }) => (
@@ -100,7 +96,7 @@ const DateInput: React.FC<{ label: string; value: string; onChange: (v: string) 
 );
 
 /* ======================================================================
-   PDF do Paciente (mantido)
+   Tipos do modal do Paciente
 ====================================================================== */
 type PatientVisit = {
   date: string;
@@ -109,298 +105,356 @@ type PatientVisit = {
   professionalSpecialty?: string | undefined;
   service?: string;
   price?: number | null;
-};
-const pdfStyles = StyleSheet.create({
-  page: { padding: 28, fontSize: 11, fontFamily: 'Helvetica' },
-  h1: { fontSize: 18, fontWeight: 700, marginBottom: 6 },
-  h2: { fontSize: 12, color: '#4B5563', marginBottom: 14 },
-  cardRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  card: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 8, padding: 10 },
-  cardTitle: { fontSize: 9, color: '#6B7280', marginBottom: 4 },
-  cardValue: { fontSize: 12, fontWeight: 700, color: '#111827' },
-  tableHeader: { flexDirection: 'row', backgroundColor: '#111827', color: '#FFFFFF', padding: 8, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
-  th: { fontSize: 10, fontWeight: 700 },
-  row: { flexDirection: 'row', padding: 8, borderBottomColor: '#E5E7EB', borderBottomWidth: 1 },
-  colDate: { width: 70 },
-  colTime: { width: 70 },
-  colProf: { flex: 1 },
-  colSvc: { flex: 1 },
-  colVal: { width: 70, textAlign: 'right' },
-  sectionTitle: { fontSize: 12, fontWeight: 700, marginTop: 14, marginBottom: 6 },
-  footer: { marginTop: 12, color: '#6B7280', fontSize: 9, textAlign: 'right' },
-  chartWrap: { flexDirection: 'row', gap: 16, alignItems: 'center', marginBottom: 10 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-});
-const COLORS = ['#60A5FA','#34D399','#FBBF24','#F472B6','#A78BFA','#F87171','#10B981','#F59E0B','#818CF8','#2DD4BF'];
-function polarToCartesian(cx:number, cy:number, r:number, angle:number){
-  const a = (angle - 90) * Math.PI / 180.0;
-  return { x: cx + (r * Math.cos(a)), y: cy + (r * Math.sin(a)) };
-}
-function describeArc(cx:number, cy:number, r:number, startAngle:number, endAngle:number){
-  const start = polarToCartesian(cx, cy, r, endAngle);
-  const end = polarToCartesian(cx, cy, r, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} L ${cx} ${cy} Z`;
-}
-const PatientPdfDocument: React.FC<{
-  patientName: string; periodLabel: string; visits: PatientVisit[];
-}> = ({ patientName, periodLabel, visits }) => {
-  const total = visits.length;
-  const totalValue = visits.reduce((s, v) => s + (Number(v.price) || 0), 0);
-  const byProf = new Map<string, { name: string; spec?: string; value: number; count: number }>();
-  for (const v of visits) {
-    const name = v.professional || '—';
-    const spec = v.professionalSpecialty;
-    const key = `${name}#${spec ?? ''}`;
-    if (!byProf.has(key)) byProf.set(key, { name, spec, value: 0, count: 0 });
-    const x = byProf.get(key)!; x.value += Number(v.price) || 0; x.count += 1;
-  }
-  const entries = Array.from(byProf.values());
-  const sum = entries.reduce((s, e) => s + e.value, 0) || 1;
-  let cursor = 0; const radius = 42; const cx = 50, cy = 50;
-  const slices = entries.map((e, i) => {
-    const angle = (e.value / sum) * 360;
-    const path = describeArc(cx, cy, radius, cursor, cursor + angle);
-    const color = COLORS[i % COLORS.length];
-    cursor += angle;
-    return { path, color, label: `${e.name}${e.spec ? ` — ${e.spec}` : ''}`, value: e.value };
-  });
-
-  return (
-    <Document>
-      <Page size="A4" style={pdfStyles.page}>
-        <Text style={pdfStyles.h1}>Relatório do Paciente</Text>
-        <Text style={pdfStyles.h2}>{patientName} • Período: {periodLabel}</Text>
-        <View style={pdfStyles.cardRow}>
-          <View style={pdfStyles.card}><Text style={pdfStyles.cardTitle}>Atendimentos no período</Text><Text style={pdfStyles.cardValue}>{total}</Text></View>
-          <View style={pdfStyles.card}><Text style={pdfStyles.cardTitle}>Valor total</Text><Text style={pdfStyles.cardValue}>{currency(totalValue)}</Text></View>
-          <View style={pdfStyles.card}><Text style={pdfStyles.cardTitle}>Profissionais atendentes</Text><Text style={pdfStyles.cardValue}>{byProf.size}</Text></View>
-        </View>
-        <Text style={pdfStyles.sectionTitle}>Distribuição por Profissional (valor)</Text>
-        <View style={pdfStyles.chartWrap}>
-          <Svg width={100} height={100} viewBox="0 0 100 100">
-            <Path d={describeArc(cx, cy, radius, 0, 359.999)} fill="#E5E7EB" />
-            {slices.map((s, i) => (<Path key={i} d={s.path} fill={s.color} />))}
-          </Svg>
-          <View>
-            {slices.map((s, i) => (
-              <View key={i} style={pdfStyles.legendItem}>
-                <Svg width={10} height={10}><Rect x={0} y={0} width={10} height={10} fill={s.color} /></Svg>
-                <Text>{s.label} — {currency(s.value)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-        <View style={pdfStyles.tableHeader}>
-          <View style={pdfStyles.colDate}><Text style={pdfStyles.th}>Data</Text></View>
-          <View style={pdfStyles.colTime}><Text style={pdfStyles.th}>Horário</Text></View>
-          <View style={pdfStyles.colProf}><Text style={pdfStyles.th}>Profissional</Text></View>
-          <View style={pdfStyles.colSvc}><Text style={pdfStyles.th}>Serviço</Text></View>
-          <View style={pdfStyles.colVal}><Text style={pdfStyles.th}>Valor</Text></View>
-        </View>
-        {visits.map((r, i) => (
-          <View key={i} style={pdfStyles.row}>
-            <View style={pdfStyles.colDate}><Text>{fmtBR(r.date)}</Text></View>
-            <View style={pdfStyles.colTime}><Text>{r.time}</Text></View>
-            <View style={pdfStyles.colProf}><Text>{r.professional || '—'}{r.professionalSpecialty ? ` — ${r.professionalSpecialty}` : ''}</Text></View>
-            <View style={pdfStyles.colSvc}><Text>{r.service || '—'}</Text></View>
-            <View style={pdfStyles.colVal}><Text>{r.price != null ? currency(r.price) : '—'}</Text></View>
-          </View>
-        ))}
-        <Text style={pdfStyles.footer}>Gerado em {new Date().toLocaleString('pt-BR')}</Text>
-      </Page>
-    </Document>
-  );
+  status?: 'concluido'|'cancelado'|'no_show'|string;
 };
 
-/* ======================================================================
-   Modais de Pacientes
-====================================================================== */
 type PatientAgg = { name: string; phone?: string; count: number; lastDate: string; };
 
-function abbreviateNamePT(fullName: string): string {
-  if (!fullName) return '';
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  const particles = new Set(['de','da','das','do','dos','du',"d'",'d’','e']);
+/* ======================================================================
+   Util: gera HTML para preview (modelo fornecido)
+====================================================================== */
+function buildPatientPreviewHTML(opts: {
+  clinicName?: string;
+  clinicCnpj?: string;
+  patientName: string;
+  patientCpf?: string;
+  patientBirth?: string;    // DD/MM/AAAA (opcional)
+  patientAge?: string;      // "26 anos" (opcional)
+  patientPhoneEmail?: string;
+  periodLabel: string;
+  visits: PatientVisit[];
+}) {
+  const {
+    clinicName = 'Sua Clínica',
+    clinicCnpj = '—',
+    patientName,
+    patientCpf = '—',
+    patientBirth = '—',
+    patientAge = '',
+    patientPhoneEmail = '—',
+    periodLabel,
+    visits
+  } = opts;
 
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-  if (parts.length === 1) return cap(parts[0]);
+  const total = visits.length;
+  const done  = visits.filter(v => (v.status||'').toLowerCase()==='concluido').length;
+  const cancel= visits.filter(v => (v.status||'').toLowerCase()==='cancelado').length;
+  const noshow= visits.filter(v => (v.status||'').toLowerCase()==='no_show').length;
+  const attendRate = total ? Math.round((done/total)*100) : 0;
 
-  let lastIdx = parts.length - 1;
-  while (lastIdx > 0 && particles.has(parts[lastIdx].toLowerCase())) lastIdx--;
+  const totalValueDone = visits
+    .filter(v => (v.status||'').toLowerCase()==='concluido')
+    .reduce((s,v)=> s + (Number(v.price)||0), 0);
 
-  let last = cap(parts[lastIdx]);
-  if (lastIdx - 1 >= 0 && particles.has(parts[lastIdx - 1].toLowerCase())) {
-    last = parts[lastIdx - 1].toLowerCase() + ' ' + last;
+  const avg = done ? totalValueDone / done : 0;
+
+  const byProf = new Map<string, { label: string; value: number }>();
+  for (const v of visits.filter(v => (v.status||'').toLowerCase()==='concluido')) {
+    const label = `${v.professional ?? '—'}\n(${v.professionalSpecialty ?? '—'})`;
+    if (!byProf.has(label)) byProf.set(label, { label, value: 0 });
+    byProf.get(label)!.value += Number(v.price)||0;
   }
+  const profLabels = Array.from(byProf.values()).map(x=>x.label);
+  const profValues = Array.from(byProf.values()).map(x=>Number(x.value.toFixed(2)));
 
-  const first = cap(parts[0]);
-  const mids = parts.slice(1, lastIdx)
-    .filter(p => !particles.has(p.toLowerCase()))
-    .map(p => p[0].toUpperCase());
+  const statusLabels = ['Concluído','Faltou','Cancelado'];
+  const statusValues = [done, noshow, cancel];
 
-  return [first, ...mids, last].filter(Boolean).join(' ');
+  const lastDate = visits.length ? fmtBR(
+    visits.slice().sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time)).slice(-1)[0].date
+  ) : '—';
+
+  const rowsHtml = visits.map(v => {
+    const status = (v.status||'').toLowerCase();
+    const statusClass =
+      status === 'concluido' ? 'concluido' :
+      status === 'no_show'   ? 'faltou' :
+      status === 'cancelado' ? 'cancelado' : '';
+    const statusLabel =
+      status === 'concluido' ? '✓ Concluído' :
+      status === 'no_show'   ? '⚠ Faltou' :
+      status === 'cancelado' ? '✕ Cancelado' : (status || '—');
+
+    return `
+      <tr>
+        <td>${fmtBR(v.date)}</td>
+        <td>${v.time || '—'}</td>
+        <td><span class="professional">${v.professional || '—'}<br><span class="role">${v.professionalSpecialty || ''}</span></span></td>
+        <td>${v.service || '—'}</td>
+        <td><span class="status ${statusClass}">${statusLabel}</span></td>
+        <td class="valor">${v.price!=null ? currency(Number(v.price)) : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const todayStr = new Date().toLocaleString('pt-BR');
+
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Relatório do Paciente</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);padding:40px 20px;min-height:100vh}
+.container{max-width:1000px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.1);overflow:hidden}
+.header-clinic{background:linear-gradient(135deg,#2563eb 0%,#1e40af 100%);padding:30px;color:#fff;display:flex;justify-content:space-between;align-items:flex-start;gap:30px}
+.clinic-info-left{display:flex;gap:20px;flex:1}
+.clinic-logo{width:70px;height:70px;background:#fff;color:#2563eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex-shrink:0}
+.clinic-info-left h2{font-size:24px;font-weight:700;margin-bottom:8px}
+.clinic-info-left p{font-size:13px;opacity:.95;line-height:1.5}
+.clinic-info-right{text-align:right}
+.prontuario-badge{background:rgba(255,255,255,.15);padding:15px 20px;border-radius:8px;margin-bottom:15px;border:1px solid rgba(255,255,255,.3)}
+.prontuario-label{font-size:12px;opacity:.8;text-transform:uppercase;letter-spacing:1px;margin:0}
+.prontuario-badge h3{font-size:22px;font-weight:700;margin:0;color:#fff}
+.data-geracao{font-size:13px;opacity:.9}
+.patient-info{background:#f9fafb;padding:25px 30px;border-bottom:1px solid #e5e7eb}
+.patient-info h3{font-size:16px;font-weight:700;color:#1f2937;margin-bottom:20px;text-transform:uppercase;letter-spacing:.5px}
+.patient-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:25px}
+.patient-field label{display:block;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.patient-field p{font-size:15px;color:#1f2937;font-weight:500;margin:0}
+.header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:30px;color:#fff;margin-top:0}
+.header h1{font-size:26px;margin-bottom:8px;font-weight:700}
+.header p{font-size:14px;opacity:.95;font-weight:300}
+.content{padding:40px 30px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}
+.metric-card{background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);padding:25px;border-radius:10px;border-left:4px solid #667eea;transition:transform .3s ease,box-shadow .3s ease}
+.metric-card:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(102,126,234,.2)}
+.metric-card.completed{border-left-color:#10b981}
+.metric-card.cancelled{border-left-color:#f59e0b}
+.metric-card.missed{border-left-color:#ef4444}
+.metric-label{font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px}
+.metric-value{font-size:32px;font-weight:700;color:#1f2937}
+.metric-subtitle{font-size:12px;color:#9ca3af;margin-top:5px}
+.section{margin-bottom:40px}
+.section-title{font-size:18px;font-weight:700;color:#1f2937;margin-bottom:20px;padding-bottom:12px;border-bottom:2px solid #e5e7eb}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-bottom:30px}
+.chart-wrapper{background:#f9fafb;padding:20px;border-radius:10px;border:1px solid #e5e7eb}
+.chart-wrapper h3{font-size:14px;font-weight:600;color:#374151;margin-bottom:15px;text-transform:uppercase;letter-spacing:.5px}
+.chart-container{position:relative;height:250px}
+table{width:100%;border-collapse:collapse;margin-top:15px}
+thead{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
+th{padding:15px;text-align:left;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px}
+td{padding:16px 15px;border-bottom:1px solid #e5e7eb;font-size:14px}
+tbody tr:nth-child(even){background:#f9fafb}
+tbody tr:hover{background:#f3f4f6}
+.status{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.status.concluido{background:#d1fae5;color:#065f46}
+.status.faltou{background:#fee2e2;color:#7f1d1d}
+.status.cancelado{background:#fef3c7;color:#78350f}
+.status::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor}
+.valor{font-weight:600;color:#667eea}
+.professional{font-weight:500;color:#1f2937}
+.role{font-size:12px;color:#6b7280;font-weight:normal}
+.stats-row{display:flex;gap:15px;font-size:13px;margin-top:15px;padding:15px;background:#f9fafb;border-radius:8px;flex-wrap:wrap}
+.stat-item{display:flex;align-items:center;gap:8px}
+.stat-label{color:#6b7280;font-weight:500}
+.stat-value{color:#1f2937;font-weight:700}
+.divider{width:1px;height:20px;background:#e5e7eb}
+@media(max-width:768px){
+  .metrics{grid-template-columns:1fr}
+  .charts-grid{grid-template-columns:1fr}
+  table{font-size:12px}
+  th,td{padding:10px}
+  .header-clinic{flex-direction:column;gap:20px}
+  .clinic-info-right{text-align:left}
+  .header{padding:25px 20px}
+  .header h1{font-size:22px}
+  .content{padding:20px}
+  .patient-grid{grid-template-columns:1fr;gap:15px}
+}
+@media print{body{background:#fff;padding:0}.container{box-shadow:none;max-width:100%}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header-clinic">
+    <div class="clinic-info-left">
+      <div class="clinic-logo">${(clinicName||'S')[0] ?? 'C'}</div>
+      <div>
+        <h2>${clinicName}</h2>
+        <p>CNPJ: ${clinicCnpj}</p>
+        <p>—</p>
+        <p>—</p>
+      </div>
+    </div>
+    <div class="clinic-info-right">
+      <div class="prontuario-badge">
+        <p class="prontuario-label">Documento de Prontuário</p>
+        <h3>PRONTUÁRIO #${String(Math.floor(Math.random()*999999)).padStart(6,'0')}</h3>
+      </div>
+      <p class="data-geracao">Gerado em: ${todayStr}</p>
+    </div>
+  </div>
+
+  <div class="patient-info">
+    <h3>INFORMAÇÕES DO PACIENTE</h3>
+    <div class="patient-grid">
+      <div class="patient-field">
+        <label>NOME</label>
+        <p>${patientName}</p>
+      </div>
+      <div class="patient-field">
+        <label>CPF</label>
+        <p>${patientCpf}</p>
+      </div>
+      <div class="patient-field">
+        <label>DATA DE NASCIMENTO</label>
+        <p>${patientBirth}${patientAge ? ` (${patientAge})` : ''}</p>
+      </div>
+      <div class="patient-field">
+        <label>TOTAL DE CONSULTAS</label>
+        <p>${total}</p>
+      </div>
+      <div class="patient-field">
+        <label>ÚLTIMA CONSULTA</label>
+        <p>${lastDate}</p>
+      </div>
+      <div class="patient-field">
+        <label>CELULAR / EMAIL</label>
+        <p>${patientPhoneEmail}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="header">
+    <h1>Relatório Detalhado do Paciente</h1>
+    <p>Período: ${periodLabel}</p>
+  </div>
+
+  <div class="content">
+    <div class="metrics">
+      <div class="metric-card completed">
+        <div class="metric-label">Atendimentos Concluídos</div>
+        <div class="metric-value">${done}</div>
+        <div class="metric-subtitle">de ${total} agendados (${attendRate}%)</div>
+      </div>
+      <div class="metric-card missed">
+        <div class="metric-label">Não Compareceu</div>
+        <div class="metric-value">${noshow}</div>
+        <div class="metric-subtitle">—</div>
+      </div>
+      <div class="metric-card cancelled">
+        <div class="metric-label">Cancelado</div>
+        <div class="metric-value">${cancel}</div>
+        <div class="metric-subtitle">—</div>
+      </div>
+      <div class="metric-card completed">
+        <div class="metric-label">Valor Total</div>
+        <div class="metric-value">${currency(totalValueDone)}</div>
+        <div class="metric-subtitle">Média: ${currency(avg || 0)}/consulta</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">Análise Visual</h2>
+      <div class="charts-grid">
+        <div class="chart-wrapper">
+          <h3>Distribuição por Profissional (Valor Concluído)</h3>
+          <div class="chart-container">
+            <canvas id="professionalsChart"></canvas>
+          </div>
+        </div>
+        <div class="chart-wrapper">
+          <h3>Distribuição por Status</h3>
+          <div class="chart-container">
+            <canvas id="statusChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">Histórico de Atendimentos</h2>
+
+      <div class="stats-row">
+        <div class="stat-item"><span class="stat-label">Total de Atendimentos:</span><span class="stat-value">${total}</span></div>
+        <div class="divider"></div>
+        <div class="stat-item"><span class="stat-label">Taxa de Comparecimento:</span><span class="stat-value">${attendRate}%</span></div>
+        <div class="divider"></div>
+        <div class="stat-item"><span class="stat-label">Profissionais Envolvidos:</span><span class="stat-value">${byProf.size || 0}</span></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Horário</th>
+            <th>Profissional</th>
+            <th>Serviço</th>
+            <th>Status</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Profissionais (doughnut)
+  const profCtx = document.getElementById('professionalsChart').getContext('2d');
+  new Chart(profCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ${JSON.stringify(profLabels)},
+      datasets: [{
+        data: ${JSON.stringify(profValues)},
+        backgroundColor: ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#22c55e', '#a78bfa'],
+        borderColor: 'white',
+        borderWidth: 2,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 12, weight: '500' }, padding: 15, usePointStyle: true }
+        }
+      }
+    }
+  });
+
+  // Status (pie)
+  const statusCtx = document.getElementById('statusChart').getContext('2d');
+  new Chart(statusCtx, {
+    type: 'pie',
+    data: {
+      labels: ${JSON.stringify(statusLabels)},
+      datasets: [{
+        data: ${JSON.stringify(statusValues)},
+        backgroundColor: ['#10b981', '#ef4444', '#f59e0b'],
+        borderColor: 'white',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 12, weight: '500' }, padding: 15, usePointStyle: true }
+        }
+      }
+    }
+  });
+</script>
+</body>
+</html>`;
 }
 
-const PatientsModal: React.FC<{
-  open: boolean; onClose: () => void; periodLabel: string; patients: PatientAgg[];
-  onOpenPatient: (patientName: string) => void;
-}> = ({ open, onClose, periodLabel, patients, onOpenPatient }) => {
-  const [q, setQ] = useState('');
-  const filtered = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    if (!t) return patients;
-    return patients.filter(p => p.name.toLowerCase().includes(t));
-  }, [q, patients]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4">
-      <div className="mt-10 w-full max-w-xl bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">Pacientes ({periodLabel})</h3>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X size={18} /></button>
-        </div>
-
-        <div className="px-5 py-3 border-b">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar paciente..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm"
-            />
-          </div>
-        </div>
-
-        <div className="max-h-[65vh] overflow-y-auto divide-y">
-          {filtered.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">Nenhum paciente encontrado.</div>
-          ) : (
-            filtered.map((p, idx) => (
-              <button
-                key={idx}
-                onClick={() => onOpenPatient(p.name)}
-                className="w-full text-left px-5 py-4 hover:bg-gray-50"
-                title="Ver atendimentos do paciente"
-              >
-                <div className="font-medium text-gray-900">{p.name}</div>
-                <div className="text-sm text-gray-600">
-                  Último atendimento: {fmtBR(p.lastDate)} • {p.count} {p.count === 1 ? 'atendimento' : 'atendimentos'}
-                </div>
-                {p.phone && (
-                  <div className="mt-1 text-sm text-gray-600 flex items-center gap-1.5">
-                    <Phone size={14} /> {p.phone}
-                  </div>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-
-        <div className="px-5 py-3 border-t text-sm text-gray-600 bg-gray-50">
-          Total de pacientes únicos: <b>{filtered.length}</b>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const PatientDetailsModal: React.FC<{
-  open: boolean; onClose: () => void; patientName: string; periodLabel: string; visits: PatientVisit[];
-}> = ({ open, onClose, patientName, periodLabel, visits }) => {
-  const total = visits.length;
-  const totalValue = visits.reduce((s, v) => s + (Number(v.price) || 0), 0);
-
-  const grouped = useMemo(() => {
-    const m = new Map<string, { name: string; spec?: string; count: number; value: number }>();
-    for (const v of visits) {
-      const name = v.professional || '—';
-      const spec = v.professionalSpecialty;
-      const key = `${name}#${spec ?? ''}`;
-      if (!m.has(key)) m.set(key, { name, spec, count: 0, value: 0 });
-      const x = m.get(key)!; x.count += 1; x.value += Number(v.price) || 0;
-    }
-    return Array.from(m.values());
-  }, [visits]);
-
-  const handlePdf = async () => {
-    const blob = await pdf(
-      <PatientPdfDocument patientName={patientName} periodLabel={periodLabel} visits={visits} />
-    ).toBlob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `paciente_${patientName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s+/g,'_')}.pdf`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-4">
-      <div className="mt-10 w-full max-w-2xl bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <div>
-            <h3 className="text-lg font-semibold">{patientName}</h3>
-            <p className="text-xs text-gray-500">Período: {periodLabel}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handlePdf} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm">
-              <FileText size={16} /> Exportar PDF
-            </button>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X size={18} /></button>
-          </div>
-        </div>
-
-        <div className="px-5 py-3 border-b grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-lg bg-gray-50 p-3">
-            <div className="text-gray-500">Atendimentos</div>
-            <div className="text-gray-900 font-semibold text-lg">{total}</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 p-3">
-            <div className="text-gray-500">Valor total</div>
-            <div className="text-gray-900 font-semibold text-lg">{currency(totalValue)}</div>
-          </div>
-        </div>
-
-        <div className="px-5 py-3 border-b">
-          <div className="font-medium mb-2">Resumo por Profissional</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-            {grouped.map((g, i) => (
-              <div key={i} className="rounded-md border border-gray-200 p-2 flex items-center justify-between">
-                <span className="text-gray-800">
-                  {g.name}{g.spec ? ` — ${g.spec}` : ''}
-                </span>
-                <span className="text-gray-600">
-                  {g.count} • {currency(g.value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto divide-y">
-          {visits.map((v, i) => (
-            <div key={i} className="px-5 py-3">
-              <div className="text-sm text-gray-500">{fmtBR(v.date)} • {v.time}</div>
-              <div className="font-medium text-gray-900">{v.professional || '—'}</div>
-              {v.professionalSpecialty && (
-                <div className="text-xs text-gray-500 -mt-0.5 mb-1">{v.professionalSpecialty}</div>
-              )}
-              <div className="text-sm text-gray-700">{v.service || '—'}</div>
-              <div className="text-sm text-gray-900">{v.price != null ? currency(v.price) : '—'}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 /* ======================================================================
-   Hero Card (gradiente) com período + 3 KPIs
+   Hero Card (gradiente) + tiles
 ====================================================================== */
 const Pill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }> = ({ active, children, className, ...rest }) => (
   <button
@@ -454,24 +508,18 @@ const HeroReportsCard: React.FC<HeroProps> = ({
       <Pill active={rangeMode==='day'} onClick={() => setRangeMode('day')}><CalendarDays size={14}/> Dia</Pill>
       <Pill active={rangeMode==='week'} onClick={() => setRangeMode('week')}><CalendarRange size={14}/> Semana</Pill>
       <Pill active={rangeMode==='month'} onClick={() => setRangeMode('month')}><Calendar size={14}/> Mês</Pill>
-      <Pill
-        active={rangeMode==='custom'}
-        onClick={() => setRangeMode('custom')}
-      >
-        <FilterIcon size={14}/> Personalizado
-      </Pill>
+      <Pill active={rangeMode==='custom'} onClick={() => setRangeMode('custom')}><FilterIcon size={14}/> Personalizado</Pill>
 
-     {rangeMode === 'custom' && (
-  <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 text-slate-900">
-    <div className="bg-white/95 rounded-lg p-2">
-      <DateInput label="De" value={from} onChange={setFrom} />
-    </div>
-    <div className="bg-white/95 rounded-lg p-2">
-      <DateInput label="Até" value={to} onChange={setTo} />
-    </div>
-  </div>
-)}
-
+      {rangeMode === 'custom' && (
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 text-slate-900">
+          <div className="bg-white/95 rounded-lg p-2">
+            <DateInput label="De" value={from} onChange={setFrom} />
+          </div>
+          <div className="bg-white/95 rounded-lg p-2">
+            <DateInput label="Até" value={to} onChange={setTo} />
+          </div>
+        </div>
+      )}
     </div>
 
     <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -602,6 +650,28 @@ const Reports: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
+  // clínica (para o cabeçalho do preview HTML)
+  const [clinicName, setClinicName] = useState<string>('Sua Clínica');
+  const [clinicCnpj, setClinicCnpj]   = useState<string>('—');
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id;
+        if (!uid) return;
+        const { data } = await supabase
+          .from('profiles')
+          .select('clinic_name, clinic_cnpj')
+          .eq('id', uid)
+          .maybeSingle();
+        if (data) {
+          if (data.clinic_name) setClinicName(data.clinic_name);
+          if (data.clinic_cnpj) setClinicCnpj(data.clinic_cnpj);
+        }
+      } catch {}
+    })();
+  }, []);
+
   const { professionals } = useProfessionals();
   const { transactions } = useTransactions();
   const { history } = useAppointmentHistory();
@@ -649,7 +719,7 @@ const Reports: React.FC = () => {
     () => rangeHistory.filter(h => isDone(h.status)), [rangeHistory]
   );
 
-  /* ======= Transações do período (MESMA REGRA DO FINANCEIRO) ======= */
+  /* ======= Transações do período ======= */
   const rangeTransactionsAll = useMemo(() => {
     return myTransactions.filter((t) => {
       const dateStr =
@@ -661,7 +731,7 @@ const Reports: React.FC = () => {
     });
   }, [myTransactions, from, to]);
 
-  const { revenue: totalRevenueFromFinance, expenses: totalExpenses } = useMemo(() => {
+  const { expenses: totalExpenses } = useMemo(() => {
     let revenue = 0;
     let expenses = 0;
 
@@ -685,12 +755,11 @@ const Reports: React.FC = () => {
     return { revenue, expenses };
   }, [rangeTransactionsAll]);
 
-  // ======= NOVO: faturamento bruto (histórico concluído) =======
+  // faturamento bruto (somente concluídos)
   const grossBilling = useMemo(
     () => completedRangeHistory.reduce((s, h) => s + (Number((h as any).price) || 0), 0),
     [completedRangeHistory]
   );
-  // Receita da clínica (apenas atendimentos concluídos)
   const clinicRevenue = useMemo(
     () => completedRangeHistory.reduce((s, h) => {
       const price = Number((h as any).price) || 0;
@@ -756,7 +825,7 @@ const Reports: React.FC = () => {
     }));
   }, [completedRangeHistory, professionals]);
 
-  // pacientes agregados (para modal/lista)
+  // pacientes agregados
   const patientsAgg: PatientAgg[] = useMemo(() => {
     const map = new Map<string, PatientAgg>();
     for (const h of rangeHistory) {
@@ -799,6 +868,7 @@ const Reports: React.FC = () => {
           professionalSpecialty: specFromHistory || (pid ? specById[pid] : undefined),
           service: (h as any).service,
           price: Number(h.price) || null,
+          status: (h.status ?? '').toLowerCase(),
         };
       });
 
@@ -807,7 +877,7 @@ const Reports: React.FC = () => {
     setPatientModalOpen(true);
   };
 
-  // PDF geral
+  // PDF geral (lista do período)
   const handleExportPdf = async () => {
     const range = rangeHistory;
     const byStatus: Record<string, number> = {};
@@ -860,7 +930,7 @@ const Reports: React.FC = () => {
         setRangeMode={setRangeMode}
         from={from} to={to}
         setFrom={setFrom} setTo={setTo}
-        revenue={grossBilling}            // mostra Faturamento Bruto
+        revenue={grossBilling}
         expenses={totalExpenses}
         marginPct={profitMargin}
         onPdf={handleExportPdf}
@@ -901,7 +971,7 @@ const Reports: React.FC = () => {
                   onClick={() => openPatient(p.name)}
                   title="Ver atendimentos deste paciente"
                 >
-                  {abbreviateNamePT(p.name)}
+                  {p.name}
                 </button>
                 <span className="text-xs text-gray-500">{p.count} {p.count === 1 ? 'atendimento' : 'atendimentos'}</span>
               </div>
@@ -993,9 +1063,269 @@ const Reports: React.FC = () => {
         patientName={patientModalName}
         periodLabel={periodLabel}
         visits={patientVisits}
+        clinicName={clinicName}
+        clinicCnpj={clinicCnpj}
       />
     </div>
   );
 };
 
 export default Reports;
+
+/* ======================================================================
+   Modais (PatientsModal mantido) + PatientDetailsModal com PREVIEW interno
+====================================================================== */
+const PatientsModal: React.FC<{
+  open: boolean; onClose: () => void; periodLabel: string; patients: PatientAgg[];
+  onOpenPatient: (patientName: string) => void;
+}> = ({ open, onClose, periodLabel, patients, onOpenPatient }) => {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return patients;
+    return patients.filter(p => p.name.toLowerCase().includes(t));
+  }, [q, patients]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4">
+      <div className="mt-10 w-full max-w-xl bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-lg font-semibold">Pacientes ({periodLabel})</h3>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+        </div>
+
+        <div className="px-5 py-3 border-b">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar paciente..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="max-h-[65vh] overflow-y-auto divide-y">
+          {filtered.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">Nenhum paciente encontrado.</div>
+          ) : (
+            filtered.map((p, idx) => (
+              <button
+                key={idx}
+                onClick={() => onOpenPatient(p.name)}
+                className="w-full text-left px-5 py-4 hover:bg-gray-50"
+                title="Ver atendimentos do paciente"
+              >
+                <div className="font-medium text-gray-900">{p.name}</div>
+                <div className="text-sm text-gray-600">
+                  Último atendimento: {fmtBR(p.lastDate)} • {p.count} {p.count === 1 ? 'atendimento' : 'atendimentos'}
+                </div>
+                {p.phone && (
+                  <div className="mt-1 text-sm text-gray-600 flex items-center gap-1.5">
+                    <Phone size={14} /> {p.phone}
+                  </div>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t text-sm text-gray-600 bg-gray-50">
+          Total de pacientes únicos: <b>{filtered.length}</b>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PatientDetailsModal: React.FC<{
+  open: boolean; onClose: () => void; patientName: string; periodLabel: string; visits: PatientVisit[];
+  clinicName?: string; clinicCnpj?: string;
+}> = ({ open, onClose, patientName, periodLabel, visits, clinicName, clinicCnpj }) => {
+  const total = visits.length;
+  const totalValue = visits.filter(v => (v.status||'').toLowerCase()==='concluido')
+                           .reduce((s, v) => s + (Number(v.price) || 0), 0);
+
+  const grouped = useMemo(() => {
+    const m = new Map<string, { name: string; spec?: string; count: number; value: number }>();
+    for (const v of visits) {
+      const name = v.professional || '—';
+      const spec = v.professionalSpecialty;
+      const key = `${name}#${spec ?? ''}`;
+      if (!m.has(key)) m.set(key, { name, spec, count: 0, value: 0 });
+      const x = m.get(key)!; x.count += 1; x.value += Number(v.price) || 0;
+    }
+    return Array.from(m.values());
+  }, [visits]);
+
+  // ======= Pré-visualização interna (iframe) =======
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string>('');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // abre a pré-visualização com o mesmo HTML do preview
+  const openPreview = () => {
+    const html = buildPatientPreviewHTML({
+      clinicName,
+      clinicCnpj,
+      patientName,
+      periodLabel,
+      visits,
+    });
+    setPreviewHtml(html);
+    setPreviewOpen(true);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-4">
+      <div className="mt-10 w-full max-w-2xl bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div>
+            <h3 className="text-lg font-semibold">{patientName}</h3>
+            <p className="text-xs text-gray-500">Período: {periodLabel}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openPreview}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm"
+              title="Baixar PDF"
+            >
+              <Download size={16} /> Baixar PDF
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X size={18} /></button>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="px-5 py-3 border-b grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-lg bg-gray-50 p-3">
+            <div className="text-gray-500">Atendimentos (todos)</div>
+            <div className="text-gray-900 font-semibold text-lg">{total}</div>
+          </div>
+          <div className="rounded-lg bg-gray-50 p-3">
+            <div className="text-gray-500">Valor total (concluídos)</div>
+            <div className="text-gray-900 font-semibold text-lg">{currency(totalValue)}</div>
+          </div>
+        </div>
+
+        {/* Resumo por profissional */}
+        <div className="px-5 py-3 border-b">
+          <div className="font-medium mb-2">Resumo por Profissional</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            {grouped.map((g, i) => (
+              <div key={i} className="rounded-md border border-gray-200 p-2 flex items-center justify-between">
+                <span className="text-gray-800">
+                  {g.name}{g.spec ? ` — ${g.spec}` : ''}
+                </span>
+                <span className="text-gray-600">
+                  {g.count} • {currency(g.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Lista (scrollável com folga inferior) */}
+        <div className="flex-1 overflow-y-auto overscroll-contain divide-y px-5 py-3 pb-[calc(env(safe-area-inset-bottom)+120px)]">
+          {visits.map((v, i) => (
+            <div key={i} className="py-3">
+              <div className="text-sm text-gray-500">{fmtBR(v.date)} • {v.time}</div>
+              <div className="font-medium text-gray-900">{v.professional || '—'}</div>
+              {v.professionalSpecialty && (
+                <div className="text-xs text-gray-500 -mt-0.5 mb-1">{v.professionalSpecialty}</div>
+              )}
+              <div className="text-sm text-gray-700">{v.service || '—'}</div>
+              <div className="text-sm text-gray-900">
+                {v.price != null ? currency(Number(v.price)) : '—'}
+                {!!v.status && (
+                  <span className="ml-2 text-xs text-gray-600">
+                    • {STATUS_LABEL_PT[(v.status||'').toLowerCase()] ?? v.status}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="h-6" />
+        </div>
+      </div>
+
+      {/* ===== Modal interno de Pré-visualização (iframe) ===== */}
+      {previewOpen && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl w-full max-w-[1120px] max-h-[95vh] overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white border-b px-3 sm:px-4 py-2 flex items-center justify-between">
+              <div className="text-sm font-semibold">Pré-visualização do PDF</div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const w = window.open('', '_blank');
+                    if (!w) return;
+                    w.document.open();
+                    w.document.write(previewHtml);
+                    w.document.close();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+                  title="Visualizar em nova guia"
+                >
+                  Visualizar
+                </button>
+
+                <button
+                  onClick={() => {
+                    const win = iframeRef.current?.contentWindow;
+                    if (!win) return;
+                    setTimeout(() => { try { win.focus(); win.print(); } catch(e) {} }, 200);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+                  title="Imprimir"
+                >
+                  Imprimir
+                </button>
+
+                <button
+                  onClick={() => {
+                    const win = iframeRef.current?.contentWindow;
+                    if (!win) return;
+                    setTimeout(() => { try { win.focus(); win.print(); } catch(e) {} }, 200);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+                  title="Baixar PDF"
+                >
+                  Baixar PDF
+                </button>
+
+                <button
+                  onClick={() => setPreviewOpen(false)}
+                  className="px-3 py-1.5 text-sm text-blue-600 hover:underline"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {/* Área de visualização */}
+            <iframe
+              ref={iframeRef}
+              title="Pré-visualização do Relatório"
+              srcDoc={previewHtml}
+              className="w-full h-[80vh] border-0"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

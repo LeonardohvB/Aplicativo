@@ -556,20 +556,7 @@ useEffect(() => {
         </button>
         <h1 className="text-lg font-semibold">Gerador de Atestados</h1>
 
-        <div className="ml-auto hidden sm:flex items-center gap-2 no-print">
-          <button onClick={() => setActiveTab("preview")} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm">
-            <Eye className="w-4 h-4" /> Visualizar
-          </button>
-          <button onClick={handleDownloadPDF} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm">
-            <Download className="w-4 h-4" /> Baixar PDF
-          </button>
-          <button onClick={handlePrint} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm">
-            <Printer className="w-4 h-4" /> Imprimir
-          </button>
-          <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm disabled:opacity-60">
-            <Plus className="w-4 h-4" /> {saving ? "Salvando..." : "Salvar"}
-          </button>
-        </div>
+       
       </div>
 
       {/* Tabs */}
@@ -588,7 +575,7 @@ useEffect(() => {
       </div>
 
       {/* Conteúdo */}
-      <div className="p-4 overflow-y-auto flex-1">
+      <div className="p-4 overflow-y-auto flex-1 pb-28 sm:pb-20 lg:pb-10">
         {/* FORM */}
         {activeTab === "form" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
