@@ -13,7 +13,7 @@ interface AddProfessionalModalProps {
     phone: string;             // apenas dígitos
     registrationCode: string;  // "SIGLA - número"
     commissionRate?: number;
-  }) => void;
+  }) => Promise<void> | void;   // <- aceita assíncrono
 }
 
 /* ===== Helpers de dígitos/telefone ===== */
@@ -64,7 +64,6 @@ function isValidCPF(cpfStr: string) {
 /* ===== Nome completo (mínimo nome + sobrenome) ===== */
 function hasFirstAndLastName(full: string) {
   const parts = (full || '').trim().split(/\s+/).filter(Boolean);
-  // considera “nome completo” se houver pelo menos 2 partes com 2+ caracteres
   const strong = parts.filter(p => p.replace(/[^a-zá-úà-ùãõç]/gi, '').length >= 2);
   return strong.length >= 2;
 }
@@ -111,30 +110,31 @@ export default function AddProfessionalModal({
     phone?: string;
     regNumber?: string;
     customCouncil?: string;
+    generic?: string;
   }>({});
   const [shake, setShake] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // sempre que mudar o conselho, atualiza automaticamente a profissão/especialidade
   useEffect(() => {
     const auto = COUNCIL_TO_PROFESSION[council] ?? '';
-    setSpecialty(auto); // input travado reflete aqui
+    setSpecialty(auto);
   }, [council]);
 
-  // Reset ao abrir/fechar
   useEffect(() => {
     if (!isOpen) {
       setName(''); setCpf('');
       setSpecialty(COUNCIL_TO_PROFESSION['CRM'] ?? '');
       setPhone('');
       setCouncil('CRM'); setCustomCouncil(''); setRegNumber('');
-      setCommissionRate(''); setErrors({}); setShake(false);
+      setCommissionRate(''); setErrors({}); setShake(false); setSaving(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors(s => ({ ...s, generic: undefined }));
     const nextErrors: typeof errors = {};
 
     // Nome completo
@@ -157,7 +157,6 @@ export default function AddProfessionalModal({
     if (council === 'OUTRO' && !chosenCouncil) nextErrors.customCouncil = 'Informe a sigla do conselho.';
     if (!regNumber.trim()) nextErrors.regNumber = 'Informe o número do registro.';
 
-    // Se houver erros → treme + destaca
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       setShake(true);
@@ -167,15 +166,38 @@ export default function AddProfessionalModal({
 
     const registrationCode = `${chosenCouncil} - ${regNumber.trim()}`;
 
-    onAdd({
-      name: name.trim(),
-      cpf: onlyDigits(cpf),          // envia apenas dígitos
-      specialty: specialty,          // vem do conselho (travado)
-      phone: phoneDigits,            // só dígitos
-      registrationCode,
-      commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
-    });
-    onClose();
+    setSaving(true);
+    try {
+      await onAdd({
+        name: name.trim(),
+        cpf: onlyDigits(cpf),          // envia apenas dígitos
+        specialty: specialty,
+        phone: phoneDigits,
+        registrationCode,
+        commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
+      });
+      onClose();
+    } catch (err: any) {
+      // trata erros vindos do hook (CPF duplicado, etc.)
+      const msg: string = err?.message || String(err) || 'Erro ao salvar.';
+      const normalized = msg.toLowerCase();
+
+      // mensagens possíveis: nossa (CPF já cadastrado) ou do Postgres (índice único)
+      if (normalized.includes('cpf já está cadastrado') ||
+          normalized.includes('duplicado') ||
+          normalized.includes('duplicate key') ||
+          normalized.includes('unique constraint') ||
+          normalized.includes('ux_professionals_cpf')) {
+        setErrors(s => ({ ...s, cpf: 'Este CPF já está cadastrado para outro profissional.' }));
+      } else {
+        setErrors(s => ({ ...s, generic: msg }));
+      }
+
+      setShake(true);
+      setTimeout(() => setShake(false), 260);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -199,6 +221,7 @@ export default function AddProfessionalModal({
                 if (errors.name) setErrors(s => ({ ...s, name: undefined }));
               }}
               onBlur={() => setName((v) => titleAllWordsFinal(v))}
+              disabled={saving}
               className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                 errors.name
                   ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
@@ -222,6 +245,7 @@ export default function AddProfessionalModal({
                 if (errors.cpf) setErrors(s => ({ ...s, cpf: undefined }));
               }}
               inputMode="numeric"
+              disabled={saving}
               placeholder="000.000.000-00"
               className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                 errors.cpf
@@ -246,6 +270,7 @@ export default function AddProfessionalModal({
               }}
               type="tel"
               inputMode="numeric"
+              disabled={saving}
               placeholder="(81) 9 9999-9999"
               className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                 (phone && !isValidCell(phone)) || errors.phone
@@ -254,12 +279,12 @@ export default function AddProfessionalModal({
               }`}
               aria-invalid={(phone && !isValidCell(phone)) || !!errors.phone}
             />
-            <p className={`mt-1 text-xs ${ (phone && !isValidCell(phone)) || errors.phone ? 'text-red-600' : 'text-gray-400'}`}>
+            <p className={`mt-1 text-xs ${(phone && !isValidCell(phone)) || errors.phone ? 'text-red-600' : 'text-gray-400'}`}>
               {(errors.phone ?? 'Informe 11 dígitos (DDD + 9).')}
             </p>
           </div>
 
-           {/* Registro Profissional */}
+          {/* Registro Profissional */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Registro Profissional (obrigatório)</label>
 
@@ -270,6 +295,7 @@ export default function AddProfessionalModal({
                   setCouncil(e.target.value);
                   if (errors.customCouncil) setErrors(s => ({ ...s, customCouncil: undefined }));
                 }}
+                disabled={saving}
                 className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               >
                 {COUNCILS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -282,6 +308,7 @@ export default function AddProfessionalModal({
                     setCustomCouncil(e.target.value.toUpperCase());
                     if (errors.customCouncil) setErrors(s => ({ ...s, customCouncil: undefined }));
                   }}
+                  disabled={saving}
                   placeholder="Sigla (ex.: CRM)"
                   className={`w-[30%] rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                     errors.customCouncil
@@ -298,6 +325,7 @@ export default function AddProfessionalModal({
                   setRegNumber(e.target.value);
                   if (errors.regNumber) setErrors(s => ({ ...s, regNumber: undefined }));
                 }}
+                disabled={saving}
                 placeholder="número (ex.: 26465 / SP)"
                 className={`flex-1 rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                   errors.regNumber
@@ -322,7 +350,6 @@ export default function AddProfessionalModal({
             </div>
           </div>
 
-
           {/* Profissão/Especialidade — TRAVADO (auto) */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
@@ -338,18 +365,29 @@ export default function AddProfessionalModal({
             </p>
           </div>
 
-          
-
-         
-         
+          {/* Erro genérico (backend) */}
+          {errors.generic && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errors.generic}
+            </div>
+          )}
 
           {/* Ações */}
           <div className="flex gap-2 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
+              disabled={saving}
+            >
               Cancelar
             </button>
-            <button type="submit" className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
-              Salvar
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>
         </form>

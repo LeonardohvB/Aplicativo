@@ -13,15 +13,43 @@ import { shortPersonName } from '../../lib/strings';
 interface ProfessionalCardProps {
   professional: Professional;
   onToggle: (id: string) => void;
-  onEdit: (id: string) => void;               // ← mantido por compatibilidade (não usado aqui)
-  onDelete: (id: string) => void;             // não usado aqui
-  onPhotoChange: (id: string, photoFile: File) => void; // compatibilidade
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onPhotoChange: (id: string, photoFile: File) => void;
 }
 
 const placeholder = "https://placehold.co/96x96?text=Foto";
 
+/* ----------------- helpers de URL ----------------- */
+// remove ?v=... ou &v=... do final para evitar duplicar
+function stripVersionParam(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("v");
+    return u.toString();
+  } catch {
+    // URL inválida? tenta fallback simples
+    return url.replace(/[?&]v=[^&]+/, "").replace(/[?&]$/, "");
+  }
+}
+
+// se vier com %2520 etc, decodifica uma vez
+function normalizeEncoded(url: string): string {
+  try {
+    // só tenta quando claramente há encoding de '%'
+    if (/%25[0-9a-f]{2}/i.test(url)) {
+      return decodeURIComponent(url);
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+// adiciona cache-buster
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
+/* -------------------------------------------------- */
 
 /** Helpers locais de formatação de telefone */
 const onlyDigits = (v: string | null | undefined) =>
@@ -31,17 +59,12 @@ const onlyDigits = (v: string | null | undefined) =>
 const formatPhoneBR = (v: string | null | undefined): string => {
   const d = onlyDigits(v);
   if (!d) return "—";
-
   const ddd = d.slice(0, 2);
-
-  // fixo (10)
   if (d.length <= 10) {
     const p1 = d.slice(2, 6);
     const p2 = d.slice(6, 10);
     return `(${ddd}) ${p1}${p2 ? `-${p2}` : ""}`;
   }
-
-  // celular (11)
   const nine = d.slice(2, 3);
   const p1 = d.slice(3, 7);
   const p2 = d.slice(7, 11);
@@ -71,19 +94,17 @@ function resolveAvatarVersion(p: Professional): string | undefined {
 const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   professional,
   onToggle,
-  onEdit: _onEdit,       // ← não utilizado (swipe cuida de editar)
-  // onDelete
+  onEdit: _onEdit,
+  onDelete: _onDelete,
   onPhotoChange,
 }) => {
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Nome curto (Primeiro + Último) para exibição
   const shortName = useMemo(
     () => shortPersonName(professional.name),
     [professional.name]
   );
 
-  // Estado local para refletir imediatamente as mudanças de avatar
   const [avatarVersion, setAvatarVersion] = useState<string | null>(
     resolveAvatarVersion(professional) || null
   );
@@ -103,9 +124,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   }, [professional]);
 
   const avatarSrc = useMemo(() => {
-    const base =
+    // pega URL base (ou placeholder), normaliza e garante que não existe v= duplicado
+    const baseRaw =
       toDisplayUrl(avatarPathOrUrl) ?? resolveAvatarBaseUrl(professional);
-    return withCacheBust(base, avatarVersion);
+    const normalized = normalizeEncoded(stripVersionParam(baseRaw));
+    return withCacheBust(normalized, avatarVersion);
   }, [avatarPathOrUrl, avatarVersion, professional]);
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
@@ -139,13 +162,9 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   const telHref = `tel:+55${onlyDigits(professional.phone)}`;
 
   return (
-    // 🔹 NÃO é mais "clicável para editar": removidos role/tabIndex/onClick
-    <div
-      className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md"
-    >
+    <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md">
       <div className="flex items-start gap-4">
-        {/* Avatar com ring + overlay + status dot
-            data-noswipe → impede que o SwipeRow capture o gesto neste elemento */}
+        {/* Avatar */}
         <div className="relative" onClick={stop} onMouseDown={stop}>
           <button
             type="button"
