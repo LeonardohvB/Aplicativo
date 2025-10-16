@@ -62,8 +62,10 @@ const isValidCPF = (cpfRaw: string) => {
 
 const capSingle = (w: string) =>
   w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
-const titleAllWordsLive = (s: string) =>
-  (s || "")
+const titleAllWordsLive = (s: string) => {
+  const orig = s || "";
+  const hasTrailingSpace = /\s$/.test(orig); // usuário acabou de teclar espaço
+  const normalized = orig
     .toLowerCase()
     .replace(/\s{2,}/g, " ")
     .trimStart()
@@ -71,6 +73,8 @@ const titleAllWordsLive = (s: string) =>
     .filter(Boolean)
     .map((w) => (w.includes("-") ? w.split("-").map(capSingle).join("-") : capSingle(w)))
     .join(" ");
+  return hasTrailingSpace ? normalized + " " : normalized;
+};
 const titleAllWordsFinal = (s: string) => titleAllWordsLive(s).trim();
 /* -------------------------------------------------- */
 

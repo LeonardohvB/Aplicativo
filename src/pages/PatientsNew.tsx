@@ -88,6 +88,23 @@ const isValidCPF = (cpfRaw: string) => {
   return d2 === parseInt(c[10], 10);
 };
 
+const isFullName = (s: string) => {
+  const parts = (s || "")
+    .trim()
+    .replace(/\s{2,}/g, " ")
+    .split(" ")
+    .filter(Boolean);
+
+  if (parts.length < 2) return false;
+
+  // conta como palavra válida se tiver >= 2 letras (aceita acentos; ignora hífens/pontuação)
+  const valid = parts.filter(p =>
+    p.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, "").length >= 2
+  );
+
+  return valid.length >= 2;
+};
+
 // Title case pt-BR
 const LOWER = new Set(["de", "da", "do", "das", "dos", "e"]);
 const cap = (w: string, force: boolean) =>
@@ -202,7 +219,7 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
 
   const validateCreate = () => {
     const e: Record<string, string> = {};
-    if (!name.trim()) e.name = "Informe o nome.";
+    if (!isFullName(name)) e.name = "Informe nome e sobrenome.";
     if (!cpfOk) e.cpf = "CPF inválido.";
     if (!birthOk) e.birthDate = "Data de nascimento obrigatória (DD/MM/AAAA).";
     if (!phoneOk) e.phone = "Telefone obrigatório.";
@@ -256,7 +273,7 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
   const onSubmitEdit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     const e: Record<string, string> = {};
-    if (!name.trim()) e.name = "Informe o nome.";
+    if (!isFullName(name)) e.name = "Informe nome e sobrenome.";
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = "E-mail inválido.";
     if (Object.keys(e).length) { setErrors(e); shakeNow(); return; }
     if (!editing) return;
@@ -463,7 +480,9 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
                 aria-invalid={!!(touched.name && errors.name)}
                 placeholder="Nome completo"
               />
-              {touched.name && errors.name && <p className="mt-1 text-xs text-red-600">Informe o nome.</p>}
+              {touched.name && errors.name && (
+  <p className="mt-1 text-xs text-red-600">{errors.name}</p>
+)}
             </div>
 
             {/* CPF */}
