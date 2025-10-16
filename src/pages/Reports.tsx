@@ -10,7 +10,7 @@ import { useAppointmentHistory } from '../hooks/useAppointmentHistory';
 import { useAppointmentJourneys } from '../hooks/useAppointmentJourneys';
 import { supabase } from '../lib/supabase';
 import { pdf } from '@react-pdf/renderer';
-import ReportDocument, { Row as PdfRow } from '../ReportDocument';
+import ReportDocument, { Row as PdfRow,} from '../ReportDocument';
 
 /* ======================================================================
    Helpers (datas/formatos)
@@ -114,8 +114,8 @@ type PatientAgg = { name: string; phone?: string; count: number; lastDate: strin
    Util: gera HTML para preview (modelo fornecido)
 ====================================================================== */
 function buildPatientPreviewHTML(opts: {
-  clinicName?: string;
-  clinicCnpj?: string;
+  clinic_Name?: string;
+  clinic_Cnpj?: string;
   patientName: string;
   patientCpf?: string;
   patientBirth?: string;    // DD/MM/AAAA (opcional)
@@ -125,8 +125,8 @@ function buildPatientPreviewHTML(opts: {
   visits: PatientVisit[];
 }) {
   const {
-    clinicName = 'Sua Clínica',
-    clinicCnpj = '—',
+    clinic_Name = '—',
+    clinic_Cnpj = '—',
     patientName,
     patientCpf = '—',
     patientBirth = '—',
@@ -273,10 +273,10 @@ tbody tr:hover{background:#f3f4f6}
 <div class="container">
   <div class="header-clinic">
     <div class="clinic-info-left">
-      <div class="clinic-logo">${(clinicName||'S')[0] ?? 'C'}</div>
+      <div class="clinic-logo">${(clinic_Name||'S')[0] ?? 'C'}</div>
       <div>
-        <h2>${clinicName}</h2>
-        <p>CNPJ: ${clinicCnpj}</p>
+        <h2>${clinic_Name}</h2>
+        <p>CNPJ: ${clinic_Cnpj}</p>
         <p>—</p>
         <p>—</p>
       </div>
@@ -452,6 +452,149 @@ tbody tr:hover{background:#f3f4f6}
 </body>
 </html>`;
 }
+
+/* ======================================================================
+   Util: gera HTML para preview do RELATÓRIO GERAL (igual ao modelo do paciente)
+====================================================================== */
+function buildGeneralReportPreviewHTML(opts: {
+  generatedAt: string;
+  periodLabel: string;
+  kpis: { concluded: number; total: number; revenue: number; expenses: number; profit: number; marginPct: number; };
+  donut: { labels: string[]; values: number[] };
+  pie:   { labels: string[]; values: number[] };
+  table: Array<{ date: string; time?: string; professional?: string; professionalSpecialty?: string; service?: string; status?: string; price?: number|null }>;
+}) {
+  const { generatedAt, periodLabel, kpis, donut, pie, table } = opts;
+
+  const rowsHtml = table.map(r => {
+    const st = (r.status||'').toLowerCase();
+    const cls =
+      st.includes('concluido') ? 'concluido' :
+      st.includes('no_show') || st.includes('faltou') ? 'faltou' :
+      st.includes('cancelado') ? 'cancelado' : '';
+    const lab =
+      st.includes('concluido') ? '✓ Concluído' :
+      st.includes('no_show') || st.includes('faltou') ? '⚠ Faltou' :
+      st.includes('cancelado') ? '✕ Cancelado' : (r.status || '—');
+
+    const prof = `${r.professional || '—'}${r.professionalSpecialty ? `<br><span class="role">${r.professionalSpecialty}</span>` : ''}`;
+
+    return `
+      <tr>
+        <td>${fmtBR(r.date)}</td>
+        <td>${r.time || '—'}</td>
+        <td><span class="professional">${prof}</span></td>
+        <td>${r.service || '—'}</td>
+        <td><span class="status ${cls}">${lab}</span></td>
+        <td class="valor">${r.price!=null ? currency(Number(r.price)) : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Relatório de Atendimentos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);padding:24px}
+.container{max-width:1000px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.1);overflow:hidden}
+.header{background:linear-gradient(135deg,#2563eb 0%,#1e40af 100%);padding:26px 26px 18px;color:#fff}
+.header h1{font-size:24px;font-weight:800;margin-bottom:6px}
+.header .badge{display:inline-block;font-size:12px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);padding:6px 10px;border-radius:8px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px;padding:0 24px 18px;background:#4f46e5}
+.kpi{background:#fff1;border-radius:10px;padding:12px;border:1px solid #ffffff44;backdrop-filter:blur(2px)}
+.kpi h4{font-size:11px;opacity:.9;margin-bottom:4px}
+.kpi .v{font-size:18px;font-weight:800}
+.section-title{background:#6d28d9;color:#fff;padding:10px 16px;margin:16px 24px 0;border-radius:10px;font-weight:800}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 24px}
+.card{border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fafafa}
+.card h3{font-size:12px;font-weight:800;margin-bottom:10px}
+.chart{position:relative;height:240px}
+.mini{display:flex;gap:12px;justify-content:space-between;margin:0 24px 10px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px}
+table{width:calc(100% - 48px);margin:0 24px 24px;border-collapse:collapse}
+thead{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
+th{padding:12px;text-align:left;font-size:12px}
+td{padding:12px;border-bottom:1px solid #e5e7eb;font-size:13px}
+tbody tr:nth-child(even){background:#f9fafb}
+.status{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700}
+.status.concluido{background:#d1fae5;color:#065f46}
+.status.faltou{background:#fee2e2;color:#7f1d1d}
+.status.cancelado{background:#fef3c7;color:#78350f}
+.valor{font-weight:700;color:#2563eb}
+.role{font-size:11px;color:#6b7280}
+.footer{color:#6b7280;font-size:12px;padding:0 24px 24px;text-align:right}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Relatório de Atendimentos</h1>
+    <div>Período: ${periodLabel}</div>
+    <div style="margin-top:8px"><span class="badge">Gerado em: ${generatedAt}</span></div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><h4>Atendimentos Concluídos</h4><div class="v">${kpis.concluded}/${kpis.total}</div></div>
+    <div class="kpi"><h4>Receita (Clínica)</h4><div class="v">${currency(kpis.revenue)}</div></div>
+    <div class="kpi"><h4>Despesas</h4><div class="v">${currency(kpis.expenses)}</div></div>
+    <div class="kpi"><h4>Lucro</h4><div class="v">${currency(kpis.profit)}</div></div>
+    <div class="kpi"><h4>Margem</h4><div class="v">${kpis.marginPct.toFixed(1)}%</div></div>
+  </div>
+
+  <div class="section-title">Análise Visual</div>
+
+  <div class="cards">
+    <div class="card">
+      <h3>Distribuição por Profissional (Valor Concluído)</h3>
+      <div class="chart"><canvas id="donut"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Distribuição por Status</h3>
+      <div class="chart"><canvas id="pie"></canvas></div>
+    </div>
+  </div>
+
+  <div class="section-title">Histórico de Atendimentos</div>
+  <div class="mini">
+    <div>Total de Atendimentos: <b>${kpis.total}</b></div>
+    <div>Taxa de Comparecimento: <b>${(kpis.total ? Math.round((kpis.concluded/kpis.total)*100) : 0)}%</b></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>DATA</th><th>HORÁRIO</th><th>PROFISSIONAL</th><th>SERVIÇO</th><th>STATUS</th><th>VALOR</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  <div class="footer">Gerado em ${generatedAt}</div>
+</div>
+
+<script>
+  const donut = new Chart(document.getElementById('donut').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: ${JSON.stringify(donut.labels)}, datasets: [{ data: ${JSON.stringify(donut.values)}, borderWidth:2, borderColor:'#fff', backgroundColor: ['#6366F1','#10B981','#F59E0B','#EF4444','#A78BFA','#22C55E'] }]},
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ usePointStyle:true }}}}
+  });
+
+  const pie = new Chart(document.getElementById('pie').getContext('2d'), {
+    type: 'pie',
+    data: { labels: ${JSON.stringify(pie.labels)}, datasets: [{ data: ${JSON.stringify(pie.values)}, borderWidth:2, borderColor:'#fff', backgroundColor:['#10B981','#EF4444','#F59E0B','#94A3B8'] }]},
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ usePointStyle:true }}}}
+  });
+</script>
+</body>
+</html>`;
+}
+
 
 /* ======================================================================
    Hero Card (gradiente) + tiles
@@ -649,6 +792,12 @@ const Reports: React.FC = () => {
     })();
     return () => { alive = false; };
   }, []);
+
+  // Preview (HTML) do relatório geral
+const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
+const [reportPreviewHtml, setReportPreviewHtml] = useState<string>('');
+const iframeReportRef = useRef<HTMLIFrameElement>(null);
+
 
   // clínica (para o cabeçalho do preview HTML)
   const [clinicName, setClinicName] = useState<string>('Sua Clínica');
@@ -850,6 +999,8 @@ const Reports: React.FC = () => {
   const [patientVisits, setPatientVisits] = useState<PatientVisit[]>([]);
   const [patientsExpanded, setPatientsExpanded] = useState(false);
 
+  // Preview do PDF de atendimentos (ReportDocument)
+
   const openPatient = (name: string) => {
     const specById: Record<string, string | undefined> = {};
     for (const p of professionals) specById[p.id] = (p as any).specialty;
@@ -878,48 +1029,86 @@ const Reports: React.FC = () => {
   };
 
   // PDF geral (lista do período)
-  const handleExportPdf = async () => {
-    const range = rangeHistory;
-    const byStatus: Record<string, number> = {};
-    let revenue = 0;
-    for (const h of range) {
-      const st = (h.status ?? '').toLowerCase();
-      byStatus[st] = (byStatus[st] || 0) + 1;
-      if (isDone(st)) {
-        const price = Number(h.price) || 0;
-        const clinicPct = Number(h.clinicPercentage) || 0;
-        revenue += price * (clinicPct / 100);
-      }
-    }
-    const rows: PdfRow[] = range
-      .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')))
-      .map(h => ({
-        date: h.date,
-        time: (h.startTime && h.endTime) ? `${h.startTime}–${h.endTime}` : (h.startTime || ''),
-        professional: h.professionalId
-          ? (professionals.find(p => p.id === h.professionalId)?.name
-              ?? (h as any).professionalName
-              ?? 'Profissional removido')
-          : ((h as any).professionalName ?? undefined),
-        patient: h.patientName || undefined,
-        status: STATUS_LABEL_PT[(h.status ?? '').toLowerCase()] ?? (h.status ?? ''),
-        price: Number(h.price) || null,
-      }));
+const handleExportPdf = async () => {
+  const range = rangeHistory;
 
-    const blob = await pdf(
-      <ReportDocument
-        title="Relatório de Atendimentos"
-        generatedAt={new Date().toLocaleString()}
-        summary={{ periodLabel, total: rows.length, byStatus, revenue }}
-        rows={rows}
-      />
-    ).toBlob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `relatorio_${from}_a_${to}.pdf`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  // agregações para o resumo
+  const byStatus: Record<string, number> = {};
+  let revenueClinic = 0;
+
+  for (const h of range) {
+    const st = (h.status ?? '').toLowerCase();
+    byStatus[st] = (byStatus[st] || 0) + 1;
+    if (isDone(st)) {
+      const price = Number(h.price) || 0;
+      const clinicPct = Number((h as any).clinicPercentage) || 0;
+      revenueClinic += price * (clinicPct / 100);
+    }
+  }
+
+  const rows: PdfRow[] = range
+    .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')))
+    .map(h => ({
+      date: h.date,
+      time: (h.startTime && h.endTime) ? `${h.startTime}–${h.endTime}` : (h.startTime || ''),
+      professional: h.professionalId
+        ? (professionals.find(p => p.id === h.professionalId)?.name
+            ?? (h as any).professionalName
+            ?? 'Profissional removido')
+        : ((h as any).professionalName ?? undefined),
+      professionalSpecialty: (h as any).professionalSpecialty,
+      service: (h as any).service ?? '—',
+      patient: h.patientName || undefined,
+      status: (h.status ?? ''),
+      price: Number(h.price) || null,
+    }));
+
+  // dados para os gráficos (donut por profissional - só concluídos)
+  const doneRows = rows.filter(r => (r.status || '').toLowerCase().includes('concluido'));
+  const byProf = new Map<string, number>();
+  for (const r of doneRows) {
+    const label = `${r.professional || '—'}${r.professionalSpecialty ? ` (${r.professionalSpecialty})` : ''}`;
+    byProf.set(label, (byProf.get(label) || 0) + (Number(r.price) || 0));
+  }
+  const donut = { labels: Array.from(byProf.keys()), values: Array.from(byProf.values()) };
+
+  // pizza por status
+  const pie = {
+    labels: ['Concluído', 'Faltou', 'Cancelado', 'Outros'],
+    values: [
+      byStatus['concluido'] || 0,
+      byStatus['no_show'] || 0,
+      byStatus['cancelado'] || 0,
+      Math.max(0, rows.length - ((byStatus['concluido']||0)+(byStatus['no_show']||0)+(byStatus['cancelado']||0)))
+    ]
   };
+
+  // KPIs
+  const kpis = {
+    concluded: byStatus['concluido'] || 0,
+    total: rows.length,
+    revenue: revenueClinic,
+    expenses: totalExpenses,
+    profit: revenueClinic - totalExpenses,
+    marginPct: revenueClinic > 0 ? ((revenueClinic - totalExpenses) / revenueClinic) * 100 : 0,
+  };
+
+  // --- PREVIEW HTML no modal ---
+  const html = buildGeneralReportPreviewHTML({
+    generatedAt: new Date().toLocaleString('pt-BR'),
+    periodLabel,
+    kpis,
+    donut,
+    pie,
+    table: rows,
+  });
+
+  setReportPreviewHtml(html);
+  setReportPreviewOpen(true);
+
+  // Dica: o PDF REAL será gerado só quando clicar em "Baixar PDF" dentro do modal.
+};
+
 
   /* ====================== RENDER ====================== */
   return (
@@ -1063,9 +1252,124 @@ const Reports: React.FC = () => {
         patientName={patientModalName}
         periodLabel={periodLabel}
         visits={patientVisits}
-        clinicName={clinicName}
-        clinicCnpj={clinicCnpj}
+        clinic_Name={clinicName}
+        clinic_Cnpj={clinicCnpj}
       />
+
+{/* ===== Modal de Pré-visualização do PDF (Relatório Geral) ===== */}
+{reportPreviewOpen && (
+  <div
+    className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-3"
+    onClick={() => setReportPreviewOpen(false)}
+  >
+    <div
+      className="bg-white rounded-xl w-full max-w-[1120px] max-h-[95vh] overflow-hidden shadow-xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white border-b px-3 sm:px-4 py-2 flex items-center justify-between">
+        <div className="text-sm font-semibold">Pré-visualização do PDF</div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              // gera o PDF real usando o ReportDocument e baixa
+              const range = rangeHistory;
+              const byStatus: Record<string, number> = {};
+              let revenue = 0;
+              for (const h of range) {
+                const st = (h.status ?? '').toLowerCase();
+                byStatus[st] = (byStatus[st] || 0) + 1;
+                if (isDone(st)) {
+                  const price = Number(h.price) || 0;
+                  const clinicPct = Number((h as any).clinicPercentage) || 0;
+                  revenue += price * (clinicPct / 100);
+                }
+              }
+              const rows: PdfRow[] = range
+                .sort((a, b) => (a.date + (a.startTime || '')).localeCompare(b.date + (b.startTime || '')))
+                .map(h => ({
+                  date: h.date,
+                  time: (h.startTime && h.endTime) ? `${h.startTime}–${h.endTime}` : (h.startTime || ''),
+                  professional: h.professionalId
+                    ? (professionals.find(p => p.id === h.professionalId)?.name
+                        ?? (h as any).professionalName
+                        ?? 'Profissional removido')
+                    : ((h as any).professionalName ?? undefined),
+                  professionalSpecialty: (h as any).professionalSpecialty,
+                  service: (h as any).service ?? '—',
+                  patient: h.patientName || undefined,
+                  status: (h.status ?? ''),
+                  price: Number(h.price) || null,
+                }));
+
+              const blob = await pdf(
+                <ReportDocument
+                  title="Relatório de Atendimentos"
+                  generatedAt={new Date().toLocaleString()}
+                  summary={{ periodLabel, total: rows.length, byStatus, revenue }}
+                  rows={rows}
+                />
+              ).toBlob();
+
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `relatorio_${from}_a_${to}.pdf`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+          >
+            Baixar PDF
+          </button>
+
+          <button
+            onClick={() => {
+              const w = window.open('', '_blank');
+              if (!w) return;
+              w.document.open();
+              w.document.write(reportPreviewHtml);
+              w.document.close();
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+            title="Visualizar em nova guia"
+          >
+            Visualizar
+          </button>
+
+          <button
+            onClick={() => {
+              const win = iframeReportRef.current?.contentWindow;
+              if (!win) return;
+              setTimeout(() => { try { win.focus(); win.print(); } catch {} }, 150);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+            title="Imprimir"
+          >
+            Imprimir
+          </button>
+
+          <button
+            onClick={() => setReportPreviewOpen(false)}
+            className="px-3 py-1.5 text-sm text-blue-600 hover:underline"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+
+      {/* Área de visualização (HTML) */}
+      <iframe
+        ref={iframeReportRef}
+        title="Pré-visualização do Relatório"
+        srcDoc={reportPreviewHtml}
+        className="w-full h-[85vh] border-0"
+      />
+    </div>
+  </div>
+)}
+
+
     </div>
   );
 };
@@ -1143,8 +1447,8 @@ const PatientsModal: React.FC<{
 
 const PatientDetailsModal: React.FC<{
   open: boolean; onClose: () => void; patientName: string; periodLabel: string; visits: PatientVisit[];
-  clinicName?: string; clinicCnpj?: string;
-}> = ({ open, onClose, patientName, periodLabel, visits, clinicName, clinicCnpj }) => {
+  clinic_Name?: string; clinic_Cnpj?: string;
+}> = ({ open, onClose, patientName, periodLabel, visits, clinic_Name, clinic_Cnpj }) => {
   const total = visits.length;
   const totalValue = visits.filter(v => (v.status||'').toLowerCase()==='concluido')
                            .reduce((s, v) => s + (Number(v.price) || 0), 0);
@@ -1169,8 +1473,8 @@ const PatientDetailsModal: React.FC<{
   // abre a pré-visualização com o mesmo HTML do preview
   const openPreview = () => {
     const html = buildPatientPreviewHTML({
-      clinicName,
-      clinicCnpj,
+      clinic_Name,
+      clinic_Cnpj,
       patientName,
       periodLabel,
       visits,
