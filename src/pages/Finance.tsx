@@ -22,6 +22,9 @@ import type { Transaction } from '../types';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 import { useConfirm } from '../providers/ConfirmProvider';
 
+// ✅ Toast
+import { ToastContainer, useToast } from '../components/ui/Toast';
+
 /* Tipo local suficiente para o uso neste arquivo */
 type TxStatus = 'paid' | 'pending' | (string & {});
 
@@ -189,31 +192,25 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
 
   return (
     <div ref={containerRef} className="relative select-none">
-      <div className="absolute right-0 top-0 h-full w-24 pr-2 pl-2 flex items-center justify-center">
-        <div className="h-[0px] w-[0px] rounded-2xl bg-white shadow-lg border border-gray-100 flex flex-col items-center justify-center gap-3">
+      <div className="absolute right-0 top-0 z-0 flex h-full w-24 items-center justify-center pr-2 pl-2 pointer-events-none">
+        <div className="flex flex-col items-center justify-center gap-3 p-0">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            className="p-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow transition"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow transition hover:bg-indigo-700"
             aria-label="Editar"
             title="Editar"
           >
-            <Edit2 className="w-4 h-4" />
+            <Edit2 className="h-4 w-4" />
           </button>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="p-6 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow transition"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white shadow transition hover:bg-red-700"
             aria-label="Excluir"
             title="Excluir"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -257,6 +254,9 @@ const Finance: React.FC = () => {
 
   const { transactions, loading, addTransaction, deleteTransaction, editTransaction, updateTxStatus } =
     useTransactions();
+
+  // ✅ toast
+  const { success } = useToast();
 
   /* Filtros */
   const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -427,11 +427,9 @@ const Finance: React.FC = () => {
       cancelText: 'Cancelar',
       icon: <Trash2 className="w-6 h-6" />,
     } as any);
-    // Se seu provider aceitar apenas string, use:
-    // const ok = await askConfirm('Deseja realmente excluir esta transação? Essa ação não pode ser desfeita.');
-
     if (!ok) return;
     await deleteTransaction(id);
+    success('Transação excluída.');
   };
 
   const handleSaveEdit = async (updates: {
@@ -443,8 +441,10 @@ const Finance: React.FC = () => {
   }) => {
     if (!editing) return;
     await editTransaction(editing.id, updates);
+    success('Transação atualizada.');
     setEditing(null);
   };
+
   const handleAdd = async (newTransaction: {
     type: 'income' | 'expense';
     description: string;
@@ -452,6 +452,7 @@ const Finance: React.FC = () => {
     category: string;
   }) => {
     await addTransaction(newTransaction);
+    success('Transação adicionada com sucesso.');
     setIsModalOpen(false);
   };
 
@@ -475,8 +476,8 @@ const Finance: React.FC = () => {
             onClick={() => setIsModalOpen(true)}
             title="Adicionar transação"
             aria-label="Adicionar transação"
-           className="h-10 w-10 flex items-center justify-center bg-white/20 backdrop-blur-sm text-white rounded-full hover:bg-white/30 transition-all shadow-lg hover:shadow-xl mr-14 md:mr-24 -mt-1"
-           >
+            className="h-10 w-10 flex items-center justify-center bg-white/20 backdrop-blur-sm text-white rounded-full hover:bg-white/30 transition-all shadow-lg hover:shadow-xl mr-14 md:mr-24 -mt-1"
+          >
             <Plus className="w-6 h-6" />
           </button>
         </div>
@@ -630,29 +631,29 @@ const Finance: React.FC = () => {
 
       {/* Transações + filtro Personalizado */}
       <div className="px-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+        <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <h2 className="text-xl font-bold text-gray-900">Transações Recentes</h2>
 
           {/* 🔧 grupo com wrap e contador fixo à direita */}
-          <div className="flex w-full sm:w-auto items-center gap-2 flex-wrap">
-            {/* Botões (podem quebrar linha) */}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            {/* Botões */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCustomEnabled((v) => !v)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
                   customEnabled ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'
                 }`}
                 title="Filtrar por intervalo de datas"
               >
                 <span className="inline-flex items-center gap-2">
-                  <Filter className="w-4 h-4" />
+                  <Filter className="h-4 w-4" />
                   Personalizado
                 </span>
               </button>
 
               <button
                 onClick={toggleUnpaidOnly}
-                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
                   unpaidOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 border-gray-200'
                 }`}
                 title="Mostrar apenas recebimentos pendentes"
@@ -660,12 +661,12 @@ const Finance: React.FC = () => {
                 <span className="inline-flex items-center gap-2">
                   Não pagos
                   {unpaidCount > 0 && !unpaidOnly && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700">
                       {unpaidCount}
                     </span>
                   )}
                   {unpaidOnly && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/30 text-white/90">
+                    <span className="rounded-full bg-white/30 px-1.5 py-0.5 text-[11px] text-white/90">
                       {unpaidCount}
                     </span>
                   )}
@@ -675,7 +676,7 @@ const Finance: React.FC = () => {
               {txFilter !== 'all' && (
                 <button
                   onClick={() => setTxFilter('all')}
-                  className="px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 bg-white hover:bg-gray-50"
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
                   title="Mostrar todas as transações"
                 >
                   Todos
@@ -683,9 +684,9 @@ const Finance: React.FC = () => {
               )}
             </div>
 
-            {/* Contador — fica sempre à direita e não quebra */}
-            <div className="ml-auto flex items-center gap-2 text-gray-500 shrink-0 whitespace-nowrap">
-              <CreditCard className="w-5 h-5" />
+            {/* Contador — sempre à direita */}
+            <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap text-gray-500">
+              <CreditCard className="h-5 w-5" />
               <span className="text-xs sm:text-sm">{visibleTxs.length} transações</span>
             </div>
           </div>
@@ -693,9 +694,9 @@ const Finance: React.FC = () => {
 
         {/* Intervalo de datas */}
         {customEnabled && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Data inicial</label>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Data inicial</label>
               <input
                 type="date"
                 value={dateFrom}
@@ -704,7 +705,7 @@ const Finance: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Data final</label>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Data final</label>
               <input
                 type="date"
                 value={dateTo}
@@ -717,15 +718,15 @@ const Finance: React.FC = () => {
 
         {/* LISTA AGRUPADA POR DIA */}
         {groups.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100/50 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CreditCard className="w-8 h-8 text-gray-400" />
+          <div className="rounded-2xl border border-gray-100/50 bg-white p-8 text-center shadow-lg">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+              <CreditCard className="h-8 w-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhuma transação</h3>
-            <p className="text-gray-500 mb-4">Tente alterar o tipo ou o intervalo personalizado.</p>
+            <h3 className="mb-2 text-lg font-semibold text-gray-900">Nenhuma transação</h3>
+            <p className="mb-4 text-gray-500">Tente alterar o tipo ou o intervalo personalizado.</p>
             <button
               onClick={() => setIsModalOpen(true)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+              className="rounded-xl bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700"
             >
               Adicionar Transação
             </button>
@@ -735,8 +736,8 @@ const Finance: React.FC = () => {
             {groups.map((g) => (
               <div key={g.key}>
                 {/* Cabeçalho da data */}
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-3 pl-0.5">
-                  <Calendar className="w-4 h-4 text-gray-400" />
+                <div className="mb-3 flex items-center gap-2 pl-0.5 text-sm text-gray-600">
+                  <Calendar className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">{g.label}</span>
                 </div>
 
@@ -764,7 +765,7 @@ const Finance: React.FC = () => {
                       >
                         {/* CARD ÚNICO */}
                         <div
-                          className={`bg-white rounded-2xl border border-gray-100/50 shadow-lg transition-all ${
+                          className={`rounded-2xl border border-gray-100/50 bg-white shadow-lg transition-all ${
                             isDetailsOpen ? 'ring-2 ring-blue-300/60' : ''
                           }`}
                         >
@@ -830,6 +831,9 @@ const Finance: React.FC = () => {
         onSave={handleSaveEdit}
       />
       <AddTransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onAdd={handleAdd} />
+
+      {/* Toast container (uma vez na página) */}
+      <ToastContainer />
     </div>
   );
 };

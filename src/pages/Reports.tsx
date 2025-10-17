@@ -53,6 +53,16 @@ function parseAmountBR(input: any): number {
   if (!Number.isFinite(n)) n = 0;
   return negative ? -Math.abs(n) : n;
 }
+
+function isTxPaid(t: any): boolean {
+  // cobre campos comuns: status / payment_status / state / paid / isPaid / paid_at
+  const s = String(t?.status ?? t?.payment_status ?? t?.state ?? '').toLowerCase();
+  if (['paid', 'pago', 'quitado', 'concluido'].includes(s)) return true;
+  if (t?.paid === true || t?.isPaid === true) return true;
+  if (t?.paid_at || t?.paidAt) return true;
+  return false;
+}
+
 const parseStrDate = (s?: string | null): Date | null => {
   if (!s) return null;
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
@@ -880,29 +890,43 @@ const iframeReportRef = useRef<HTMLIFrameElement>(null);
     });
   }, [myTransactions, from, to]);
 
-  const { expenses: totalExpenses } = useMemo(() => {
-    let revenue = 0;
-    let expenses = 0;
+// Somatório do Financeiro (receitas pagas; despesas sempre)
+const { revenue: txRevenue, expenses: totalExpenses } = useMemo(() => {
+  let revenue = 0;
+  let expenses = 0;
 
-    for (const t of rangeTransactionsAll) {
-      const raw = (t as any)?.amount;
-      const val = parseAmountBR(raw);
-      const type = String((t as any)?.type || '').toLowerCase();
+  for (const t of rangeTransactionsAll) {
+    const raw  = (t as any)?.amount;
+    const val  = parseAmountBR(raw);
+    const type = String((t as any)?.type || '').toLowerCase();
+    const paid = isTxPaid(t); // helper já definido
 
-      if (type === 'income') {
-        if (val >= 0) revenue += val; else expenses += Math.abs(val);
-        continue;
-      }
-      if (type === 'expense') {
-        expenses += Math.abs(val);
-        continue;
-      }
-      if (val > 0) revenue += val;
-      else if (val < 0) expenses += Math.abs(val);
+    if (type === 'income') {
+      // RECEITAS só entram quando pagas
+      if (!paid) continue;
+      if (val >= 0) revenue += val; else expenses += Math.abs(val);
+      continue;
     }
 
-    return { revenue, expenses };
-  }, [rangeTransactionsAll]);
+    if (type === 'expense') {
+      // DESPESAS entram sempre (não têm "pago")
+      expenses += Math.abs(val);
+      continue;
+    }
+
+    // Fallback por sinal, caso não venha type:
+    if (val > 0) {
+      // trate como receita; só quando paga
+      if (paid) revenue += val;
+    } else if (val < 0) {
+      // trate como despesa; sempre conta
+      expenses += Math.abs(val);
+    }
+  }
+
+  return { revenue, expenses };
+}, [rangeTransactionsAll]);
+
 
   // faturamento bruto (somente concluídos)
   const grossBilling = useMemo(
@@ -919,10 +943,10 @@ const iframeReportRef = useRef<HTMLIFrameElement>(null);
   );
 
   const profitMargin = useMemo(() => {
-    if (clinicRevenue <= 0) return '0.0';
-    const m = ((clinicRevenue - totalExpenses) / clinicRevenue) * 100;
-    return m.toFixed(1);
-  }, [clinicRevenue, totalExpenses]);
+  if (txRevenue <= 0) return '0.0';
+  const m = ((txRevenue - totalExpenses) / txRevenue) * 100;
+  return m.toFixed(1);
+}, [txRevenue, totalExpenses]);
 
   const uniquePatients = useMemo(() =>
     new Set(rangeHistory.map(h => (h.patientName ?? '').toString().toLowerCase())).size
@@ -1084,14 +1108,14 @@ const handleExportPdf = async () => {
   };
 
   // KPIs
-  const kpis = {
-    concluded: byStatus['concluido'] || 0,
-    total: rows.length,
-    revenue: revenueClinic,
-    expenses: totalExpenses,
-    profit: revenueClinic - totalExpenses,
-    marginPct: revenueClinic > 0 ? ((revenueClinic - totalExpenses) / revenueClinic) * 100 : 0,
-  };
+ const kpis = {
+  concluded: byStatus['concluido'] || 0,
+  total: rows.length,
+  revenue: txRevenue,                // <- aqui
+  expenses: totalExpenses,
+  profit: txRevenue - totalExpenses, // <- aqui
+  marginPct: txRevenue > 0 ? ((txRevenue - totalExpenses) / txRevenue) * 100 : 0,
+};
 
   // --- PREVIEW HTML no modal ---
   const html = buildGeneralReportPreviewHTML({
@@ -1119,9 +1143,9 @@ const handleExportPdf = async () => {
         setRangeMode={setRangeMode}
         from={from} to={to}
         setFrom={setFrom} setTo={setTo}
-        revenue={grossBilling}
-        expenses={totalExpenses}
-        marginPct={profitMargin}
+        revenue={txRevenue}
+  expenses={totalExpenses}
+  marginPct={profitMargin}
         onPdf={handleExportPdf}
       />
 
@@ -1302,14 +1326,15 @@ const handleExportPdf = async () => {
                   price: Number(h.price) || null,
                 }));
 
-              const blob = await pdf(
-                <ReportDocument
-                  title="Relatório de Atendimentos"
-                  generatedAt={new Date().toLocaleString()}
-                  summary={{ periodLabel, total: rows.length, byStatus, revenue }}
-                  rows={rows}
-                />
-              ).toBlob();
+             const blob = await pdf(
+  <ReportDocument
+    title="Relatório de Atendimentos"
+    generatedAt={new Date().toLocaleString()}
+    summary={{ periodLabel, total: rows.length, byStatus, revenue: txRevenue }} // <- aqui
+    rows={rows}
+  />
+).toBlob();
+
 
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');

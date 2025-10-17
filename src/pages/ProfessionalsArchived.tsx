@@ -1,8 +1,10 @@
-// src/pages/ProfessionalsArchived.tsx
 import { useMemo, useState } from 'react';
 import { useProfessionals, RefetchOpts } from '../hooks/useProfessionals';
 import ProfessionalCard from '../components/Professionals/ProfessionalCard';
 import { ArrowLeft, RotateCcw } from 'lucide-react';
+import { useConfirm } from '../providers/ConfirmProvider';
+
+type Props = { onBack?: () => void };
 
 function ReactivatePill({
   onClick,
@@ -33,39 +35,43 @@ function ReactivatePill({
   );
 }
 
-export default function ProfessionalsArchived() {
-  // ⬇️ já busca SOMENTE arquivados no primeiro carregamento
+export default function ProfessionalsArchived({ onBack }: Props) {
+  const confirm = useConfirm();
+
+  // apenas arquivados
   const initial: RefetchOpts = { onlyArchived: true };
   const { professionals, refetch, restoreProfessional, loading } = useProfessionals(initial);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // segurança extra: caso em algum momento o estado seja “misto”,
-  // garantimos que só renderize arquivados.
   const archivedList = useMemo(
-    () => professionals.filter(p => p.isArchived),
+    () => professionals.filter((p) => p.isArchived),
     [professionals]
   );
 
   const noop = () => {};
   const noopPhoto = async (_id: string, _f: File) => {};
 
+  const handleBack = () => {
+    if (onBack) return onBack();
+    // fallback leve (sem recarregar): tenta histórico
+    if (window.history.length > 1) window.history.back();
+  };
+
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm mb-6">
-        <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            Profissionais desativados
-          </h1>
-          <button
-            onClick={() => window.history.back()}
-            className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
-            title="Voltar"
-          >
-            <ArrowLeft size={16} />
-            Voltar
-          </button>
-        </div>
+      {/* topo — igual ao Profile */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={handleBack}
+          className="inline-flex items-center text-blue-600 hover:text-blue-800"
+          title="Voltar"
+          aria-label="Voltar"
+        >
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Voltar
+        </button>
+        <h1 className="text-2xl font-bold text-center text-gray-900">Profissionais desativados</h1>
+        <div className="w-[64px]" />
       </div>
 
       {loading ? (
@@ -92,6 +98,20 @@ export default function ProfessionalsArchived() {
                   <ReactivatePill
                     loading={busyId === p.id}
                     onClick={async () => {
+                      const ok = await confirm({
+                        title: 'Reativar profissional?',
+                        description: (
+                          <span>
+                            Tem certeza que deseja reativar <strong>{p.name}</strong>?<br />
+                            Ele voltará a aparecer na lista de profissionais ativos.
+                          </span>
+                        ),
+                        confirmText: 'Reativar',
+                        cancelText: 'Cancelar',
+                        variant: 'primary',
+                      });
+                      if (!ok) return;
+
                       try {
                         setBusyId(p.id);
                         await restoreProfessional(p.id);

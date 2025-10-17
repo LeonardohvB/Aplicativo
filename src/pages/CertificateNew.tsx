@@ -90,6 +90,22 @@ const isoToBR = (iso?: string | null) => {
   return `${m[3]}/${m[2]}/${m[1]}`;
 };
 
+// Title Case que preserva o espaço final (igual ao Profile)
+const capSingle = (w: string) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "");
+const titleAllWordsLive = (s: string) => {
+  const orig = s || "";
+  const hasTrailingSpace = /\s$/.test(orig);
+  const normalized = orig
+    .toLowerCase()
+    .replace(/\s{2,}/g, " ")
+    .trimStart()
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => (w.includes("-") ? w.split("-").map(capSingle).join("-") : capSingle(w)))
+    .join(" ");
+  return hasTrailingSpace ? normalized + " " : normalized;
+};
+
 /* ============================================================
    AsyncSearchSelect
    ============================================================ */
@@ -112,15 +128,34 @@ function AsyncSearchSelect<T>({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const debounced = useDebouncedValue(q, 300);
+  const DEBOUNCE_MS = 500; // menos chamadas
+  const debounced = useDebouncedValue(q, DEBOUNCE_MS);
   const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState<AsyncOption<T>[]>([]);
+
+  // Input: preserva espaço, mascara apenas quando completo, title case para texto
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    const digits = val.replace(/\D+/g, "");
+    if (digits && /^\d+$/.test(digits)) {
+      if (digits.length === 11) {
+        // pode ser CPF ou celular; para busca, CPF já ajuda
+        val = formatCPF(digits);
+      } else if (digits.length === 10 || digits.length === 11) {
+        val = formatPhoneBR(digits);
+      }
+      // se incompleto, não formata
+    } else {
+      val = titleAllWordsLive(val);
+    }
+    setQ(val);
+  };
 
   useEffect(() => {
     let canceled = false;
     (async () => {
       const query = debounced.trim();
-      if (!query || query.length < 2) {
+      if (query.length < 2) {
         setOptions([]);
         return;
       }
@@ -159,7 +194,7 @@ function AsyncSearchSelect<T>({
       ) : (
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={handleInput}
           onFocus={() => setOpen(true)}
           placeholder={placeholder}
           className="w-full rounded-lg border px-3 py-2 outline-none focus:ring"
@@ -211,7 +246,6 @@ async function searchPatientsSupabase(q: string) {
     .limit(50)
     .order("name");
 
-  // Remova se sua tabela não tiver owner_id
   if (uid) query = query.eq("owner_id", uid);
 
   const digits = q.replace(/\D+/g, "");
@@ -243,31 +277,43 @@ async function searchPatientsSupabase(q: string) {
   }));
 }
 
+// Busca profissionais por nome, registro, telefone OU CPF (somente ativos e não arquivados)
 async function searchProfessionalsSupabase(q: string) {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth.user?.id;
 
   let query = supabase
     .from("professionals")
-    .select("id, name, specialty, registration_code, phone")
+    .select("id, name, specialty, registration_code, phone, cpf")
     .limit(50)
-    .order("name");
+    .order("name", { ascending: true })
+    .is("deleted_at", null)   // não arquivados
+    .eq("is_active", true);   // apenas ativos
 
-  if (uid) query = query.eq("owner_id", uid); // remova se não existir
+  if (uid) query = query.eq("owner_id", uid);
 
-  const digits = q.replace(/\D+/g, "");
-  const orParts = [`name.ilike.%${q}%`];
+  const digits = (q || "").replace(/\D+/g, "");
+
+  // 🔧 Só o nome por padrão
+  const parts: string[] = [`name.ilike.%${q}%`];
+
+  // 🔧 Acrescenta filtros numéricos apenas se houver dígitos
   if (digits) {
-    orParts.push(`registration_code.ilike.%${digits}%`);
-    orParts.push(`phone.ilike.%${digits}%`);
+    parts.push(
+      `registration_code.ilike.%${digits}%`,
+      `phone.ilike.%${digits}%`,
+      `cpf.ilike.%${digits}%`
+    );
   }
-  query = query.or(orParts.join(","));
+
+  query = query.or(parts.join(","));
 
   const { data, error } = await query;
   if (error) {
     console.warn("searchProfessionals error:", error);
     return [] as AsyncOption<any>[];
   }
+
   return (data || []).map((p: any) => ({
     key: p.id,
     label: (
@@ -275,6 +321,7 @@ async function searchProfessionalsSupabase(q: string) {
         <span className="font-medium">{p.name}</span>
         <span className="text-xs text-gray-600">
           {p.specialty ? p.specialty : ""}
+          {p.cpf ? ` • ${p.cpf}` : ""}
           {p.registration_code ? ` • ${p.registration_code}` : ""}
           {p.phone ? ` • ${formatPhoneBR(p.phone)}` : ""}
         </span>
@@ -283,9 +330,8 @@ async function searchProfessionalsSupabase(q: string) {
     raw: p,
   }));
 }
-
 /* ============================================================
-   Campos controlados (fix travamentos)
+   Campos controlados
    ============================================================ */
 type FieldProps = React.InputHTMLAttributes<HTMLInputElement> & { label: string };
 const Field = ({ label, className, value, onChange, ...rest }: FieldProps) => (
@@ -400,41 +446,34 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
   }, []);
 
   // Carrega nome da clínica/CNPJ do perfil do usuário
- // Carrega nome da clínica/CNPJ do perfil do usuário
-useEffect(() => {
-  let canceled = false;
-  (async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const uid = user?.id;
-      if (!uid) return;
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id;
+        if (!uid) return;
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('clinic_name, clinic_cnpj')
-        .eq('id', uid)
-        .maybeSingle();
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('clinic_name, clinic_cnpj')
+          .eq('id', uid)
+          .maybeSingle();
 
-      if (error) throw error;
-      if (!canceled && data) {
-        setForm(prev => ({
-          ...prev,
-          // se já tiver um valor "bom", mantém; se estiver vazio/placeholder, usa o do perfil
-          clinicName: prev.clinicName?.trim()
-            ? prev.clinicName
-            : (data.clinic_name ?? ''),
-          clinicCNPJ: prev.clinicCNPJ?.trim()
-            ? prev.clinicCNPJ
-            : (data.clinic_cnpj ?? ''),
-        }));
+        if (error) throw error;
+        if (!canceled && data) {
+          setForm(prev => ({
+            ...prev,
+            clinicName: prev.clinicName?.trim() ? prev.clinicName : (data.clinic_name ?? ''),
+            clinicCNPJ: prev.clinicCNPJ?.trim() ? prev.clinicCNPJ : (data.clinic_cnpj ?? ''),
+          }));
+        }
+      } catch (err) {
+        console.warn('load clinic from profile error:', err);
       }
-    } catch (err) {
-      console.warn('load clinic from profile error:', err);
-    }
-  })();
-  return () => { canceled = true; };
-}, []);
-
+    })();
+    return () => { canceled = true; };
+  }, []);
 
   // Ações
   const handlePrint = () => window.print();
@@ -555,8 +594,6 @@ useEffect(() => {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold">Gerador de Atestados</h1>
-
-       
       </div>
 
       {/* Tabs */}
@@ -585,26 +622,38 @@ useEffect(() => {
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Tipo de Atestado</h2>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {(["saude", "comparecimento", "afastamento", "aptidao", "incapacidade"] as CertificateType[]).map((key) => (
-                    <label key={key} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors">
-                      <input
-                        type="radio"
-                        name="certificateType"
-                        value={key}
-                        checked={form.certificateType === key}
-                        onChange={(e) => setForm((prev) => ({ ...prev, certificateType: e.target.value as CertificateType }))}
-                        className="mt-1"
-                      />
-                      <div>
-                        <p className="font-semibold text-gray-900">
-                          {key === "saude" ? "Atestado de Saúde" :
-                           key === "comparecimento" ? "Atestado de Comparecimento" :
-                           key === "afastamento" ? "Atestado de Afastamento" :
-                           key === "aptidao" ? "Atestado de Aptidão" : "Atestado de Incapacidade"}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
+                  {(["saude", "comparecimento", "afastamento", "aptidao", "incapacidade"] as CertificateType[]).map(
+                    (key) => (
+                      <label
+                        key={key}
+                        className="flex items-start gap-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="radio"
+                          name="certificateType"
+                          value={key}
+                          checked={form.certificateType === key}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, certificateType: e.target.value as CertificateType }))
+                          }
+                          className="mt-1"
+                        />
+                        <div>
+                          <p className="font-semibold text-gray-900">
+                            {key === "saude"
+                              ? "Atestado de Saúde"
+                              : key === "comparecimento"
+                              ? "Atestado de Comparecimento"
+                              : key === "afastamento"
+                              ? "Atestado de Afastamento"
+                              : key === "aptidao"
+                              ? "Atestado de Aptidão"
+                              : "Atestado de Incapacidade"}
+                          </p>
+                        </div>
+                      </label>
+                    )
+                  )}
                 </div>
               </div>
 

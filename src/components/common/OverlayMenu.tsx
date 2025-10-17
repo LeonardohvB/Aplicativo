@@ -11,6 +11,10 @@ import {
 } from "lucide-react";
 import { ClipboardList } from "lucide-react";
 
+// ⬇️ adicionados para o "Encerrar sessão"
+import { supabase } from "../../lib/supabase";
+import ConfirmDialog from "../ui/ConfirmDialog";
+
 type Props = {
   onOpenProfile: () => void;
   onOpenNewPatient: () => void;
@@ -19,7 +23,7 @@ type Props = {
 
   // opcionais
   onOpenCertificateNew?: () => void;
-  onOpenProfessionalsArchived?: () => void; // ⬅️ NOVO
+  onOpenProfessionalsArchived?: () => void;
 };
 
 export default function OverlayMenu({
@@ -34,6 +38,10 @@ export default function OverlayMenu({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const menuItemsRef = useRef<HTMLButtonElement[]>([]);
+
+  // ⬇️ estado do diálogo de sair
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   // ---------- registrar item para navegação ----------
   const registerItemRef = (el: HTMLButtonElement | null, index: number) => {
@@ -106,6 +114,19 @@ export default function OverlayMenu({
   let i = 0;
   const nextIndex = () => (i += 1) - 1;
 
+  // ⬇️ ação de sair (mesmo esquema do Perfil)
+  const reallySignOut = async () => {
+    try {
+      setSigningOut(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } finally {
+      setSigningOut(false);
+      setConfirmSignOut(false);
+      setOpen(false);
+    }
+  };
+
   return (
     <>
       {/* Botão do menu (posicionado pelo container no App) */}
@@ -131,17 +152,17 @@ export default function OverlayMenu({
           {/* fundo escuro */}
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
 
-          {/* painel */}
+          {/* painel (agora expandido até embaixo) */}
           <div
             id="overlay-menu-panel"
             ref={panelRef}
-            className="absolute left-1/2 -translate-x-1/2 top-10 w-[92%] max-w-sm rounded-xl bg-white shadow-2xl ring-1 ring-black/10 overflow-hidden animate-[slideDown_.18s_ease-out] pb-[env(safe-area-inset-bottom)]"
+            className="absolute left-1/2 -translate-x-1/2 top-4 bottom-4 w-[92%] max-w-sm rounded-xl bg-white shadow-2xl ring-1 ring-black/10 overflow-hidden animate-[slideDown_.18s_ease-out] pb-[env(safe-area-inset-bottom)] flex flex-col"
             role="menu"
             aria-labelledby="overlay-menu-title"
             onKeyDown={onKeyNav}
           >
             {/* Cabeçalho */}
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+            <div className="flex items-center justify-between px-4 py-3 ">
               <div id="overlay-menu-title" className="text-xs font-semibold text-emerald-600">
                 ● Aberto <span className="text-slate-500 ml-2">(menu)</span>
               </div>
@@ -154,8 +175,8 @@ export default function OverlayMenu({
               </button>
             </div>
 
-            {/* Lista de ações */}
-            <div className="max-h-[70vh] overflow-y-auto">
+            {/* Conteúdo rolável */}
+            <div className="flex-1 overflow-y-auto">
               <div className="px-4 py-2 text-[11px] font-bold tracking-wide text-slate-500">
                 INÍCIO
               </div>
@@ -216,7 +237,7 @@ export default function OverlayMenu({
                     ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
-                      window.dispatchEvent(new CustomEvent('evolution:open'));
+                      window.dispatchEvent(new CustomEvent("evolution:open"));
                     }}
                     className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                   >
@@ -243,24 +264,6 @@ export default function OverlayMenu({
                   </li>
                 )}
 
-                {/* Profissionais desativados (opcional) */}
-                {onOpenProfessionalsArchived && (
-                  <li>
-                    <button
-                      role="menuitem"
-                      ref={(el) => registerItemRef(el, nextIndex())}
-                      onClick={() => {
-                        setOpen(false);
-                        onOpenProfessionalsArchived();
-                      }}
-                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-                    >
-                      <Archive className="h-4 w-4 text-amber-600" />
-                      <span>Profissionais desativados</span>
-                    </button>
-                  </li>
-                )}
-
                 {/* Histórico de atendimentos */}
                 <li>
                   <button
@@ -277,7 +280,57 @@ export default function OverlayMenu({
                   </button>
                 </li>
               </ul>
+
+              {/* espaçador para empurrar as ações de rodapé */}
+              <div className="h-2" />
             </div>
+
+           {/* Rodapé fixo: Profissionais desativados (antes) e Encerrar sessão (por último) */}
+<div className=" bg-white">
+  {/* Profissionais desativados com o MESMO estilo dos itens de cima */}
+  {onOpenProfessionalsArchived && (
+    <ul className="px-1 py-2 text-sm text-slate-700">
+      <li>
+        <button
+          role="menuitem"
+          ref={(el) => registerItemRef(el, nextIndex())}
+          onClick={() => {
+            setOpen(false);
+            onOpenProfessionalsArchived();
+          }}
+          className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+        >
+          <Archive className="h-4 w-4 text-amber-600" />
+          <span>Profissionais desativados</span>
+        </button>
+      </li>
+    </ul>
+  )}
+
+  {/* Encerrar sessão (mesmo esquema do Perfil) */}
+  <div className="px-3 pb-3">
+    <button
+      role="menuitem"
+      ref={(el) => registerItemRef(el, nextIndex())}
+      onClick={() => setConfirmSignOut(true)}
+      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-4 w-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 8v8a4 4 0 004 4h2" />
+      </svg>
+      Encerrar sessão
+    </button>
+  </div>
+</div>
+
           </div>
 
           {/* animação */}
@@ -289,6 +342,17 @@ export default function OverlayMenu({
           `}</style>
         </div>
       )}
+
+      {/* Diálogo de confirmação (igual ao Perfil) */}
+      <ConfirmDialog
+        open={confirmSignOut}
+        onClose={() => setConfirmSignOut(false)}
+        onConfirm={reallySignOut}
+        title="Encerrar sessão?"
+        description="Você precisará entrar novamente para acessar o sistema."
+        confirmText="Sair"
+        cancelText="Cancelar"
+      />
     </>
   );
 }

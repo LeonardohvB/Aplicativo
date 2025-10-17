@@ -199,7 +199,9 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais': return <Professionals />
-      case 'profissionais_arquivados': return <ProfessionalsArchived />  // ⬅️ NOVO
+      case 'profissionais_arquivados':
+        // ⬅️ Opção A: passamos onBack para voltar via SPA, sem reload
+        return <ProfessionalsArchived onBack={() => setActiveTab('inicio')} />
       case 'agenda':        return <Schedule key={scheduleTs} />
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />

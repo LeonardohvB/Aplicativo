@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 
 interface AddTransactionModalProps {
@@ -12,7 +12,7 @@ interface AddTransactionModalProps {
   }) => void;
 }
 
-// Helpers: Title Case (preserva hífen)
+/* -------- Helpers (Title Case preservando hífen) -------- */
 const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1) : '');
 const titleCase = (input: string) => {
   if (!input) return '';
@@ -36,15 +36,40 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     category: '',
   });
 
+  const [errors, setErrors] = useState<{
+    description?: string;
+    amount?: string;
+    category?: string;
+  }>({});
+
+  // limpa erros quando abrir
+  useEffect(() => {
+    if (isOpen) setErrors({});
+  }, [isOpen]);
+
+  const validate = () => {
+    const e: typeof errors = {};
+    if (!formData.description.trim()) e.description = 'Informe uma descrição.';
+    const n = Number(String(formData.amount).replace(',', '.'));
+    if (!formData.amount || Number.isNaN(n) || n <= 0) e.amount = 'Informe um valor válido maior que zero.';
+    if (!formData.category.trim()) e.category = 'Informe a categoria.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const inputClass = (hasError?: boolean) =>
+    [
+      'w-full px-3 py-2 rounded-lg border transition-colors',
+      'focus:outline-none focus:ring-2',
+      hasError
+        ? 'border-red-300 focus:ring-red-200 focus:border-red-400'
+        : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500',
+    ].join(' ');
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
 
-    if (!formData.description || !formData.amount || !formData.category) {
-      alert('Por favor, preencha todos os campos');
-      return;
-    }
-
-    // normaliza campos antes de enviar
     const description = titleCase(formData.description).trim();
     const category = titleCase(formData.category).trim();
     const amountNum = parseFloat(String(formData.amount).replace(',', '.'));
@@ -63,46 +88,46 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData((s) => ({ ...s, [e.target.name]: e.target.value }));
+    setErrors((s) => ({ ...s, [e.target.name as keyof typeof s]: undefined }));
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md">
-        <div className="flex items-center justify-between mb-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+        <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900">Adicionar Transação</h2>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
             aria-label="Fechar"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Tipo */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Tipo
             </label>
             <select
               name="type"
               value={formData.type}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className={inputClass(false)}
             >
               <option value="income">Receita</option>
               <option value="expense">Despesa</option>
             </select>
           </div>
 
+          {/* Descrição */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Descrição
             </label>
             <input
@@ -113,13 +138,18 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               onBlur={(e) =>
                 setFormData((s) => ({ ...s, description: titleCase(e.target.value) }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Ex.: Recebimento de Pix"
+              className={inputClass(!!errors.description)}
+              aria-invalid={!!errors.description}
             />
+            {errors.description && (
+              <p className="mt-1 text-xs text-red-600">{errors.description}</p>
+            )}
           </div>
 
+          {/* Valor */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Valor (R$)
             </label>
             <input
@@ -129,13 +159,18 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               onChange={handleChange}
               step="0.01"
               min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="130.00"
+              className={inputClass(!!errors.amount)}
+              aria-invalid={!!errors.amount}
             />
+            {errors.amount && (
+              <p className="mt-1 text-xs text-red-600">{errors.amount}</p>
+            )}
           </div>
 
+          {/* Categoria */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Categoria
             </label>
             <input
@@ -146,22 +181,26 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               onBlur={(e) =>
                 setFormData((s) => ({ ...s, category: titleCase(e.target.value) }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Ex.: Consultas, Materiais, Equipamentos"
+              className={inputClass(!!errors.category)}
+              aria-invalid={!!errors.category}
             />
+            {errors.category && (
+              <p className="mt-1 text-xs text-red-600">{errors.category}</p>
+            )}
           </div>
 
-          <div className="flex space-x-3 pt-4">
+          <div className="pt-4 flex space-x-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex-1 rounded-lg bg-gray-100 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-200"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
               Adicionar
             </button>
