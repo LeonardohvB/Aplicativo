@@ -30,7 +30,7 @@ const Professionals: React.FC = () => {
     deleteProfessional,
     archiveProfessional,
     refetch,
-  } = useProfessionals(); // ← por padrão já traz SOMENTE não arquivados
+  } = useProfessionals(); // por padrão traz apenas não arquivados
 
   const openEditById = (id: string) => {
     const professional = professionals.find((p) => p.id === id);
@@ -83,7 +83,7 @@ const Professionals: React.FC = () => {
     refetch();
   };
 
-  // Confirmação para DESATIVAR (arquivar)
+  // Desativar (arquivar)
   const askAndArchive = async (id: string) => {
     const prof = professionals.find(p => p.id === id);
     const ok = await confirm({
@@ -115,7 +115,7 @@ const Professionals: React.FC = () => {
     }
   };
 
-  // Excluir (hard delete) — continuar disponível (admin/casos excepcionais)
+  // Excluir (hard delete) — admin/casos excepcionais
   const askAndDelete = async (id: string) => {
     const prof = professionals.find(p => p.id === id);
     const ok = await confirm({
@@ -161,14 +161,10 @@ const Professionals: React.FC = () => {
 
   return (
     <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* Header simples (sem toggle) */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm mb-6">
-        <div className="px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Profissionais</h1>
-          </div>
-          <div className="mt-3 border-t border-gray-100" />
-        </div>
+      {/* Cabeçalho simples — sem cartão/pílula */}
+      <div className="mb-4">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Profissionais</h1>
+       
       </div>
 
       <div className="space-y-4">
@@ -182,7 +178,7 @@ const Professionals: React.FC = () => {
                 onOpen={(id) => setSwipeOpenId(id)}
                 onClose={() => setSwipeOpenId(null)}
                 onEdit={() => openEditById(p.id)}
-                onDelete={() => askAndArchive(p.id)} // ação padrão do swipe = Desativar (arquivar)
+                onDelete={() => askAndArchive(p.id)} // ação do swipe = Desativar (arquivar)
               >
                 <ProfessionalCard
                   professional={p}
@@ -191,7 +187,6 @@ const Professionals: React.FC = () => {
                   onDelete={askAndArchive}
                   onPhotoChange={handlePhotoChange}
                 />
-                {/* Nada extra aqui. Reativação acontece na tela "Profissionais desativados". */}
               </SwipeRow>
             </div>
           );
