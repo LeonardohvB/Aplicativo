@@ -14,7 +14,6 @@ interface EditJourneyModalProps {
     consultationDuration: number;
     bufferDuration: number;
     defaultPrice: number;
-    defaultService: string;
     clinicPercentage: number;
   }) => void;
   journey: AppointmentJourney | null;
@@ -36,7 +35,6 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
     consultationDuration: '40',
     bufferDuration: '10',
     defaultPrice: '',
-    defaultService: 'Consulta',
     clinicPercentage: '20',
   });
 
@@ -50,7 +48,6 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
         consultationDuration: journey.consultationDuration.toString(),
         bufferDuration: journey.bufferDuration.toString(),
         defaultPrice: journey.defaultPrice.toString(),
-        defaultService: journey.defaultService,
         clinicPercentage: journey.clinicPercentage.toString(),
       });
     }
@@ -99,7 +96,6 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
       consultationDuration: parseInt(formData.consultationDuration),
       bufferDuration: parseInt(formData.bufferDuration),
       defaultPrice: parseFloat(formData.defaultPrice),
-      defaultService: formData.defaultService,
       clinicPercentage: parseFloat(formData.clinicPercentage),
     });
 
@@ -206,20 +202,6 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="130.00"
               required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Serviço Padrão
-            </label>
-            <input
-              type="text"
-              name="defaultService"
-              value={formData.defaultService}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Consulta"
             />
           </div>
 

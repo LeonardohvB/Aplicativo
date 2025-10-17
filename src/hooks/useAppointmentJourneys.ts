@@ -37,7 +37,6 @@ export const useAppointmentJourneys = () => {
         bufferDuration: item.buffer_duration,
         totalSlots: item.total_slots,
         defaultPrice: Number(item.default_price),
-        defaultService: item.default_service,
         defaultBillingMode: item.default_billing_mode as 'clinica' | 'profissional',
         clinicPercentage: item.clinic_percentage || 20,
       })) || [];
@@ -92,6 +91,7 @@ const todayLocalISO = () => {
         clinicPercentage: item.clinic_percentage || 20,
         startedAt: item.started_at,
         finishedAt: item.finished_at,
+        modality: (item.modality as 'presencial' | 'online') ?? 'presencial',
       })) || [];
 
       setSlots(formattedData);
@@ -137,7 +137,6 @@ const todayLocalISO = () => {
     startTime: string;
     endTime: string;
     defaultPrice: number;
-    defaultService: string;
     clinicPercentage: number;
   }) => {
     try {
@@ -173,7 +172,6 @@ const todayLocalISO = () => {
           buffer_duration: 0, // Sem intervalo
           total_slots: totalSlots,
           default_price: journey.defaultPrice,
-          default_service: journey.defaultService,
           default_billing_mode: 'clinica',
           clinic_percentage: journey.clinicPercentage,
         }])
@@ -190,7 +188,6 @@ const todayLocalISO = () => {
         start_time: journey.startTime,
         end_time: journey.endTime,
         date: journey.date,
-        service: journey.defaultService,
         price: journey.defaultPrice,
         billing_mode: 'clinica',
         clinic_percentage: journey.clinicPercentage,
@@ -216,7 +213,6 @@ const todayLocalISO = () => {
     startTime: string;
     endTime: string;
     defaultPrice: number;
-    defaultService: string;
     clinicPercentage: number;
   }) => {
     try {
@@ -255,7 +251,6 @@ const todayLocalISO = () => {
           buffer_duration: 0, // Sem intervalo
           total_slots: totalSlots,
           default_price: journey.defaultPrice,
-          default_service: journey.defaultService,
           default_billing_mode: 'clinica',
           clinic_percentage: journey.clinicPercentage,
         })
@@ -282,7 +277,6 @@ const todayLocalISO = () => {
         start_time: journey.startTime,
         end_time: journey.endTime,
         date: journey.date,
-        service: journey.defaultService,
         price: journey.defaultPrice,
         billing_mode: 'clinica',
         clinic_percentage: journey.clinicPercentage,
@@ -290,16 +284,17 @@ const todayLocalISO = () => {
 
       // Se havia paciente agendado, preservar os dados
       if (hasScheduledPatient) {
-        Object.assign(newSlot, {
-          patient_id: scheduledSlot.patientId,
-          status: scheduledSlot.status,
-          service: scheduledSlot.service, // Manter serviço do paciente
-          price: scheduledSlot.price, // Manter preço do agendamento
-          patient_name: scheduledSlot.patientName,
-          patient_phone: scheduledSlot.patientPhone,
-          notes: scheduledSlot.notes,
-        });
-      }
+  Object.assign(newSlot, {
+    patient_id: scheduledSlot.patientId,
+    status: scheduledSlot.status,
+    service: scheduledSlot.service,   // mantém o serviço do paciente
+    price: scheduledSlot.price,
+    patient_name: scheduledSlot.patientName,
+    patient_phone: scheduledSlot.patientPhone,
+    notes: scheduledSlot.notes,
+  });
+}
+
 
       const slotsToCreate = [newSlot];
 
@@ -338,6 +333,7 @@ const todayLocalISO = () => {
     patientPhone: string;
     service: string;
     price: number;
+    modality: 'presencial' | 'online';
     notes?: string;
   }) => {
     try {
@@ -384,6 +380,7 @@ const todayLocalISO = () => {
           patient_phone: patientData.patientPhone,
           notes: patientData.notes,
           clinic_percentage: slot.clinicPercentage, // Usar a porcentagem da jornada
+          modality: patientData.modality,
         })
         .eq('id', slotId);
 
@@ -484,6 +481,7 @@ const todayLocalISO = () => {
             actualDuration,
             startedAt: updatedSlot?.started_at,
             finishedAt: updatedSlot?.finished_at,
+            modality: slot.modality ?? 'presencial',
           });
         } catch (historyError) {
           console.error('Error adding to history:', historyError);

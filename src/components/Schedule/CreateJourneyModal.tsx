@@ -15,7 +15,6 @@ interface CreateJourneyModalProps {
     consultationDuration: number; // Fixo: 40 (não exibido)
     bufferDuration: number;       // Fixo: 10 (não exibido)
     defaultPrice: number;
-    defaultService: string;
     clinicPercentage: number;
   }) => void;
   professionals: Professional[];
@@ -65,7 +64,6 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
     consultationDuration: '40',
     bufferDuration: '10',
     defaultPrice: '',
-    defaultService: 'Consulta',
     clinicPercentage: '20',
   });
 
@@ -142,7 +140,6 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       consultationDuration: parseInt(formData.consultationDuration, 10), // 40
       bufferDuration: parseInt(formData.bufferDuration, 10),             // 10
       defaultPrice: Number(String(formData.defaultPrice).replace(',', '.')),
-      defaultService: formData.defaultService,
       clinicPercentage: Number(formData.clinicPercentage),
     });
 
@@ -154,7 +151,6 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
       consultationDuration: '40',
       bufferDuration: '10',
       defaultPrice: '',
-      defaultService: 'Consulta',
       clinicPercentage: '20',
     });
     setErrors({});
@@ -264,19 +260,6 @@ const CreateJourneyModal: React.FC<CreateJourneyModalProps> = ({
               aria-invalid={err('defaultPrice')}
             />
             {msg('defaultPrice') && <p className="mt-1 text-xs text-red-600">{msg('defaultPrice')}</p>}
-          </div>
-
-          {/* Serviço */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Serviço Padrão</label>
-            <input
-              type="text"
-              name="defaultService"
-              value={formData.defaultService}
-              onChange={setField('defaultService')}
-              placeholder="Consulta"
-              className={inputClass(false)}
-            />
           </div>
 
           {/* Percentual da Clínica */}

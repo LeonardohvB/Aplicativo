@@ -41,6 +41,7 @@ export const useAppointmentHistory = () => {
           actual_duration,
           started_at,
           finished_at,
+          modality,
           owner_id,
           created_at
         `)
@@ -79,6 +80,7 @@ export const useAppointmentHistory = () => {
         actualDuration: item.actual_duration ?? undefined,
         startedAt: item.started_at ?? undefined,
         finishedAt: item.finished_at ?? undefined,
+        modality: (item.modality as 'presencial' | 'online') ?? 'presencial',
         // opcionais no tipo; mantidos se existirem na tabela
         owner_id: item.owner_id,
         // se o seu tipo não tiver created_at, não tem problema: é ignorado no resto do app
@@ -118,6 +120,7 @@ export const useAppointmentHistory = () => {
     actualDuration?: number;
     startedAt?: string;
     finishedAt?: string;
+    modality?: 'presencial' | 'online';
     // 👇 apenas para tipagem (não será enviado ao DB aqui)
     canceledAt?: string;
     noShowAt?: string;
@@ -160,6 +163,7 @@ export const useAppointmentHistory = () => {
         actual_duration: slot.actualDuration ?? null,
         started_at: slot.startedAt ?? null,
         finished_at: slot.finishedAt ?? null,
+        modality: slot.modality ?? 'presencial',
         owner_id: uid,
       };
 

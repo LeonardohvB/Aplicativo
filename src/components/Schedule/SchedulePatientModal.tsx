@@ -14,6 +14,7 @@ interface SchedulePatientModalProps {
       patientPhone: string; // só dígitos
       service: string;
       price: number;
+      modality: 'presencial' | 'online';
       notes?: string;
     }
   ) => void;
@@ -74,7 +75,7 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
   const [searching, setSearching] = useState(false);
 
   // <<< NOVO: modalidade (presencial/online)
-  const [modality, setModality] = useState<'local' | 'online'>('local');
+const [modality, setModality] = useState<'presencial' | 'online'>('presencial');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shake, setShake] = useState(false);
@@ -99,7 +100,7 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
 
     // modalidade padrão: tenta inferir do serviço do slot
     const svc = String(slot?.service || '').toLowerCase();
-    setModality(/online|on-line|vídeo|video|remoto/.test(svc) ? 'online' : 'local');
+    setModality(/online|on-line|vídeo|video|remoto/.test(svc) ? 'online' : 'presencial');
   }, [isOpen, slot?.id]);
 
   // limpa o timer quando o componente desmontar
@@ -182,16 +183,15 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
 
     const { id, price } = slot;
 
-    // normaliza o texto do serviço removendo sufixos antigos e acrescentando a modalidade
-    const cleaned = service.replace(/\s*\((online|local)\)\s*$/i, '').trim();
-    const serviceWithMode =
-      modality === 'online' ? `${cleaned} (online)` : `${cleaned} (local)`;
+     // normaliza o texto do serviço removendo sufixos antigos
+      const cleaned = service.replace(/\s*\((online|local|presencial)\)\s*$/i, '').trim();
 
     onSchedule(id, {
       patientName: patientName.trim(),
       patientPhone: onlyDigits(patientPhone),
-      service: serviceWithMode, // <<< aqui vai a modalidade embutida
+      service: cleaned,         // <<< só o nome do serviço
       price,
+      modality,                 // <<< modalidade separad
       notes: notes.trim() || undefined,
     });
 
@@ -298,13 +298,13 @@ const SchedulePatientModal: React.FC<SchedulePatientModalProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Modalidade</label>
             <div className="flex gap-2">
-              <label className={`flex-1 cursor-pointer select-none rounded-xl border px-3 py-2 text-sm ${modality === 'local' ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+              <label className={`flex-1 cursor-pointer select-none rounded-xl border px-3 py-2 text-sm ${modality === 'presencial' ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
                 <input
                   type="radio"
                   name="modality"
                   className="hidden"
-                  checked={modality === 'local'}
-                  onChange={() => setModality('local')}
+                  checked={modality === 'presencial'}
+                  onChange={() => setModality('presencial')}
                 />
                 <span className="inline-flex items-center gap-2">
                   <span className="text-gray-600">📍</span> Presencial

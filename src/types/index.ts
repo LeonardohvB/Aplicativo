@@ -39,7 +39,6 @@ export interface AppointmentJourney {
   bufferDuration: number;         // minutos
   totalSlots: number;
   defaultPrice: number;
-  defaultService: string;
   clinicPercentage: number;
 }
 
@@ -64,6 +63,7 @@ export interface AppointmentSlot {
   service: string;
   price: number;
   billingMode: 'clinica' | 'profissional';
+  modality: 'presencial' | 'online';
   patientName?: string;
   patientPhone?: string;
   notes?: string;
@@ -74,6 +74,7 @@ export interface AppointmentSlot {
   actualDuration?: number | null;
   canceledAt?: string | null;
   noShowAt?: string | null;
+  
 }
 
 export type TransactionStatus = 'pending' | 'paid';
@@ -121,6 +122,7 @@ export interface AppointmentHistory {
   actualDuration?: number;
   startedAt?: string | null;
   finishedAt?: string | null;
+  modality?: 'presencial' | 'online';
   canceledAt?: string | null;
   noShowAt?: string | null;
 }
