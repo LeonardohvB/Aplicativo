@@ -1,10 +1,9 @@
 // src/hooks/useProfessionals.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Professional } from '../types';
 import { deleteAllAvatarsForProfessional } from '../lib/avatars';
 
-/* ========= Tipos vindos do DB (snake_case) ========= */
 type DbProfessional = {
   id: string;
   name: string;
@@ -16,19 +15,18 @@ type DbProfessional = {
   avatar_updated_at: string | null;
   phone: string | null;
   registration_code: string;
-  cpf: string | null;                 // usado para validação / exibição
-  deleted_at: string | null;          // arquivado quando ≠ null
+  cpf: string | null;
+  deleted_at: string | null;
   created_at?: string;
 };
 
-/* ========= Inputs ========= */
 type NewProfessionalInput = {
   name: string;
   specialty: string;
   phone: string;
-  registrationCode: string;   // obrigatório
-  cpf: string;                // obrigatório p/ cadastrar
-  commissionRate?: number;    // opcional; default 20
+  registrationCode: string;
+  cpf: string;
+  commissionRate?: number;
 };
 
 type UpdatePayload = Partial<{
@@ -36,16 +34,15 @@ type UpdatePayload = Partial<{
   specialty: string;
   phone: string;
   registrationCode: string;
-  avatar: string | null;            // URL pública (frontend)
-  avatar_path: string | null;       // caminho/URL salvo no DB
-  avatar_updated_at: string | null; // timestamp
-  isActive: boolean;                // camel -> snake
-  commissionRate: number;           // camel -> snake
+  avatar: string | null;
+  avatar_path: string | null;
+  avatar_updated_at: string | null;
+  isActive: boolean;
+  commissionRate: number;
   patients: number;
-  cpf: string;                      // (mantido para eventual edição via admin)
+  cpf: string;
 }>;
 
-/* ========= Utils CPF ========= */
 const onlyDigits = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 
 async function cpfExistsOnDb(cpf: string, ignoreId?: string) {
@@ -53,9 +50,7 @@ async function cpfExistsOnDb(cpf: string, ignoreId?: string) {
     .from('professionals')
     .select('id, cpf')
     .not('cpf', 'is', null);
-
   if (error) throw error;
-
   const target = onlyDigits(cpf);
   return (data ?? []).some((row: any) => {
     if (ignoreId && row.id === ignoreId) return false;
@@ -63,17 +58,14 @@ async function cpfExistsOnDb(cpf: string, ignoreId?: string) {
   });
 }
 
-/* ========= Mapper DB → App (camelCase) ========= */
 function mapDbProfessional(p: DbProfessional): Professional {
   const raw = p.avatar_path ?? null;
   const clean = raw ? decodeURIComponent(raw) : null;
-
   let avatar: string | null = clean;
   if (clean && p.avatar_updated_at) {
     const sep = clean.includes('?') ? '&' : '?';
     avatar = `${clean}${sep}v=${encodeURIComponent(p.avatar_updated_at)}`;
   }
-
   return {
     id: p.id,
     name: p.name,
@@ -85,30 +77,30 @@ function mapDbProfessional(p: DbProfessional): Professional {
     isActive: p.is_active,
     phone: p.phone ?? '',
     registrationCode: p.registration_code,
-    cpf: p.cpf ?? undefined,            // ⬅️ disponibiliza para o Edit modal
-
-    // flags de arquivamento p/ UI
+    cpf: p.cpf ?? undefined,
     isArchived: !!p.deleted_at,
     archivedAt: p.deleted_at,
   };
 }
 
-/* ========= Helper de filtro ========= */
-type RefetchOpts = {
-  /** se true, traz apenas arquivados */
-  onlyArchived?: boolean;
-  /** se true, traz ativos + arquivados (sem filtro de deleted_at) */
-  includeArchived?: boolean;
-  /** dentro dos NÃO arquivados, incluir inativos (default: incluir) */
-  includeInactive?: boolean;
+export type RefetchOpts = {
+  onlyArchived?: boolean;      // só arquivados
+  includeArchived?: boolean;   // todos (sem filtro deleted_at)
+  includeInactive?: boolean;   // dentro dos não arquivados, incluir inativos
 };
 
-export const useProfessionals = () => {
+export const useProfessionals = (initialOpts?: RefetchOpts) => {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loading, setLoading] = useState(true);
 
-  /* ========= READ ========= */
+  // 🔒 “congela” as opções passadas na 1ª montagem
+  const initialOptsRef = useRef<RefetchOpts | undefined>(initialOpts);
+
+  // evita condição de corrida
+  const fetchIdRef = useRef(0);
+
   const fetchProfessionals = useCallback(async (opts?: RefetchOpts) => {
+    const myId = ++fetchIdRef.current;
     setLoading(true);
     try {
       let q = supabase
@@ -119,47 +111,41 @@ export const useProfessionals = () => {
         `)
         .order('created_at', { ascending: false });
 
-      if (opts?.onlyArchived) {
+      const o = opts ?? {};
+      if (o.onlyArchived) {
         q = q.not('deleted_at', 'is', null);
-      } else if (!opts?.includeArchived) {
+      } else if (!o.includeArchived) {
         q = q.is('deleted_at', null);
-        if (opts?.includeInactive === false) {
-          q = q.eq('is_active', true);
-        }
+        if (o.includeInactive === false) q = q.eq('is_active', true);
       }
 
       const { data, error } = await q;
       if (error) throw error;
 
-      setProfessionals(((data ?? []) as DbProfessional[]).map(mapDbProfessional));
+      if (myId === fetchIdRef.current) {
+        setProfessionals(((data ?? []) as DbProfessional[]).map(mapDbProfessional));
+      }
     } finally {
-      setLoading(false);
+      if (myId === fetchIdRef.current) setLoading(false);
     }
   }, []);
 
-  /* ========= CREATE ========= */
-  const addProfessional = useCallback(async (professional: NewProfessionalInput) => {
-    // validação/duplicidade do CPF
-    const cpfDigits = onlyDigits(professional.cpf);
-    if (!cpfDigits || cpfDigits.length !== 11) {
-      throw new Error('Informe um CPF válido (11 dígitos).');
-    }
-    const duplicated = await cpfExistsOnDb(professional.cpf);
-    if (duplicated) {
-      throw new Error('Este CPF já está cadastrado para outro profissional.');
-    }
+  const addProfessional = useCallback(async (p: NewProfessionalInput) => {
+    const cpfDigits = onlyDigits(p.cpf);
+    if (!cpfDigits || cpfDigits.length !== 11) throw new Error('Informe um CPF válido (11 dígitos).');
+    if (await cpfExistsOnDb(p.cpf)) throw new Error('Este CPF já está cadastrado para outro profissional.');
 
     const toDb = {
-      name: professional.name,
-      specialty: professional.specialty,
+      name: p.name,
+      specialty: p.specialty,
       patients: 0,
       is_active: true,
-      commission_rate: professional.commissionRate ?? 20,
+      commission_rate: p.commissionRate ?? 20,
       avatar_path: null as string | null,
       avatar_updated_at: null as string | null,
-      phone: professional.phone ?? null,
-      registration_code: professional.registrationCode,
-      cpf: professional.cpf,                       // salva o cpf informado
+      phone: p.phone ?? null,
+      registration_code: p.registrationCode,
+      cpf: p.cpf,
       deleted_at: null as string | null,
     };
 
@@ -171,7 +157,6 @@ export const useProfessionals = () => {
         avatar_path, avatar_updated_at, phone, registration_code, cpf, deleted_at, created_at
       `)
       .single();
-
     if (error) throw error;
 
     const created = mapDbProfessional(data as DbProfessional);
@@ -179,35 +164,25 @@ export const useProfessionals = () => {
     return created;
   }, []);
 
-  /* ========= UPDATE ========= */
-  const updateProfessional = useCallback(async (id: string, updates: UpdatePayload) => {
-    // se for alterar cpf, validar e checar duplicidade (ignorando o próprio id)
-    if (updates.cpf !== undefined) {
-      const cpfDigits = onlyDigits(updates.cpf);
-      if (!cpfDigits || cpfDigits.length !== 11) {
-        throw new Error('Informe um CPF válido (11 dígitos).');
-      }
-      const duplicated = await cpfExistsOnDb(updates.cpf, id);
-      if (duplicated) {
-        throw new Error('Este CPF já está cadastrado para outro profissional.');
-      }
+  const updateProfessional = useCallback(async (id: string, u: UpdatePayload) => {
+    if (u.cpf !== undefined) {
+      const cpfDigits = onlyDigits(u.cpf);
+      if (!cpfDigits || cpfDigits.length !== 11) throw new Error('Informe um CPF válido (11 dígitos).');
+      if (await cpfExistsOnDb(u.cpf, id)) throw new Error('Este CPF já está cadastrado para outro profissional.');
     }
 
     const toDb: Record<string, any> = {};
-    if (updates.name !== undefined) toDb.name = updates.name;
-    if (updates.specialty !== undefined) toDb.specialty = updates.specialty;
-    if (updates.avatar_path !== undefined) toDb.avatar_path = updates.avatar_path;
-    if (updates.avatar_updated_at !== undefined) toDb.avatar_updated_at = updates.avatar_updated_at;
-    if (updates.isActive !== undefined) toDb.is_active = updates.isActive;
-    if (updates.commissionRate !== undefined) toDb.commission_rate = updates.commissionRate;
-    if (updates.patients !== undefined) toDb.patients = updates.patients;
-    if (updates.phone !== undefined) toDb.phone = updates.phone;
-    if (updates.registrationCode !== undefined) toDb.registration_code = updates.registrationCode;
-    if (updates.cpf !== undefined) toDb.cpf = updates.cpf;
-    if (updates.avatar !== undefined && updates.avatar_path === undefined) {
-      toDb.avatar_path = updates.avatar;
-    }
-
+    if (u.name !== undefined) toDb.name = u.name;
+    if (u.specialty !== undefined) toDb.specialty = u.specialty;
+    if (u.avatar_path !== undefined) toDb.avatar_path = u.avatar_path;
+    if (u.avatar_updated_at !== undefined) toDb.avatar_updated_at = u.avatar_updated_at;
+    if (u.isActive !== undefined) toDb.is_active = u.isActive;
+    if (u.commissionRate !== undefined) toDb.commission_rate = u.commissionRate;
+    if (u.patients !== undefined) toDb.patients = u.patients;
+    if (u.phone !== undefined) toDb.phone = u.phone;
+    if (u.registrationCode !== undefined) toDb.registration_code = u.registrationCode;
+    if (u.cpf !== undefined) toDb.cpf = u.cpf;
+    if (u.avatar !== undefined && u.avatar_path === undefined) toDb.avatar_path = u.avatar;
     if (Object.keys(toDb).length === 0) return;
 
     const { data, error } = await supabase
@@ -219,32 +194,28 @@ export const useProfessionals = () => {
         avatar_path, avatar_updated_at, phone, registration_code, cpf, deleted_at, created_at
       `)
       .single();
-
     if (error) throw error;
 
     const updated = mapDbProfessional(data as DbProfessional);
     setProfessionals(prev => prev.map(p => (p.id === id ? { ...p, ...updated } : p)));
   }, []);
 
-  /* ========= TOGGLE ATIVO/INATIVO ========= */
   const toggleProfessional = useCallback(async (id: string) => {
     const current = professionals.find(p => p.id === id);
     if (!current) return;
     const next = !current.isActive;
 
-    const { error, data } = await supabase
+    const { data, error } = await supabase
       .from('professionals')
       .update({ is_active: next })
       .eq('id', id)
       .select('id, is_active')
       .single();
-
     if (error) throw error;
 
     setProfessionals(prev => prev.map(p => (p.id === id ? { ...p, isActive: (data as any).is_active } : p)));
   }, [professionals]);
 
-  /* ========= ARCHIVE (soft delete) ========= */
   const archiveProfessional = useCallback(async (id: string) => {
     const patch = { is_active: false, deleted_at: new Date().toISOString() };
     const { data, error } = await supabase
@@ -256,7 +227,6 @@ export const useProfessionals = () => {
         avatar_path, avatar_updated_at, phone, registration_code, cpf, deleted_at, created_at
       `)
       .single();
-
     if (error) throw error;
 
     const updated = mapDbProfessional(data as DbProfessional);
@@ -264,7 +234,6 @@ export const useProfessionals = () => {
     return updated;
   }, []);
 
-  /* ========= RESTORE ========= */
   const restoreProfessional = useCallback(async (id: string) => {
     const patch = { deleted_at: null, is_active: true };
     const { data, error } = await supabase
@@ -276,7 +245,6 @@ export const useProfessionals = () => {
         avatar_path, avatar_updated_at, phone, registration_code, cpf, deleted_at, created_at
       `)
       .single();
-
     if (error) throw error;
 
     const updated = mapDbProfessional(data as DbProfessional);
@@ -284,7 +252,6 @@ export const useProfessionals = () => {
     return updated;
   }, []);
 
-  /* ========= DELETE (hard) ========= */
   const deleteProfessional = useCallback(async (id: string) => {
     await deleteAllAvatarsForProfessional(id);
     const { error } = await supabase.from('professionals').delete().eq('id', id);
@@ -294,20 +261,19 @@ export const useProfessionals = () => {
 
   /* ========= bootstrap ========= */
   useEffect(() => {
-    fetchProfessionals();
+    // usa o snapshot das opções iniciais apenas no mount
+    fetchProfessionals(initialOptsRef.current);
   }, [fetchProfessionals]);
 
   return {
     professionals,
     loading,
-    // CRUD
     addProfessional,
     updateProfessional,
     toggleProfessional,
     deleteProfessional,
     archiveProfessional,
     restoreProfessional,
-    // fetch
     refetch: fetchProfessionals,
   };
 };

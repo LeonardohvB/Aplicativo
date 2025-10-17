@@ -15,7 +15,7 @@ import PatientsNew from './pages/PatientsNew'
 import PatientEvolution from './pages/PatientEvolution'
 import LiveEncounter from './pages/LiveEncounter'
 import { ConfirmProvider } from './providers/ConfirmProvider'
-// import { ToastContainer } from './components/ui/toast' // REMOVIDO
+import ProfessionalsArchived from './pages/ProfessionalsArchived'
 
 // === IMPORT ATESTADOS (apenas o que existe) ===
 import CertificateNew from './pages/CertificateNew'
@@ -26,7 +26,8 @@ type AppTab =
   | 'perfil'
   | 'patients_new'
   | 'evolucao'
-  | 'certificate_new'         // apenas esta, por enquanto
+  | 'certificate_new'
+  | 'profissionais_arquivados'    // ⬅️ NOVA “rota” para arquivados
   ;
 
 // Dados passados para o prontuário (overlay)
@@ -94,21 +95,19 @@ export default function App() {
     }
   }, [])
 
-
   // Abrir "Novo Paciente" a partir do Dashboard
-useEffect(() => {
-  const openPatientsNew = () => setActiveTab('patients_new');
-  window.addEventListener('patients:new', openPatientsNew as EventListener);
-  return () => window.removeEventListener('patients:new', openPatientsNew as EventListener);
-}, []);
+  useEffect(() => {
+    const openPatientsNew = () => setActiveTab('patients_new');
+    window.addEventListener('patients:new', openPatientsNew as EventListener);
+    return () => window.removeEventListener('patients:new', openPatientsNew as EventListener);
+  }, []);
 
-// Abrir "Relatórios" a partir do Dashboard
-useEffect(() => {
-  const openReports = () => setActiveTab('relatorios');
-  window.addEventListener('reports:open', openReports as EventListener);
-  return () => window.removeEventListener('reports:open', openReports as EventListener);
-}, []);
-
+  // Abrir "Relatórios" a partir do Dashboard
+  useEffect(() => {
+    const openReports = () => setActiveTab('relatorios');
+    window.addEventListener('reports:open', openReports as EventListener);
+    return () => window.removeEventListener('reports:open', openReports as EventListener);
+  }, []);
 
   // ===== sessão / auth =====
   useEffect(() => {
@@ -188,7 +187,6 @@ useEffect(() => {
     const ts = Date.now();
     setScheduleTs(ts);            // muda a key da Agenda → remount
     setActiveTab('agenda');
-    // mantém seus eventos (agora com ts junto)
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('agenda:filter', { detail: { range: filter, ts } }));
       if (opts?.openHistory) {
@@ -201,7 +199,8 @@ useEffect(() => {
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais': return <Professionals />
-      case 'agenda':        return <Schedule key={scheduleTs} />  
+      case 'profissionais_arquivados': return <ProfessionalsArchived />  // ⬅️ NOVO
+      case 'agenda':        return <Schedule key={scheduleTs} />
       case 'financeiro':    return <Finance />
       case 'relatorios':    return <Reports />
       case 'patients_new':
@@ -215,8 +214,6 @@ useEffect(() => {
         return <PatientEvolution onBack={() => setActiveTab('agenda')} />
       case 'perfil':
         return <Profile onBack={() => setActiveTab('inicio')} />
-
-      // ====== NOVA TELA (Atestado - criar) ======
       case 'certificate_new':
         return (
           <CertificateNew
@@ -225,15 +222,12 @@ useEffect(() => {
             onCreated={(_id) => setActiveTab('inicio')}
           />
         )
-
       default:
         return (
           <DashboardComp
             firstName={firstName ?? undefined}
             onOpenProfile={() => setActiveTab('perfil')}
             onGotoSchedule={(filter: 'today' | 'week') => {
-              // antes: setActiveTab + agenda:filter
-              // agora: remount + eventos
               gotoSchedule(filter, { openHistory: filter === 'today' })
             }}
           />
@@ -256,11 +250,11 @@ useEffect(() => {
               setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
             }}
             onOpenHistory={() => {
-              // abre Agenda já focada no histórico de hoje e força remount
               gotoSchedule('today', { openHistory: true });
             }}
-            // Quando quiser, adicionamos os itens de Atestado aqui:
             onOpenCertificateNew={() => setActiveTab('certificate_new')}
+            // ⬇️ NOVO: acessa a lista de arquivados pelo menu suspenso
+            onOpenProfessionalsArchived={() => setActiveTab('profissionais_arquivados')}
           />
         </div>
 
@@ -273,12 +267,12 @@ useEffect(() => {
               activeTab === 'perfil' ||
               activeTab === 'patients_new' ||
               activeTab === 'evolucao' ||
-              activeTab === 'certificate_new'
+              activeTab === 'certificate_new' ||
+              activeTab === 'profissionais_arquivados'  // ⬅️ fora das tabs: mostra “Início” selecionado
                 ? 'inicio'
                 : (activeTab as Tab)
             }
             onTabChange={(t: Tab) => {
-              // se o usuário tocar "Agenda" novamente, também forçamos um reload
               if (t === 'agenda') setScheduleTs(Date.now());
               setActiveTab(t);
             }}
@@ -292,9 +286,6 @@ useEffect(() => {
           </div>
         )}
       </div>
-
-      {/* (Toaster global removido) */}
-      {/* <ToastContainer /> */}
     </ConfirmProvider>
   )
 }

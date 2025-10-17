@@ -6,7 +6,8 @@ import {
   UserPlus,
   Briefcase,
   History,
-  FileText, // <- novo ícone
+  FileText,
+  Archive,
 } from "lucide-react";
 import { ClipboardList } from "lucide-react";
 
@@ -16,8 +17,9 @@ type Props = {
   onOpenNewProfessional: () => void;
   onOpenHistory: () => void;
 
-  // NOVO (opcional): abrir o módulo de atestado
+  // opcionais
   onOpenCertificateNew?: () => void;
+  onOpenProfessionalsArchived?: () => void; // ⬅️ NOVO
 };
 
 export default function OverlayMenu({
@@ -25,7 +27,8 @@ export default function OverlayMenu({
   onOpenNewPatient,
   onOpenNewProfessional,
   onOpenHistory,
-  onOpenCertificateNew, // <- novo
+  onOpenCertificateNew,
+  onOpenProfessionalsArchived,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -99,6 +102,10 @@ export default function OverlayMenu({
     };
   }, [open]);
 
+  // util p/ índices (evita quebrar a navegação quando tem itens opcionais)
+  let i = 0;
+  const nextIndex = () => (i += 1) - 1;
+
   return (
     <>
       {/* Botão do menu (posicionado pelo container no App) */}
@@ -158,7 +165,7 @@ export default function OverlayMenu({
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 0)}
+                    ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
                       onOpenProfile();
@@ -174,7 +181,7 @@ export default function OverlayMenu({
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 1)}
+                    ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
                       onOpenNewPatient();
@@ -190,7 +197,7 @@ export default function OverlayMenu({
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 2)}
+                    ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
                       onOpenNewProfessional();
@@ -206,7 +213,7 @@ export default function OverlayMenu({
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 3)}
+                    ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
                       window.dispatchEvent(new CustomEvent('evolution:open'));
@@ -218,12 +225,12 @@ export default function OverlayMenu({
                   </button>
                 </li>
 
-                {/* Atestado (novo) */}
+                {/* Atestado (opcional) */}
                 {onOpenCertificateNew && (
                   <li>
                     <button
                       role="menuitem"
-                      ref={(el) => registerItemRef(el, 4)}
+                      ref={(el) => registerItemRef(el, nextIndex())}
                       onClick={() => {
                         setOpen(false);
                         onOpenCertificateNew();
@@ -236,11 +243,29 @@ export default function OverlayMenu({
                   </li>
                 )}
 
+                {/* Profissionais desativados (opcional) */}
+                {onOpenProfessionalsArchived && (
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, nextIndex())}
+                      onClick={() => {
+                        setOpen(false);
+                        onOpenProfessionalsArchived();
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <Archive className="h-4 w-4 text-amber-600" />
+                      <span>Profissionais desativados</span>
+                    </button>
+                  </li>
+                )}
+
                 {/* Histórico de atendimentos */}
                 <li>
                   <button
                     role="menuitem"
-                    ref={(el) => registerItemRef(el, 5)}
+                    ref={(el) => registerItemRef(el, nextIndex())}
                     onClick={() => {
                       setOpen(false);
                       onOpenHistory();
