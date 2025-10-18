@@ -654,7 +654,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           diagnosis: parseDiagnosisLines(draft.A),
           conduct: parseConduct(draft.P) ?? null,
           observations: parseObservations(draft.O, draft.S) ?? null,
-          next_steps: undefined,
           data_json: {
             vitals,
             S: draft.S || "",
@@ -749,7 +748,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           diagnosis: [] as string[],
           conduct: null as string | null,
           observations: null as string | null,
-          next_steps: undefined,
           data_json: {
             S: "",
             O: "",

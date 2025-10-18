@@ -300,7 +300,6 @@ function EditModal({
           .join("\n") || null;
 
       const conduct = P || null;
-      const nextSteps = null;
 
       const cleanMeds =
         (form.medications || [])
@@ -320,50 +319,52 @@ function EditModal({
         );
 
       const baseUpdate: any = {
-        title: form.title || "Consulta",
-        vitals: form.vitals || {},
-        symptoms: symptomsArr,
-        diagnosis: diagnosisArr,
-        observations,
-        conduct,
-        next_steps: nextSteps,
-        data_json: {
-          vitals: form.vitals || {},
-          S, O, A, P,
-          tags: symptomsArr,
-          medications: cleanMeds,
-          updatedAt: new Date().toISOString(),
-          pending,
-        },
-        s_text: S || null,
-        o_text: O || null,
-        a_text: A || null,
-        p_text: P || null,
-        tags: symptomsArr,
-      };
+  title: form.title || "Consulta",
+  vitals: form.vitals || {},
+  symptoms: symptomsArr,
+  diagnosis: diagnosisArr,
+  observations,
+  conduct,
+  data_json: {
+    vitals: form.vitals || {},
+    S, O, A, P,
+    tags: symptomsArr,
+    medications: cleanMeds,
+    updatedAt: new Date().toISOString(),
+    pending,
+  },
+  s_text: S || null,
+  o_text: O || null,
+  a_text: A || null,
+  p_text: P || null,
+  tags: symptomsArr,
+};
 
-      let { error } = await supabase
-        .from("patient_evolution")
-        .update({ ...baseUpdate, medications: cleanMeds })
-        .eq("id", form.id);
+let { error } = await supabase
+  .from("patient_evolution")
+  .update({ ...baseUpdate, medications: cleanMeds })
+  .eq("id", form.id);
 
-      const missingMedCol =
-        error &&
-        (error.code === "PGRST204" ||
-          /medications.*(does not exist|could not find)/i.test(error.message || ""));
-      if (missingMedCol) {
-        const retry = await supabase
-          .from("patient_evolution")
-          .update(baseUpdate)
-          .eq("id", form.id);
-        error = retry.error || null;
-      }
+// 🔁 retry ampliado: trata medications OU next_steps ausentes
+const missingCol =
+  error &&
+  (error.code === "PGRST204" ||
+    /(medications|next_steps).*(does not exist|could not find)/i.test(error.message || ""));
 
-      if (error) throw error;
+if (missingCol) {
+  const retry = await supabase
+    .from("patient_evolution")
+    .update(baseUpdate) // sem medications/next_steps
+    .eq("id", form.id);
+  error = retry.error || null;
+}
 
-      onSaved?.();
-      onClose();
-      window.dispatchEvent(new CustomEvent("timeline:refresh"));
+if (error) throw error;
+
+onSaved?.();
+onClose();
+window.dispatchEvent(new CustomEvent("timeline:refresh"));
+
     } catch (e) {
       console.warn("save evolution error:", e);
       alert("Não foi possível salvar. Tente novamente.");
