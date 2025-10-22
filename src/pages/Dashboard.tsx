@@ -8,6 +8,9 @@ import { useTransactions } from '../hooks/useTransactions';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 import ConsultasDeHoje from "../components/Dashboard/ConsultasDeHoje";
 import { supabase } from '../lib/supabase';
+import EnablePushButton from '../components/EnablePushButton';
+import PushTestButton from "../components/Dashboard/PushTestButton";
+
 
 type FilterKind = 'today' | 'week';
 type Props = {
@@ -65,6 +68,18 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     weekday: 'long', day: 'numeric', month: 'long',
   });
   const todayDate = new Date().toISOString().split('T')[0];
+
+  // ====== userId do usuário logado (para o botão de push) ======
+  const [userId, setUserId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let on = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!on) return;
+      setUserId(data?.user?.id ?? null);
+    });
+    return () => { on = false; };
+  }, []);
+  // =============================================================
 
   // Atendimentos HOJE (finalizados/cancelados/no-show) → para abrir HISTÓRICO
   const todayAppointments = (slots || []).filter(
@@ -264,8 +279,20 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
             )}
           </h1>
         </div>
-        <div className="w-10 h-10" />
+
+        {/* Botão de Notificações (lado direito do header) */}
+        <div className="flex items-center">
+          {userId && (
+            <div className="block sm:block ml-2">
+              <EnablePushButton userId={userId} />
+              <PushTestButton userId={userId} />
+
+
+            </div>
+          )}
+        </div>
       </div>
+      
 
       {/* KPIs topo */}
       <div className="grid grid-cols-2 gap-4 mb-4">
