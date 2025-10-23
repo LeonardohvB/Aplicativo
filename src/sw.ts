@@ -2,9 +2,6 @@
 /* Service Worker (Workbox injectManifest) - src/sw.ts */
 declare const self: ServiceWorkerGlobalScope;
 
-// Workbox injeta esta constante em build (em dev pode não existir)
-declare const __WB_MANIFEST: any;
-
 // --- utils
 async function openOrFocus(url: string) {
   const allClients = await self.clients.matchAll({
@@ -26,13 +23,11 @@ async function openOrFocus(url: string) {
 
 // --- lifecycle
 self.addEventListener("install", (_event: ExtendableEvent) => {
-  // ativa imediatamente a nova versão
-  self.skipWaiting();
+  self.skipWaiting(); // ativa imediatamente
 });
 
 self.addEventListener("activate", (event: ExtendableEvent) => {
-  // passa a controlar todas as abas já abertas
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(self.clients.claim()); // controla abas já abertas
 });
 
 // permite postMessage({ type: 'SKIP_WAITING' })
@@ -43,7 +38,7 @@ self.addEventListener("message", (event: ExtendableMessageEvent) => {
   }
 });
 
-// --- push (forçar visibilidade e ignorar badge inválido)
+// --- push (força visibilidade e ignora badge potencialmente inválido)
 self.addEventListener("push", (event: PushEvent) => {
   try {
     const raw = event?.data?.text?.();
@@ -55,21 +50,16 @@ self.addEventListener("push", (event: PushEvent) => {
   let payload: any = {};
   try {
     if (event.data) {
-      const txt = event.data.text();
-      payload = JSON.parse(txt);
+      payload = JSON.parse(event.data.text());
     }
   } catch {
     payload = { title: "Notificação", body: event.data?.text() ?? "" };
   }
 
-  // ⚠️ evita problemas com badge inválido
-  if ("badge" in payload) {
-    delete payload.badge;
-  }
+  // evita problemas: badge inválido às vezes bloqueia a notificação
+  if ("badge" in payload) delete (payload as any).badge;
 
   const title = payload.title || "Nova notificação";
-
-  // só chaves conhecidas no literal
   const options: NotificationOptions = {
     body: payload.body || "",
     icon: payload.icon || "/icons/icon-192.png",
@@ -77,11 +67,10 @@ self.addEventListener("push", (event: PushEvent) => {
     tag: (payload.tag as any) || "debug",
   };
 
-  // garante que fique visível e toque som/renotify (via cast)
+  // força visibilidade (depois você pode ler do payload se quiser)
   (options as any).requireInteraction = true;
   (options as any).renotify = true;
 
-  // se vierem actions, adiciona via cast
   if (payload.actions) {
     (options as any).actions = payload.actions as Array<{
       action: string;
@@ -100,15 +89,12 @@ self.addEventListener("push", (event: PushEvent) => {
 // --- click
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
-  const url =
-    (event.notification.data && (event.notification.data as any).url) || "/";
+  const url = (event.notification.data && (event.notification.data as any).url) || "/";
   event.waitUntil(openOrFocus(url));
 });
 
-// --- “toca” o símbolo do Workbox apenas em produção (no dev ele pode não existir)
-if ((import.meta as any).env?.PROD) {
-  (self as any).__WB_MANIFEST;
-}
+// ---- Workbox injection point (precisa existir UMA vez) ----
+// @ts-ignore
+(self as any).__WB_MANIFEST = [] as any;
 
-// garante escopo de módulo para o TS
 export {};
