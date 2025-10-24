@@ -2,7 +2,7 @@
 /* Service Worker (Workbox injectManifest) - src/sw.ts */
 declare const self: ServiceWorkerGlobalScope;
 
-// --- utils
+/* ========================= utils ========================= */
 async function openOrFocus(url: string) {
   const allClients = await self.clients.matchAll({
     type: "window",
@@ -21,16 +21,15 @@ async function openOrFocus(url: string) {
   if (self.clients.openWindow) return self.clients.openWindow(normalized);
 }
 
-// --- lifecycle
+/* ======================= lifecycle ======================= */
 self.addEventListener("install", (_event: ExtendableEvent) => {
-  self.skipWaiting(); // ativa imediatamente
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event: ExtendableEvent) => {
-  event.waitUntil(self.clients.claim()); // controla abas já abertas
+  event.waitUntil(self.clients.claim());
 });
 
-// permite postMessage({ type: 'SKIP_WAITING' })
 self.addEventListener("message", (event: ExtendableMessageEvent) => {
   const data = (event as any)?.data;
   if (data && typeof data === "object" && data.type === "SKIP_WAITING") {
@@ -38,8 +37,9 @@ self.addEventListener("message", (event: ExtendableMessageEvent) => {
   }
 });
 
-// --- push (força visibilidade e ignora badge potencialmente inválido)
+/* ========================== push ========================= */
 self.addEventListener("push", (event: PushEvent) => {
+  // Log seguro (não quebra se não houver data)
   try {
     const raw = event?.data?.text?.();
     console.log("[SW] push recebido; raw:", raw);
@@ -47,31 +47,71 @@ self.addEventListener("push", (event: PushEvent) => {
     console.log("[SW] push recebido; sem data ou erro ao ler");
   }
 
+  // 1) Normaliza payload
   let payload: any = {};
   try {
-    if (event.data) {
-      payload = JSON.parse(event.data.text());
-    }
+    if (event.data) payload = JSON.parse(event.data.text());
   } catch {
     payload = { title: "Notificação", body: event.data?.text() ?? "" };
   }
 
-  // evita problemas: badge inválido às vezes bloqueia a notificação
-  if ("badge" in payload) delete (payload as any).badge;
+  // Aceita topo (title/body/url/icon/badge/tag) e/ou data.title/data.url etc.
+  const dataObj = { ...(payload.data ?? {}) };
 
-  const title = payload.title || "Nova notificação";
-  const options: NotificationOptions = {
-    body: payload.body || "",
-    icon: payload.icon || "/icons/icon-192.png",
-    data: { url: payload.url || "/", ...(payload.data || {}) },
-    tag: (payload.tag as any) || "debug",
-  };
+  const title =
+    payload.title ?? dataObj.title ?? "Notificação";
 
-  // força visibilidade (depois você pode ler do payload se quiser)
-  (options as any).requireInteraction = true;
-  (options as any).renotify = true;
+  const body =
+    payload.body ??
+    dataObj.body ??
+    "";
 
-  if (payload.actions) {
+  const icon =
+    payload.icon ??
+    dataObj.icon ??
+    "/icons/android-chrome-192x192.png";
+
+  let badge =
+    payload.badge ??
+    dataObj.badge ??
+    "/icons/badge-72x72.png";
+
+  const tag =
+    payload.tag ??
+    dataObj.tag ??
+    `push-${Date.now()}`;
+
+  const clickUrl =
+    payload.url ??
+    dataObj.url ??
+    "/";
+
+  // 2) Monta options
+ const options: NotificationOptions = {
+  body,
+  icon,
+  tag,
+  data: { url: clickUrl, ...dataObj },
+};
+
+(options as any).requireInteraction = Boolean(
+  payload.requireInteraction ?? dataObj.requireInteraction ?? false
+);
+(options as any).renotify = Boolean(
+  payload.renotify ?? dataObj.renotify ?? false
+);
+
+  // 3) Badge: remove se vazio/ inválido (Chrome ignora/buga quando inválido)
+  try {
+    if (typeof badge === "string" && badge.trim()) {
+      (options as any).badge = badge;
+    }
+  } catch {
+    // sem badge
+  }
+
+  // 4) Actions (opcional)
+  if (Array.isArray(payload.actions)) {
     (options as any).actions = payload.actions as Array<{
       action: string;
       title: string;
@@ -86,14 +126,15 @@ self.addEventListener("push", (event: PushEvent) => {
   );
 });
 
-// --- click
+/* ===================== notification click ===================== */
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
-  const url = (event.notification.data && (event.notification.data as any).url) || "/";
+  const url =
+    (event.notification.data && (event.notification.data as any).url) || "/";
   event.waitUntil(openOrFocus(url));
 });
 
-// ---- Workbox injection point (precisa existir UMA vez) ----
+/* ===== Workbox injection point (precisa existir UMA vez) ===== */
 // @ts-ignore
 (self as any).__WB_MANIFEST = [] as any;
 

@@ -1,13 +1,17 @@
 // src/components/EnablePushButton.tsx
 import { useEffect, useState } from "react";
-import { enableWebPush, disableWebPush, isPushSupported, getCurrentSubscriptionEndpoint } from "../lib/push";
+import {
+  enableWebPush,
+  disableWebPush,
+  isPushSupported,
+  getCurrentSubscriptionEndpoint,
+} from "../lib/push";
 
 type Props = {
-  userId: string;
   tenantId?: string | null;
 };
 
-export default function EnablePushButton({ userId, tenantId = null }: Props) {
+export default function EnablePushButton({ tenantId = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [supported, setSupported] = useState(true);
   const [active, setActive] = useState<boolean | null>(null);
@@ -16,8 +20,12 @@ export default function EnablePushButton({ userId, tenantId = null }: Props) {
   useEffect(() => {
     setSupported(isPushSupported());
     (async () => {
-      const ep = await getCurrentSubscriptionEndpoint();
-      setActive(!!ep);
+      try {
+        const ep = await getCurrentSubscriptionEndpoint();
+        setActive(!!ep);
+      } catch {
+        setActive(false);
+      }
     })();
   }, []);
 
@@ -29,11 +37,18 @@ export default function EnablePushButton({ userId, tenantId = null }: Props) {
     }
     setLoading(true);
     try {
-      await enableWebPush({ userId, tenantId });
+      await enableWebPush({ tenantId });
       setActive(true);
       setMsg("Notificações ativadas! ✅");
     } catch (e: any) {
-      setMsg(e?.message || "Falha ao ativar notificações.");
+      const m = String(e?.message || "");
+      if (m.toLowerCase().includes("permissão")) {
+        setMsg("Permissão negada. Libere as notificações no navegador e tente novamente.");
+      } else if (m.toLowerCase().includes("sem sessão")) {
+        setMsg("É preciso estar logado para ativar as notificações.");
+      } else {
+        setMsg(m || "Falha ao ativar notificações.");
+      }
     } finally {
       setLoading(false);
     }
@@ -56,7 +71,7 @@ export default function EnablePushButton({ userId, tenantId = null }: Props) {
   if (!supported) {
     return (
       <div className="text-xs text-gray-500">
-        Notificações não suportadas neste dispositivo/navegador.
+        Notificações não são suportadas neste dispositivo/navegador.
       </div>
     );
   }
@@ -80,11 +95,13 @@ export default function EnablePushButton({ userId, tenantId = null }: Props) {
           {loading ? "Ativando..." : "Ativar notificações"}
         </button>
       )}
+
       {active !== null && (
         <span className="text-[10px] text-gray-500">
           {active ? "Ativo" : "Inativo"}
         </span>
       )}
+
       {msg && <span className="text-xs text-gray-600 ml-2">{msg}</span>}
     </div>
   );
