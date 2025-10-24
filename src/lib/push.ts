@@ -13,15 +13,12 @@ const ADMIN_PUSH_BASE = "https://yhcxdcnveyxntfzwaovp.functions.supabase.co/push
 // - VITE_VAPID_PUBLIC_KEY
 // - (opcional) VITE_ADMIN_TOKEN  -> para /push/send de teste
 
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "./supabase"; // 👈 usamos o client único já criado
+// (caminho relativo: se esse arquivo estiver em src/lib/push.ts e o supabase.ts
+// estiver em src/lib/supabase.ts, então "./supabase" está correto)
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN as string | undefined;
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL as string,
-  import.meta.env.VITE_SUPABASE_ANON_KEY as string
-);
 
 export function isPushSupported() {
   return (
@@ -66,52 +63,58 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
   if (perm !== "granted") throw new Error("Permissão de notificação negada.");
 
   // token do usuário logado (profissional)
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) throw new Error("Sem sessão do usuário (login necessário).");
 
   const reg = await getRegistration();
 
   // Reaproveita se já existir
   let sub = await reg.pushManager.getSubscription();
-if (!sub) {
-  sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+
+  // 👇 garante que não é undefined / inválido
+  if (!sub) {
+    throw new Error("Falha ao criar a subscription do push.");
+  }
+
+  const subJson = sub.toJSON() as any;
+  const p256dh = subJson?.keys?.p256dh as string | undefined;
+  const auth = subJson?.keys?.auth as string | undefined;
+
+  if (!p256dh || !auth) {
+    // (opcional) faça um unsubscribe para resetar estado inconsistente
+    try {
+      await sub.unsubscribe();
+    } catch {}
+    throw new Error("Subscription inválida (sem chaves p256dh/auth). Tente novamente.");
+  }
+
+  const res = await fetch(SUBSCRIBE_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      endpoint: sub.endpoint,
+      p256dh,
+      auth,
+      tenant_id: tenantId ?? null,
+    }),
   });
-}
-
-// 👇 Adicione este guard (elimina o erro ts2532)
-if (!sub) {
-  throw new Error("Falha ao criar a subscription do push.");
-}
-
-const subJson = sub.toJSON() as any;
-const p256dh = subJson?.keys?.p256dh as string | undefined;
-const auth   = subJson?.keys?.auth   as string | undefined;
-
-if (!p256dh || !auth) {
-  // (opcional) faça um unsubscribe para resetar estado inconsistente
-  try { await sub.unsubscribe(); } catch {}
-  throw new Error("Subscription inválida (sem chaves p256dh/auth). Tente novamente.");
-}
-
-const res = await fetch(SUBSCRIBE_URL, {
-  method: "POST",
-  headers: {
-    "content-type": "application/json",
-    "authorization": `Bearer ${session.access_token}`,
-  },
-  body: JSON.stringify({
-    endpoint: sub.endpoint,
-    p256dh,
-    auth,
-    tenant_id: tenantId ?? null,
-  }),
-});
 
   if (!res.ok) {
     // rollback (desinscreve local) se falhar
-    try { await sub.unsubscribe(); } catch {}
+    try {
+      await sub.unsubscribe();
+    } catch {}
     const txt = await res.text().catch(() => "");
     throw new Error(`Falha ao salvar inscrição (${res.status}) ${txt}`);
   }
@@ -123,7 +126,9 @@ const res = await fetch(SUBSCRIBE_URL, {
 export async function disableWebPush() {
   if (!isPushSupported()) return;
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return;
 
   const reg = await getRegistration();
@@ -135,7 +140,7 @@ export async function disableWebPush() {
       method: "DELETE",
       headers: {
         "content-type": "application/json",
-        "authorization": `Bearer ${session.access_token}`,
+        authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ endpoint: sub.endpoint }),
     });
@@ -169,7 +174,7 @@ export async function sendTest(payload: {
   let sub = await reg.pushManager.getSubscription();
   if (!sub) throw new Error("Não há subscription ativa");
 
-  const headers: Record<string,string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json" };
   if (ADMIN_TOKEN) headers["x-admin-token"] = ADMIN_TOKEN; // se a função exigir admin-token
 
   const res = await fetch(`${ADMIN_PUSH_BASE}/send`, {
@@ -180,7 +185,9 @@ export async function sendTest(payload: {
 
   // subscription expirada no servidor → re-inscreve automaticamente
   if (res.status === 404 || res.status === 410) {
-    try { await sub.unsubscribe(); } catch {}
+    try {
+      await sub.unsubscribe();
+    } catch {}
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
