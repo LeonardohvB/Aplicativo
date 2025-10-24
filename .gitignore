@@ -97,6 +97,6 @@ supabase/.temp
 
 dev-dist/
 
-sw.js
+//sw.js
 
 workbox-*.js
