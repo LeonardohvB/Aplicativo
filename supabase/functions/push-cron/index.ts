@@ -74,7 +74,8 @@ function formatLocalHHMM(isoStringOrDate: string | Date) {
 
 /**
  * Busca compromissos na view v_appointment_starts dentro de um intervalo [startIso, endIso)
- * Espera colunas: slot_id, journey_id, owner_id, starts_at_utc
+ * Campos usados:
+ *   slot_id, journey_id, owner_id, patient_id, starts_at_utc
  */
 async function fetchAppointmentsInWindow(
   supabase,
@@ -83,7 +84,10 @@ async function fetchAppointmentsInWindow(
 ) {
   const { data, error } = await supabase
     .from("v_appointment_starts")
-    .select("slot_id, journey_id, owner_id, starts_at_utc")
+    .select(
+      "slot_id, journey_id, owner_id, patient_id, starts_at_utc"
+    )
+    .eq("status", "agendado") // 🔹 filtra apenas consultas agendadas
     .gte("starts_at_utc", startIso)
     .lt("starts_at_utc", endIso);
 
@@ -94,11 +98,54 @@ async function fetchAppointmentsInWindow(
 }
 
 /**
+ * Monta um mapa patient_id -> nome do paciente
+ * usando a tabela public.patients.
+ *
+ * Estrutura esperada:
+ *   patients(id uuid, name text)
+ */
+async function buildPatientNameMap(supabase, rows) {
+  // pega todos os patient_id únicos
+  const ids = Array.from(
+    new Set(
+      rows
+        .map((r: any) => r.patient_id)
+        .filter(Boolean)
+    )
+  );
+
+  if (!ids.length) {
+    return new Map(); // sem pacientes
+  }
+
+  const { data, error } = await supabase
+    .from("patients")
+    .select("id, name")
+    .in("id", ids);
+
+  if (error) {
+    throw new Error("select_patients: " + error.message);
+  }
+
+  const map = new Map();
+  for (const p of data || []) {
+    const display =
+      (p.name && String(p.name).trim()) ||
+      "Paciente agendado";
+    map.set(p.id, display);
+  }
+  return map;
+}
+
+/**
  * Envia notificações para uma lista de compromissos e registra log de envio
  * respeitando idempotência via push_notifications_log(unique).
  *
  * kind: "before_30m" | "before_10m" | "late"
- * buildPayloadFn(row, hhmmLocal) -> { title, body, tag, url?, data? }
+ *
+ * buildPayloadFn(row, hhmmLocal, patientDisplayName) -> {
+ *   title, body, tag, url?, data?
+ * }
  */
 async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
   // Donos (profissionais) a serem notificados
@@ -120,7 +167,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     };
   }
 
-  // Pega subscriptions destes donos
+  // Busca subscriptions desses donos
   const { data: subs, error: subsErr } = await supabase
     .from("push_subscriptions")
     .select("user_id, endpoint, p256dh, auth")
@@ -138,17 +185,19 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     byUser.set(s.user_id, arr);
   });
 
+  // 🔥 monta mapa patient_id -> nome do paciente
+  const patientNameMap = await buildPatientNameMap(supabase, rows);
+
   let sent = 0;
   const details: any[] = [];
 
   for (const row of rows) {
-    // ID canônico do atendimento (sempre usar o mesmo em log/tag)
+    // ID canônico do atendimento
     const apptId = row.slot_id ?? row.journey_id;
     const userId = row.owner_id;
     if (!apptId || !userId) continue;
 
-    // Tenta gravar no log primeiro, pra garantir idempotência.
-    // Se já existir (unique), não vamos reenviar.
+    // tenta registrar no log primeiro (idempotência)
     const { error: dupErr } = await supabase
       .from("push_notifications_log")
       .insert({
@@ -160,7 +209,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     if (dupErr) {
       const msg = String(dupErr.message || "").toLowerCase();
       if (!msg.includes("duplicate")) {
-        // erro inesperado -> não envia push, só loga
+        // erro inesperado -> não envia push
         details.push({
           apptId,
           step: "log_insert",
@@ -169,7 +218,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
         });
         continue;
       } else {
-        // duplicate -> a gente já mandou essa notificação pra esse user/appt/kind
+        // duplicate -> já enviamos essa notificação pra esse user/appt/kind
         details.push({
           apptId,
           warn: "duplicate skip",
@@ -179,7 +228,6 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
       }
     }
 
-    // Se chegou aqui, é "primeiro envio" desse tipo pra esse atendimento
     const userSubs = byUser.get(userId) || [];
     if (!userSubs.length) {
       details.push({
@@ -191,10 +239,15 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
       continue;
     }
 
+    // horário local (HH:MM)
     const localHHMM = formatLocalHHMM(row.starts_at_utc);
 
-    // Gera conteúdo específico do alerta
-    const payloadData = buildPayloadFn(row, localHHMM); // { title, body, tag, url?. data? }
+    // nome do paciente (ou fallback)
+    const patientDisplay =
+      patientNameMap.get(row.patient_id) || "Paciente agendado";
+
+    // montar payload específico
+    const payloadData = buildPayloadFn(row, localHHMM, patientDisplay);
 
     const finalPayload = JSON.stringify({
       title: payloadData.title,
@@ -209,7 +262,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
       },
     });
 
-    // Envia pra todas as subscriptions do profissional
+    // envia pra todas subscriptions desse profissional
     for (const s of userSubs) {
       try {
         await webpush.sendNotification(
@@ -230,7 +283,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
           error: msg,
         });
         if (isGone(msg)) {
-          // subscription inválida/expirada -> apaga
+          // subscription inválida/expirada -> limpar
           await supabase
             .from("push_subscriptions")
             .delete()
@@ -270,7 +323,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // valida se as chaves VAPID estão presentes
+    // valida chaves VAPID
     if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
       return new Response(
         JSON.stringify({ ok: false, error: "missing_vapid" }),
@@ -295,13 +348,13 @@ Deno.serve(async (req) => {
       global: { headers: { "x-application-name": "push-cron" } },
     });
 
-    // Base de tempo: "floor" = agora truncado pro minuto (zera segundos)
+    // agora truncado pro minuto
     const now = new Date();
     const floor = new Date(Math.floor(now.getTime() / 60000) * 60000);
 
     /**
      * 1) 30 minutos antes:
-     *    Dispara para consultas que começam na faixa [agora+28, agora+32] min
+     *    [agora+28, agora+32] min
      */
     const start30 = new Date(floor.getTime() + 28 * 60 * 1000);
     const end30   = new Date(floor.getTime() + 32 * 60 * 1000);
@@ -314,7 +367,7 @@ Deno.serve(async (req) => {
 
     /**
      * 2) 10 minutos antes:
-     *    Dispara para consultas que começam na faixa [agora+8, agora+12] min
+     *    [agora+8, agora+12] min
      */
     const start10 = new Date(floor.getTime() + 8 * 60 * 1000);
     const end10   = new Date(floor.getTime() + 12 * 60 * 1000);
@@ -327,16 +380,11 @@ Deno.serve(async (req) => {
 
     /**
      * 3) Atrasado:
-     *    Dispara apenas se a consulta começou faz pelo menos 5 minutos
-     *    e no máximo 15 minutos.
-     *
-     *    Janela = [agora-15min, agora-5min]
-     *    -> evita alerta antes de começar
-     *    -> evita flood eterno
-     *    -> manda "tá atrasado" ~5+ minutos depois
+     *    [agora-15min, agora-5min]
+     *    = já passou pelo menos 5min, mas não mais que 15min
      */
-    const startLate = new Date(floor.getTime() - 15 * 60 * 1000); // 15 min atrás
-    const endLate   = new Date(floor.getTime() - 5  * 60 * 1000); // 5 min atrás
+    const startLate = new Date(floor.getTime() - 15 * 60 * 1000);
+    const endLate   = new Date(floor.getTime() - 5  * 60 * 1000);
 
     const late = await fetchAppointmentsInWindow(
       supabase,
@@ -344,15 +392,18 @@ Deno.serve(async (req) => {
       endLate.toISOString()
     );
 
-    // Agora mandamos cada categoria com texto próprio:
+    // montar notificações com nome do paciente
+    // buildPayloadFn(row, hhmmLocal, patientDisplay)
 
     const res30 = await notifyBatch(
       supabase,
       due30,
       "before_30m",
-      (row, hhmmLocal) => ({
+      (row, hhmmLocal, patientDisplay) => ({
         title: "Lembrete: atendimento em 30 minutos",
-        body: `Consulta marcada às ${hhmmLocal}.`,
+        body:
+          `Paciente: ${patientDisplay}\n` +
+          `Consulta marcada às ${hhmmLocal}.`,
         url: "/agenda",
         tag: `appt-${(row.slot_id ?? row.journey_id)}-before30m`,
       })
@@ -362,9 +413,11 @@ Deno.serve(async (req) => {
       supabase,
       due10,
       "before_10m",
-      (row, hhmmLocal) => ({
+      (row, hhmmLocal, patientDisplay) => ({
         title: "Lembrete: atendimento em 10 minutos",
-        body: `Consulta marcada às ${hhmmLocal}.`,
+        body:
+          `Paciente: ${patientDisplay}\n` +
+          `Consulta marcada às ${hhmmLocal}.`,
         url: "/agenda",
         tag: `appt-${(row.slot_id ?? row.journey_id)}-before10m`,
       })
@@ -374,15 +427,17 @@ Deno.serve(async (req) => {
       supabase,
       late,
       "late",
-      (row, hhmmLocal) => ({
+      (row, hhmmLocal, patientDisplay) => ({
         title: "Atendimento atrasado",
-        body: `Você tinha um horário às ${hhmmLocal} e ainda não começou.`,
+        body:
+          `Paciente: ${patientDisplay}\n` +
+          `Você tinha um horário às ${hhmmLocal} e ainda não começou.`,
         url: "/agenda",
         tag: `appt-${(row.slot_id ?? row.journey_id)}-late`,
       })
     );
 
-    // resposta de debug / monitoramento
+    // resposta de debug
     return new Response(
       JSON.stringify({
         ok: true,
