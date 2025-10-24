@@ -97,6 +97,9 @@ supabase/.temp
 
 dev-dist/
 
-sw.js
+# Ignorar um sw.js solto na raiz do projeto,
+# mas NÃO ignorar nosso service worker fixo dentro de /public
+/sw.js
+!public/sw.js
 
 workbox-*.js
