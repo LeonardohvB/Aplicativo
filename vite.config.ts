@@ -9,18 +9,28 @@ export default defineConfig({
       injectRegister: "auto",
       registerType: "autoUpdate",
 
+      // vamos usar o nosso próprio service worker customizado
       strategies: "injectManifest",
+
+      // diretório de origem e nome final do arquivo gerado
       srcDir: "src",
-      filename: "sw.ts",
+      filename: "sw.ts", // arquivo FINAL gerado no build
 
-     injectManifest: {
-    injectionPoint: "self.__WB_MANIFEST",
-    globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
-    // ⬇️ aumenta o limite para 6 MiB (ajuste se quiser)
-    maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-  },
+      injectManifest: {
+        // este é o ponto importante 👇
+        // caminho EXATO do seu service worker de origem
+        swSrc: "src/sw.ts",
 
-      devOptions: { enabled: true, type: "module", navigateFallback: "index.html" },
+        // deixar o plugin cuidar do __WB_MANIFEST, sem injectionPoint manual
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+      },
+
+      devOptions: {
+        enabled: true,
+        type: "module",
+        navigateFallback: "index.html",
+      },
 
       manifest: {
         name: "Sistema de Gestão",
@@ -34,10 +44,14 @@ export default defineConfig({
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable any" },
+          {
+            src: "/icons/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable any",
+          },
         ],
       },
     }),
   ],
 });
-
