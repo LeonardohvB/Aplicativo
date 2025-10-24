@@ -9,6 +9,21 @@
         }
       ]
     },
+
+    {
+  "version": 2,
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "vercel-node@3.0.0"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/push-cron-proxy",
+      "schedule": "*/1 * * * *"
+    }
+  ]
+},
     {
       "source": "/manifest.webmanifest",
       "headers": [
