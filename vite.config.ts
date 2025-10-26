@@ -6,23 +6,24 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // o plugin mesmo vai registrar/atualizar o SW
       injectRegister: "auto",
       registerType: "autoUpdate",
 
-      // vamos usar o nosso próprio service worker customizado
+      // usamos nosso próprio service worker customizado
       strategies: "injectManifest",
 
-      // diretório de origem e nome final do arquivo gerado
+      // de onde ele lê o SW de origem, e como ele gera o final
       srcDir: "src",
-      filename: "sw.ts", // arquivo FINAL gerado no build
+      filename: "sw.js", // <- IMPORTANTÍSSIMO: saída final em JS válido
 
       injectManifest: {
-        // este é o ponto importante 👇
-        // caminho EXATO do seu service worker de origem
+        // este é o arquivo fonte (TypeScript) que você mantém no repo
         swSrc: "src/sw.ts",
 
-        // deixar o plugin cuidar do __WB_MANIFEST, sem injectionPoint manual
+        // arquivos que entram pro precache
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
+        // aumentar limite pra aceitar bundles grandes
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
 
