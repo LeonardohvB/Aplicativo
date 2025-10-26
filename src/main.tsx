@@ -2,31 +2,20 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
 import 'animate.css';
 
-// --- registro via vite-plugin-pwa (auto update) ---
-if ('serviceWorker' in navigator) {
-  const updateSW = registerSW({
-    onNeedRefresh() {
-      // força a troca do SW antigo pro novo imediatamente
-      updateSW();
-      window.location.reload();
-    },
-    onOfflineReady() {
-      // opcional: você pode mostrar um toast "App pronto offline"
-    },
-  });
-
-  // --- Fallback explícito: garante que /sw.js seja registrado ---
+// Registrar o service worker somente em produção (build/preview/prod).
+// Em desenvolvimento (vite dev), o sw.js gerado pelo generateSW não existe ainda
+// e tentar registrar ele quebra o localhost.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
       .then((reg) => {
-        console.log('✅ Service Worker registrado manualmente:', reg.scope);
+        console.log('✅ Service Worker registrado:', reg.scope);
       })
       .catch((err) => {
-        console.error('❌ Erro ao registrar Service Worker manualmente:', err);
+        console.error('❌ Erro ao registrar Service Worker:', err);
       });
   });
 }
