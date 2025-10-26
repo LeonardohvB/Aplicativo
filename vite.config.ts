@@ -6,31 +6,14 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // o plugin mesmo vai registrar/atualizar o SW
-      injectRegister: "auto",
+      // modo estável: o plugin gera o service worker sozinho
+      strategies: "generateSW",
+
       registerType: "autoUpdate",
 
-      // usamos nosso próprio service worker customizado
-      strategies: "injectManifest",
-
-      // de onde ele lê o SW de origem, e como ele gera o final
-      srcDir: "src",
-      filename: "sw.js", // <- IMPORTANTÍSSIMO: saída final em JS válido
-
-      injectManifest: {
-        // este é o arquivo fonte (TypeScript) que você mantém no repo
-        swSrc: "src/sw.ts",
-
-        // arquivos que entram pro precache
+      workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
-        // aumentar limite pra aceitar bundles grandes
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-      },
-
-      devOptions: {
-        enabled: true,
-        type: "module",
-        navigateFallback: "index.html",
       },
 
       manifest: {
@@ -52,6 +35,10 @@ export default defineConfig({
             purpose: "maskable any",
           },
         ],
+      },
+
+      devOptions: {
+        enabled: false,
       },
     }),
   ],
