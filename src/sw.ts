@@ -138,4 +138,3 @@ self.addEventListener("notificationclick", (event: NotificationEvent) => {
 // @ts-ignore
 (self as any).__WB_MANIFEST = [] as any;
 
-export {};

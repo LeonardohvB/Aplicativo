@@ -6,12 +6,16 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // modo estável: o plugin gera o service worker sozinho
-      strategies: "generateSW",
-
+      injectRegister: "auto",
       registerType: "autoUpdate",
 
-      workbox: {
+      // Usa seu src/sw.ts como FONTE
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts", // <- AQUI: o arquivo de origem é TypeScript
+
+      injectManifest: {
+        injectionPoint: "self.__WB_MANIFEST",
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
@@ -28,17 +32,14 @@ export default defineConfig({
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-          {
-            src: "/icons/icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable any",
-          },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable any" },
         ],
       },
 
       devOptions: {
-        enabled: false,
+        enabled: true,
+        type: "module",
+        navigateFallback: "index.html",
       },
     }),
   ],
