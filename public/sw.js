@@ -1,8 +1,5 @@
 /* public/sw.js - versão segura para produção (Vercel) */
-/* não usar TypeScript aqui */
-
 self.addEventListener("install", (event) => {
-  // força instalar e já pegar o controle
   event.waitUntil(self.skipWaiting());
 });
 
@@ -10,7 +7,6 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-/* ============ PUSH ============ */
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
@@ -32,19 +28,15 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-/* ============ CLICK ============ */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const url =
+    (event.notification.data && event.notification.data.url) || "/";
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
-      const hadWindow = clientsArr.find((c) => c.url === url);
-      if (hadWindow && "focus" in hadWindow) {
-        return hadWindow.focus();
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
+      const match = clientsArr.find((c) => c.url === url);
+      if (match && "focus" in match) return match.focus();
+      return clients.openWindow ? clients.openWindow(url) : null;
     })
   );
 });

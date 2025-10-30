@@ -1,3 +1,4 @@
+// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -9,10 +10,13 @@ export default defineConfig({
       injectRegister: "auto",
       registerType: "autoUpdate",
 
-      // Usa seu src/sw.ts como FONTE
+      // 👇 continua usando injectManifest
       strategies: "injectManifest",
       srcDir: "src",
-      filename: "sw.ts", // <- AQUI: o arquivo de origem é TypeScript
+
+      // 👇 TROCA o nome de sw.ts pra outro, pra não virar /sw.js
+      // antes: filename: "sw.ts"
+      filename: "pwa-sw.ts",
 
       injectManifest: {
         injectionPoint: "self.__WB_MANIFEST",
@@ -32,7 +36,12 @@ export default defineConfig({
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable any" },
+          {
+            src: "/icons/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable any",
+          },
         ],
       },
 
