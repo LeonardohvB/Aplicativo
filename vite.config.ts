@@ -1,4 +1,3 @@
-// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -10,16 +9,11 @@ export default defineConfig({
       injectRegister: "auto",
       registerType: "autoUpdate",
 
-      // 👇 continua usando injectManifest
-      strategies: "injectManifest",
-      srcDir: "src",
+      // 👇 VOLTAMOS PARA generateSW
+      strategies: "generateSW",
 
-      // 👇 TROCA o nome de sw.ts pra outro, pra não virar /sw.js
-      // antes: filename: "sw.ts"
-      filename: "pwa-sw.ts",
-
-      injectManifest: {
-        injectionPoint: "self.__WB_MANIFEST",
+      // se quiser cachear mais coisas, põe aqui
+      workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
