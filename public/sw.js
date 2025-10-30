@@ -1,42 +1,56 @@
-/* public/sw.js - versão segura para produção (Vercel) */
+/// <reference lib="webworker" />
 self.addEventListener("install", (event) => {
-  event.waitUntil(self.skipWaiting());
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
+async function openOrFocus(url) {
+  const clients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  const full = new URL(url, self.location.origin).href;
+  for (const client of clients) {
+    try {
+      if (new URL(client.url).href === full && "focus" in client) {
+        return client.focus();
+      }
+    } catch (e) {}
+  }
+  if (self.clients.openWindow) return self.clients.openWindow(full);
+}
 
+self.addEventListener("push", (event) => {
   let payload = {};
   try {
-    payload = event.data.json();
-  } catch {
-    payload = { title: event.data.text() || "Nova notificação" };
+    if (event.data) payload = JSON.parse(event.data.text());
+  } catch (e) {
+    payload = {
+      title: "Notificação",
+      body: event.data ? event.data.text() : "",
+    };
   }
 
-  const title = payload.title || "Nova notificação";
-  const options = {
-    body: payload.body || payload.message || "",
-    icon: payload.icon || "/icons/icon-192.png",
-    badge: payload.badge || "/icons/icon-72.png",
-    data: payload.data || {},
-  };
+  const data = payload.data || {};
+  const title = payload.title || data.title || "Notificação";
+  const body = payload.body || data.body || "";
+  const icon = payload.icon || data.icon || "/icons/icon-192.png";
+  const url = payload.url || data.url || "/";
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      data: { url, ...data },
+    })
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url =
-    (event.notification.data && event.notification.data.url) || "/";
-  event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
-      const match = clientsArr.find((c) => c.url === url);
-      if (match && "focus" in match) return match.focus();
-      return clients.openWindow ? clients.openWindow(url) : null;
-    })
-  );
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(openOrFocus(url));
 });

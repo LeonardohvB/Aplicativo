@@ -1,21 +1,11 @@
 // src/lib/push.ts
-// Fluxo completo: inscrever no PushManager, salvar via Edge Function (push-subscribe),
-// enviar teste opcional via /push/send (apenas se tiver ADMIN_TOKEN),
-// e re-inscrever automaticamente em 404/410.
 
-// === Endpoints ===
-const SUBSCRIBE_URL = "https://yhcxdcnveyxntfzwaovp.functions.supabase.co/push-subscribe";
-const ADMIN_PUSH_BASE = "https://yhcxdcnveyxntfzwaovp.functions.supabase.co/push"; // /send (opcional/admin)
+const SUBSCRIBE_URL =
+  "https://yhcxdcnveyxntfzwaovp.functions.supabase.co/push-subscribe";
+const ADMIN_PUSH_BASE =
+  "https://yhcxdcnveyxntfzwaovp.functions.supabase.co/push";
 
-// === ENVs (frontend) ===
-// - VITE_SUPABASE_URL
-// - VITE_SUPABASE_ANON_KEY
-// - VITE_VAPID_PUBLIC_KEY
-// - (opcional) VITE_ADMIN_TOKEN  -> para /push/send de teste
-
-import { supabase } from "./supabase"; // 👈 usamos o client único já criado
-// (caminho relativo: se esse arquivo estiver em src/lib/push.ts e o supabase.ts
-// estiver em src/lib/supabase.ts, então "./supabase" está correto)
+import { supabase } from "./supabase";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN as string | undefined;
@@ -38,8 +28,15 @@ function urlBase64ToUint8Array(base64String: string) {
   return arr;
 }
 
+// 👇 AQUI É O PULO DO GATO
 async function getRegistration(): Promise<ServiceWorkerRegistration> {
-  // Se quiser registrar aqui: await navigator.serviceWorker.register("/sw.js");
+  // se já existe SW controlando a página, só espera
+  if (navigator.serviceWorker.controller) {
+    return await navigator.serviceWorker.ready;
+  }
+
+  // se NÃO existe, registra o nosso SW simples que está em public/sw.js
+  await navigator.serviceWorker.register("/sw.js");
   return await navigator.serviceWorker.ready;
 }
 
@@ -51,10 +48,6 @@ async function ensurePermission(): Promise<NotificationPermission> {
 
 type EnableArgs = { tenantId?: string | null };
 
-/**
- * Inscreve no navegador e SALVA via Edge Function autenticada (push-subscribe).
- * O user_id é inferido pelo token do Supabase Auth (Authorization: Bearer ...).
- */
 export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
   if (!isPushSupported()) throw new Error("Navegador não suporta Web Push.");
   if (!VAPID_PUBLIC_KEY) throw new Error("VITE_VAPID_PUBLIC_KEY ausente.");
@@ -62,15 +55,16 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
   const perm = await ensurePermission();
   if (perm !== "granted") throw new Error("Permissão de notificação negada.");
 
-  // token do usuário logado (profissional)
+  // precisa estar logado
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) throw new Error("Sem sessão do usuário (login necessário).");
 
+  // garante que tem SW
   const reg = await getRegistration();
 
-  // Reaproveita se já existir
+  // reaproveita inscrição
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
     sub = await reg.pushManager.subscribe({
@@ -79,21 +73,19 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
     });
   }
 
-  // 👇 garante que não é undefined / inválido
-  if (!sub) {
-    throw new Error("Falha ao criar a subscription do push.");
-  }
+  if (!sub) throw new Error("Falha ao criar a subscription do push.");
 
   const subJson = sub.toJSON() as any;
   const p256dh = subJson?.keys?.p256dh as string | undefined;
   const auth = subJson?.keys?.auth as string | undefined;
 
   if (!p256dh || !auth) {
-    // (opcional) faça um unsubscribe para resetar estado inconsistente
     try {
       await sub.unsubscribe();
     } catch {}
-    throw new Error("Subscription inválida (sem chaves p256dh/auth). Tente novamente.");
+    throw new Error(
+      "Subscription inválida (sem chaves p256dh/auth). Tente novamente."
+    );
   }
 
   const res = await fetch(SUBSCRIBE_URL, {
@@ -111,7 +103,6 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
   });
 
   if (!res.ok) {
-    // rollback (desinscreve local) se falhar
     try {
       await sub.unsubscribe();
     } catch {}
@@ -122,7 +113,6 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
   return { endpoint: sub.endpoint };
 }
 
-/** Remove inscrição local e tenta remover no backend por endpoint (autenticado) */
 export async function disableWebPush() {
   if (!isPushSupported()) return;
 
@@ -144,9 +134,7 @@ export async function disableWebPush() {
       },
       body: JSON.stringify({ endpoint: sub.endpoint }),
     });
-  } catch {
-    // ignora
-  }
+  } catch {}
 
   await sub.unsubscribe();
 }
@@ -158,10 +146,6 @@ export async function getCurrentSubscriptionEndpoint(): Promise<string | null> {
   return sub?.endpoint ?? null;
 }
 
-/**
- * Envia uma notificação de teste via função admin /push/send (opcional).
- * Requer VITE_ADMIN_TOKEN (ou que /push/send aceite service role).
- */
 export async function sendTest(payload: {
   title: string;
   body: string;
@@ -175,7 +159,7 @@ export async function sendTest(payload: {
   if (!sub) throw new Error("Não há subscription ativa");
 
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (ADMIN_TOKEN) headers["x-admin-token"] = ADMIN_TOKEN; // se a função exigir admin-token
+  if (ADMIN_TOKEN) headers["x-admin-token"] = ADMIN_TOKEN;
 
   const res = await fetch(`${ADMIN_PUSH_BASE}/send`, {
     method: "POST",
@@ -183,7 +167,6 @@ export async function sendTest(payload: {
     body: JSON.stringify({ subscription: sub.toJSON(), payload }),
   });
 
-  // subscription expirada no servidor → re-inscreve automaticamente
   if (res.status === 404 || res.status === 410) {
     try {
       await sub.unsubscribe();
@@ -192,7 +175,9 @@ export async function sendTest(payload: {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
-    throw new Error("Subscription expirou (404/410). Reinscrita; tente novamente.");
+    throw new Error(
+      "Subscription expirou (404/410). Reinscrita; tente novamente."
+    );
   }
 
   if (!res.ok) {
@@ -202,7 +187,6 @@ export async function sendTest(payload: {
   return res.json();
 }
 
-/** Alias útil se você quiser expor explicitamente */
 export async function unsubscribePush() {
   return disableWebPush();
 }
