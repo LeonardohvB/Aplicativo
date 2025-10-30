@@ -60,12 +60,14 @@ export const ToastContainer: React.FC = () => {
     );
 
   return (
-    <div className="fixed z-[1100] top-4 right-4 flex flex-col gap-2 max-w-sm w-[90vw] sm:w-[360px]">
+  <div className="fixed z-[1100] top-4 inset-x-0 pointer-events-none">
+    {/* mesmo container do app */}
+    <div className="max-w-6xl mx-auto px-4 flex flex-col items-center gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="animate-[toast-in_0.18s_ease-out] rounded-xl bg-white shadow-lg ring-1 ring-black/5 p-3"
-          style={{ transformOrigin: "top right" }}
+          className="pointer-events-auto animate-[toast-in_0.18s_ease-out] rounded-xl bg-white shadow-lg ring-1 ring-black/5 p-3 w-full max-w-sm"
+          style={{ transformOrigin: "top center" }}
           role="status"
           aria-live="polite"
         >
@@ -85,13 +87,14 @@ export const ToastContainer: React.FC = () => {
           </div>
         </div>
       ))}
-
-      <style>{`
-        @keyframes toast-in {
-          from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
     </div>
-  );
-};
+
+    <style>{`
+      @keyframes toast-in {
+        from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+    `}</style>
+  </div>
+);
+}

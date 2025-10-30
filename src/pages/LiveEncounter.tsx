@@ -26,7 +26,7 @@ type ToastItem = { id: string; kind: ToastKind; title?: string; message?: string
 
 function useToasts() {
   const [items, setItems] = useState<ToastItem[]>([]);
-  const push = (t: Omit<ToastItem, "id">, ttl = 3000) => {
+  const push = (t: Omit<ToastItem, "id">, ttl = 4000) => {
     const id = Math.random().toString(36).slice(2);
     const item = { id, ...t };
     setItems((arr) => [...arr, item]);
@@ -44,11 +44,12 @@ function useToasts() {
   };
 }
 
+// ➜ container agora em CIMA e centralizado
 const Toasts: React.FC<{
   items: ToastItem[];
   onDismiss: (id: string) => void;
 }> = ({ items, onDismiss }) => (
-  <div className="fixed inset-x-0 bottom-4 z-[90] flex flex-col items-center gap-2 px-4 pointer-events-none">
+  <div className="fixed inset-x-0 top-4 z-[90] flex flex-col items-center gap-2 px-4 pointer-events-none">
     {items.map((t) => {
       const Icon =
         t.kind === "success" ? CheckCircle2 : t.kind === "error" ? AlertCircle : Info;
@@ -57,7 +58,7 @@ const Toasts: React.FC<{
           ? "bg-emerald-600"
           : t.kind === "error"
           ? "bg-rose-600"
-          : "bg-slate-700";
+          : "bg-red-600";
       return (
         <div
           key={t.id}
@@ -82,7 +83,7 @@ const Toasts: React.FC<{
     })}
 
     <style>{`
-      @keyframes toast-in { 0% { transform: translateY(8px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+      @keyframes toast-in { 0% { transform: translateY(-8px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
       .animate-toast-in { animation: toast-in .18s ease-out both; }
     `}</style>
   </div>
@@ -93,9 +94,9 @@ const Toasts: React.FC<{
    ========================================================== */
 const FinalizeDialog: React.FC<{
   open: boolean;
-  onClose: () => void;            // Sair
-  onNow: () => void;              // Gerar agora
-  onLater: () => void;            // Preencher depois
+  onClose: () => void;
+  onNow: () => void;
+  onLater: () => void;
 }> = ({ open, onClose, onNow, onLater }) => {
   useEffect(() => {
     if (!open) return;
@@ -231,6 +232,15 @@ function parseObservations(o: string, s: string): string | undefined {
   return out || undefined;
 }
 
+// ⛔ trava do "gerar agora"
+function isDraftEmpty(d: DraftUI): boolean {
+  const hasSOAP = (d.S || d.O || d.A || d.P).trim().length > 0;
+  const hasVitals = anyVital(d.vitals || {});
+  const hasTags = Array.isArray(d.tags) && d.tags.length > 0;
+  const hasMeds = Array.isArray(d.medications) && d.medications.length > 0;
+  return !(hasSOAP || hasVitals || hasTags || hasMeds);
+}
+
 /** Heurística: acha o patient_id pelo nome e/ou telefone */
 async function findPatientId(patientName?: string, phoneMasked?: string) {
   let patient_id: string | undefined;
@@ -261,11 +271,7 @@ async function findPatientId(patientName?: string, phoneMasked?: string) {
   return patient_id;
 }
 
-/** Busca dados do profissional logado.
- *  - especialidade vem de `professionals.specialty`
- *  - nome vem de `professionals.name` (fallback: `profiles.name`)
- *  - proId é o `professionals.id` (usado para gravar em patient_evolution.professional_id)
- */
+/** Busca dados do profissional logado. */
 async function getProfessionalInfo() {
   const { data: auth } = await supabase.auth.getUser();
   const userId = auth.user?.id || null;
@@ -275,7 +281,6 @@ async function getProfessionalInfo() {
   let profName: string | null = null;
 
   if (userId) {
-    // busca o registro do profissional: preferir owner_id = userId; fallback: id = userId (legado)
     const { data: pro } = await supabase
       .from("professionals")
       .select("id, owner_id, name, specialty")
@@ -288,7 +293,6 @@ async function getProfessionalInfo() {
       profName = (pro as any)?.name ?? null;
     }
 
-    // fallback: nome do perfil
     if (!profName) {
       const { data: prof } = await supabase
         .from("profiles")
@@ -421,16 +425,21 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   // toasts
   const toasts = useToasts();
 
+  // toast padrão de finalização
+  const showFinalizeToast = () => {
+    toasts.success("Atendimento finalizado!", "Tudo certo");
+  };
+
   // dados gerais
   const [appointmentId, setAppointmentId] = useState<string>("");
   const [patientName, setPatientName] = useState<string>("Paciente");
   const [professionalName, setProfessionalName] = useState<string>("Profissional");
   const [serviceName, setServiceName] = useState<string>("Consulta");
 
-  // vitais: iniciam ocultos e persistem no localStorage
+  // vitais
   const [showVitals, setShowVitals] = useState<boolean>(() => {
     const saved = localStorage.getItem("live:vitalsVisible");
-    return saved ? saved === "1" : false; // padrão: oculto
+    return saved ? saved === "1" : false;
   });
   const toggleVitals = () => {
     setShowVitals((v) => {
@@ -451,7 +460,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   // pedido de auto-finalização (quando vem da Agenda)
   const [autoFinalizeRequested, setAutoFinalizeRequested] = useState(false);
 
-  // autosave (Supabase + cache local)
+  // autosave
   const { draft: hookDraft, setDraft: setHookDraft, saveState, clearLocal } =
     useEncounterDraft(encounterId, { appointmentId });
 
@@ -567,14 +576,14 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       return;
     }
 
-    // 2) finalize_encounter (registra conclusão no encontro)
+    // 2) finalize_encounter
     const { error: finErr } = await supabase.rpc("finalize_encounter", {
       p_encounter_id: eid,
       p_options: payloadForFinalize,
     });
     if (finErr) throw finErr;
 
-    // 3) Atualiza status do slot (best-effort)
+    // 3) Atualiza status do slot
     if (appointmentId) {
       try {
         await supabase
@@ -600,6 +609,12 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
 
   /** Finaliza e cria evolução a partir do rascunho (fluxo “Gerar agora”) */
   const finalizeNow = async () => {
+    // trava: não deixa gerar agora se estiver tudo vazio
+    if (isDraftEmpty(draft)) {
+      toasts.info("Preencha pelo menos um campo antes de gerar.", "Nada para gerar");
+      return;
+    }
+
     try {
       const plain =
         [
@@ -608,7 +623,9 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           draft.A && `A: ${draft.A}`,
           draft.P && `P: ${draft.P}`,
           anyVital(draft.vitals) &&
-            `VITAIS: BP=${draft.vitals.bp || "-"} | FC=${draft.vitals.hr || "-"} | Temp=${draft.vitals.temp || "-"} | Peso=${draft.vitals.weight || "-"} | Alt=${draft.vitals.height || "-"}`,
+            `VITAIS: BP=${draft.vitals.bp || "-"} | FC=${draft.vitals.hr || "-"} | Temp=${
+              draft.vitals.temp || "-"
+            } | Peso=${draft.vitals.weight || "-"} | Alt=${draft.vitals.height || "-"}`,
           draft.tags.length ? `Tags: ${draft.tags.join(", ")}` : "",
         ]
           .filter(Boolean)
@@ -643,10 +660,10 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
-          professional_id: proId ?? userId!, // <-- usa professionals.id
+          professional_id: proId ?? userId!,
           professional_name: professionalName || profName || "Profissional",
-          specialty: role, // profissão/cargo
-          title,           // “Consulta (online)” permanece no título
+          specialty: role,
+          title,
           type: "consultation",
           occurred_at,
           vitals,
@@ -706,9 +723,15 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         (clearLocal as any)?.();
       } catch {}
 
-      toasts.success("Evolução gerada e atendimento finalizado.");
+    
+      // 2) toast padrão
+      showFinalizeToast();
+
+      // 3) agora sim fecha, mas com um leve atraso pra dar tempo do toast aparecer
       window.dispatchEvent(new CustomEvent("agenda:refresh"));
-      window.dispatchEvent(new CustomEvent("encounter:close"));
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("encounter:close"));
+      }, 3000);
     } catch (e) {
       console.warn("finalizeNow error:", e);
       toasts.error("Não foi possível finalizar agora. Tente novamente.");
@@ -719,15 +742,18 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   const finalizeBlank = async () => {
     try {
       const eid = await ensureEncounterAndCloseSlot({
-        data_json: {}, // registra o finalize sem conteúdo
+        data_json: {},
         plain_text: null,
       });
       if (!eid) return;
 
+      // 1) toast de pendência
+      toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
+
       // pega profissão/cargo e id do registro do profissional
       const { userId, proId, role, profName } = await getProfessionalInfo();
 
-      // Cria evolução “vazia” com flag de pendência
+      // Cria evolução “vazia”
       try {
         const patient_id = await findPatientId(patientName);
         const occurred_at = new Date().toISOString();
@@ -737,9 +763,9 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
-          professional_id: proId ?? userId!, // <-- usa professionals.id
+          professional_id: proId ?? userId!,
           professional_name: professionalName || profName || "Profissional",
-          specialty: role, // profissão/cargo
+          specialty: role,
           title,
           type: "consultation",
           occurred_at,
@@ -757,7 +783,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             tags: [] as string[],
             medications: [] as Med[],
             updatedAt: new Date().toISOString(),
-            pending: true, // marcador usado na timeline
+            pending: true,
           },
           s_text: null,
           o_text: null,
@@ -771,7 +797,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         console.warn("evolution blank creation warning:", err);
       }
 
-      // ✅ avisa a Agenda para atualizar o card imediatamente
+      // agenda
       if (appointmentId) {
         window.dispatchEvent(
           new CustomEvent("agenda:slot:update", {
@@ -784,9 +810,15 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         (clearLocal as any)?.();
       } catch {}
 
-      toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
+      // 2) toast de finalizado
+      showFinalizeToast();
+
       window.dispatchEvent(new CustomEvent("agenda:refresh"));
-      window.dispatchEvent(new CustomEvent("encounter:close"));
+
+      // 3) fecha com o mesmo atraso
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("encounter:close"));
+      }, 3000);
     } catch (e) {
       console.warn("finalizeBlank error:", e);
       toasts.error("Não foi possível concluir. Tente novamente.");
@@ -1067,7 +1099,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         </div>
       </div>
 
-      {/* Modal Finalizar: Gerar agora / Preencher depois / Sair */}
+      {/* Modal Finalizar */}
       <FinalizeDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}

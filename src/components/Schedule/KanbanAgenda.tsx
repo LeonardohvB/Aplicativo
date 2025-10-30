@@ -19,6 +19,7 @@ import { publicUrlFromPath } from '../../lib/avatars';
 
 // >>> usa o ConfirmDialog PADRÃO do app (o mesmo do Profile)
 import ConfirmDialog from '../ui/ConfirmDialog';
+import { useToast } from "../ui/Toast";
 
 /* ======================= Tipos utilitários ======================= */
 type Pro = {
@@ -556,6 +557,43 @@ const KanbanAgenda: React.FC<Props> = ({
   // === estado do modal de finalizar ===
   const [slotIdToFinish, setSlotIdToFinish] = useState<string | null>(null);
   const askFinish = (slotId: string) => setSlotIdToFinish(slotId);
+  
+
+// --- TOAST ---
+const toast = useToast();
+
+// Começar (substitui a versão antiga que existe mais abaixo)
+const handleStartLocal = (slotId: string) => {
+  setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
+  try {
+    onStartAppointment?.(slotId);
+    toast.success("Atendimento iniciado!", { title: "Tudo certo" });
+  } catch {
+    toast.error("Não foi possível iniciar o atendimento.", { title: "Erro" });
+  }
+};
+
+// Faltou
+const handleNoShowLocal = async (slotId: string) => {
+  try {
+    await onNoShow?.(slotId);
+    toast.info("Atendimento marcado como falta.", { title: "Marcado" });
+  } catch {
+    toast.error("Falha ao marcar como falta.", { title: "Erro" });
+  }
+};
+
+// Cancelar
+const handleCancelLocal = async (slotId: string) => {
+  try {
+    await onCancel?.(slotId);
+    toast.success("Atendimento cancelado.", { title: "Cancelado" });
+  } catch {
+    toast.error("Não foi possível cancelar o atendimento.", { title: "Erro" });
+  }
+};
+
+  
 
   useEffect(() => {
     const now = new Date();
@@ -679,10 +717,10 @@ const KanbanAgenda: React.FC<Props> = ({
     [daySlots, jById]
   );
 
-  const handleStartLocal = (slotId: string) => {
+ /* const handleStartLocal = (slotId: string) => {
     setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
     onStartAppointment?.(slotId);
-  };
+  };*/
 
   const getElapsedMin = (s: AppointmentSlot) => {
     const apiStarted = (s as any)?.startedAt
@@ -870,8 +908,8 @@ const KanbanAgenda: React.FC<Props> = ({
                               }}
                               onStart={handleStartLocal}
                               onFinish={askFinish}               // ← wrapper abre modal
-                              onCancel={onCancel}
-                              onNoShow={onNoShow}
+                              onCancel={handleCancelLocal}
+                              onNoShow={handleNoShowLocal}
                               onDelete={() => {
                                 if (jId) onDeleteJourney(jId);
                               }}

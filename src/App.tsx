@@ -16,6 +16,7 @@ import PatientEvolution from './pages/PatientEvolution'
 import LiveEncounter from './pages/LiveEncounter'
 import { ConfirmProvider } from './providers/ConfirmProvider'
 import ProfessionalsArchived from './pages/ProfessionalsArchived'
+import { ToastContainer } from "./components/ui/Toast";
 
 // === IMPORT ATESTADOS (apenas o que existe) ===
 import CertificateNew from './pages/CertificateNew'
@@ -288,6 +289,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <ToastContainer />
     </ConfirmProvider>
   )
 }
