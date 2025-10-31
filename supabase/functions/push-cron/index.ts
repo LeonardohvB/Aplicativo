@@ -28,12 +28,7 @@ function isGone(e: string) {
   );
 }
 
-/**
- * Autorização da chamada:
- * 1. header x-admin-token === ADMIN_TOKEN
- * 2. Authorization: Bearer SERVICE_ROLE_KEY
- * 3. user-agent começa com pg_net/ (cron interno chamando via pg_net)
- */
+/** auth: x-admin-token | Bearer service_role | pg_net */
 function isAuthorized(req: Request) {
   const admin = req.headers.get("x-admin-token");
   if (admin && ADMIN_TOKEN && admin === ADMIN_TOKEN) return true;
@@ -51,17 +46,12 @@ function isAuthorized(req: Request) {
     req.headers.get("user-agent") ||
     req.headers.get("User-Agent") ||
     "";
-  if (ua.startsWith("pg_net/")) {
-    return true;
-  }
+  if (ua.startsWith("pg_net/")) return true;
 
   return false;
 }
 
-/**
- * Formata um horário UTC (string ou Date) para "HH:MM" no fuso local fixo
- * (America/Sao_Paulo) sem AM/PM.
- */
+/** HH:MM America/Sao_Paulo */
 function formatLocalHHMM(isoStringOrDate: string | Date) {
   const dt = new Date(isoStringOrDate);
   return new Intl.DateTimeFormat("pt-BR", {
@@ -72,11 +62,7 @@ function formatLocalHHMM(isoStringOrDate: string | Date) {
   }).format(dt);
 }
 
-/**
- * Busca compromissos na view v_appointment_starts dentro de um intervalo [startIso, endIso)
- * Campos usados:
- *   slot_id, journey_id, owner_id, patient_id, starts_at_utc
- */
+/** busca na view dentro da janela */
 async function fetchAppointmentsInWindow(
   supabase,
   startIso: string,
@@ -85,9 +71,9 @@ async function fetchAppointmentsInWindow(
   const { data, error } = await supabase
     .from("v_appointment_starts")
     .select(
-      "slot_id, journey_id, owner_id, patient_id, starts_at_utc"
+      "slot_id, journey_id, owner_id, patient_id, starts_at_utc, status"
     )
-    
+    .eq("status", "agendado")
     .gte("starts_at_utc", startIso)
     .lt("starts_at_utc", endIso);
 
@@ -97,53 +83,37 @@ async function fetchAppointmentsInWindow(
   return data || [];
 }
 
-/**
- * Monta um mapa patient_id -> nome do paciente
- * usando a tabela public.patients.
- */
+/** pega nomes dos pacientes */
 async function buildPatientNameMap(supabase, rows) {
   const ids = Array.from(
-    new Set(
-      rows
-        .map((r: any) => r.patient_id)
-        .filter(Boolean)
-    )
+    new Set(rows.map((r: any) => r.patient_id).filter(Boolean))
   );
-
-  if (!ids.length) {
-    return new Map();
-  }
+  if (!ids.length) return new Map();
 
   const { data, error } = await supabase
     .from("patients")
     .select("id, name")
     .in("id", ids);
 
-  if (error) {
-    throw new Error("select_patients: " + error.message);
-  }
+  if (error) throw new Error("select_patients: " + error.message);
 
   const map = new Map();
   for (const p of data || []) {
-    const display =
-      (p.name && String(p.name).trim()) ||
-      "Paciente agendado";
+    const display = (p.name && String(p.name).trim()) || "Paciente agendado";
     map.set(p.id, display);
   }
   return map;
 }
 
 /**
- * Envia notificações para uma lista de compromissos e registra log de envio
- * respeitando idempotência via push_notifications_log(unique).
+ * Envia notificações e LOGA.
+ * DIFERENÇA IMPORTANTE:
+ * - se o log disser "duplicate", AGORA nós vamos ENVIAR MESMO ASSIM
+ *   (isso é pra facilitar seus testes)
  */
 async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
   const targets = Array.from(
-    new Set(
-      rows
-        .map((r: any) => r.owner_id)
-        .filter(Boolean)
-    )
+    new Set(rows.map((r: any) => r.owner_id).filter(Boolean))
   );
 
   if (!targets.length) {
@@ -156,14 +126,13 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     };
   }
 
+  // subscriptions dos donos
   const { data: subs, error: subsErr } = await supabase
     .from("push_subscriptions")
     .select("user_id, endpoint, p256dh, auth")
     .in("user_id", targets);
 
-  if (subsErr) {
-    throw new Error("select_subs: " + subsErr.message);
-  }
+  if (subsErr) throw new Error("select_subs: " + subsErr.message);
 
   const byUser = new Map<string, any[]>();
   (subs || []).forEach((s: any) => {
@@ -182,7 +151,8 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     const userId = row.owner_id;
     if (!apptId || !userId) continue;
 
-    const { error: dupErr } = await supabase
+    // 1) tenta gravar no log, mas NÃO VAMOS mais abortar se for duplicate
+    const { error: logErr } = await supabase
       .from("push_notifications_log")
       .insert({
         appointment_id: apptId,
@@ -190,21 +160,19 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
         kind,
       });
 
-    if (dupErr) {
-      const msg = String(dupErr.message || "").toLowerCase();
-      if (!msg.includes("duplicate")) {
+    let isDuplicate = false;
+    if (logErr) {
+      const msg = String(logErr.message || "").toLowerCase();
+      if (msg.includes("duplicate") || msg.includes("unique")) {
+        // estamos testando → vamos enviar mesmo assim
+        isDuplicate = true;
+      } else {
+        // erro real → registra e pula
         details.push({
           apptId,
           step: "log_insert",
           kind,
-          error: dupErr.message,
-        });
-        continue;
-      } else {
-        details.push({
-          apptId,
-          warn: "duplicate skip",
-          kind,
+          error: logErr.message,
         });
         continue;
       }
@@ -227,13 +195,11 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
 
     const payloadData = buildPayloadFn(row, localHHMM, patientDisplay);
 
-    // 🔴 AQUI é onde a gente diferencia Apple x resto
     for (const s of userSubs) {
       const isApple =
         typeof s.endpoint === "string" &&
         s.endpoint.startsWith("https://web.push.apple.com");
 
-      // desktop / chrome / android → payload completo (o seu de antes)
       const richPayload = JSON.stringify({
         title: payloadData.title,
         body: payloadData.body,
@@ -247,7 +213,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
         },
       });
 
-      // iPhone → payload enxuto (igual ao teste manual)
+      // payload enxuto pra iPhone
       const applePayload = JSON.stringify({
         title: payloadData.title,
         body: payloadData.body,
@@ -273,6 +239,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
           kind,
           endpoint: isApple ? "apple" : "other",
           sent: true,
+          duplicate: isDuplicate,
         });
       } catch (e) {
         const msg = String(e?.message || e);
@@ -315,10 +282,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ ok: false, error: "unauthorized" }),
         {
           status: 401,
-          headers: {
-            ...corsHeaders,
-            "content-type": "application/json",
-          },
+          headers: { ...corsHeaders, "content-type": "application/json" },
         }
       );
     }
@@ -328,10 +292,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ ok: false, error: "missing_vapid" }),
         {
           status: 500,
-          headers: {
-            ...corsHeaders,
-            "content-type": "application/json",
-          },
+          headers: { ...corsHeaders, "content-type": "application/json" },
         }
       );
     }
@@ -350,7 +311,16 @@ Deno.serve(async (req) => {
     const now = new Date();
     const floor = new Date(Math.floor(now.getTime() / 60000) * 60000);
 
-    // 30 minutos
+    // 🔁 pra facilitar o teste: qualquer coisa nos PRÓXIMOS 15 MIN
+    const start10 = floor;
+    const end10 = new Date(floor.getTime() + 15 * 60 * 1000);
+    const due10 = await fetchAppointmentsInWindow(
+      supabase,
+      start10.toISOString(),
+      end10.toISOString()
+    );
+
+    // mantém as outras janelas
     const start30 = new Date(floor.getTime() + 28 * 60 * 1000);
     const end30 = new Date(floor.getTime() + 32 * 60 * 1000);
     const due30 = await fetchAppointmentsInWindow(
@@ -359,16 +329,6 @@ Deno.serve(async (req) => {
       end30.toISOString()
     );
 
-    // 10 minutos
-    const start10 = new Date(floor.getTime() + 8 * 60 * 1000);
-    const end10 = new Date(floor.getTime() + 12 * 60 * 1000);
-    const due10 = await fetchAppointmentsInWindow(
-      supabase,
-      start10.toISOString(),
-      end10.toISOString()
-    );
-
-    // atrasado
     const startLate = new Date(floor.getTime() - 15 * 60 * 1000);
     const endLate = new Date(floor.getTime() - 5 * 60 * 1000);
     const late = await fetchAppointmentsInWindow(
@@ -377,31 +337,27 @@ Deno.serve(async (req) => {
       endLate.toISOString()
     );
 
+    const res10 = await notifyBatch(
+      supabase,
+      due10,
+      "before_10m",
+      (row, hhmmLocal, patientDisplay) => ({
+        title: "Lembrete: atendimento em breve",
+        body: `Paciente: ${patientDisplay}\nConsulta às ${hhmmLocal}.`,
+        url: "/agenda",
+        tag: `appt-${row.slot_id ?? row.journey_id}-before10m`,
+      })
+    );
+
     const res30 = await notifyBatch(
       supabase,
       due30,
       "before_30m",
       (row, hhmmLocal, patientDisplay) => ({
         title: "Lembrete: atendimento em 30 minutos",
-        body:
-          `Paciente: ${patientDisplay}\n` +
-          `Consulta marcada às ${hhmmLocal}.`,
+        body: `Paciente: ${patientDisplay}\nConsulta às ${hhmmLocal}.`,
         url: "/agenda",
         tag: `appt-${row.slot_id ?? row.journey_id}-before30m`,
-      })
-    );
-
-    const res10 = await notifyBatch(
-      supabase,
-      due10,
-      "before_10m",
-      (row, hhmmLocal, patientDisplay) => ({
-        title: "Lembrete: atendimento em 10 minutos",
-        body:
-          `Paciente: ${patientDisplay}\n` +
-          `Consulta marcada às ${hhmmLocal}.`,
-        url: "/agenda",
-        tag: `appt-${row.slot_id ?? row.journey_id}-before10m`,
       })
     );
 
@@ -411,9 +367,7 @@ Deno.serve(async (req) => {
       "late",
       (row, hhmmLocal, patientDisplay) => ({
         title: "Atendimento atrasado",
-        body:
-          `Paciente: ${patientDisplay}\n` +
-          `Você tinha um horário às ${hhmmLocal} e ainda não começou.`,
+        body: `Paciente: ${patientDisplay}\nVocê tinha às ${hhmmLocal}.`,
         url: "/agenda",
         tag: `appt-${row.slot_id ?? row.journey_id}-late`,
       })
@@ -424,35 +378,27 @@ Deno.serve(async (req) => {
         ok: true,
         now: now.toISOString(),
         windows: {
-          before30m: { start: start30.toISOString(), end: end30.toISOString() },
+          // agora mostra a janela larga de teste
           before10m: { start: start10.toISOString(), end: end10.toISOString() },
+          before30m: { start: start30.toISOString(), end: end30.toISOString() },
           late: { start: startLate.toISOString(), end: endLate.toISOString() },
         },
         stats: {
-          before30m: res30,
           before10m: res10,
+          before30m: res30,
           late: resLate,
         },
       }),
       {
-        headers: {
-          ...corsHeaders,
-          "content-type": "application/json",
-        },
+        headers: { ...corsHeaders, "content-type": "application/json" },
       }
     );
   } catch (err) {
     return new Response(
-      JSON.stringify({
-        ok: false,
-        fatal: String(err?.message || err),
-      }),
+      JSON.stringify({ ok: false, fatal: String(err?.message || err) }),
       {
         status: 500,
-        headers: {
-          ...corsHeaders,
-          "content-type": "application/json",
-        },
+        headers: { ...corsHeaders, "content-type": "application/json" },
       }
     );
   }
