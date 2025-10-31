@@ -87,7 +87,7 @@ async function fetchAppointmentsInWindow(
     .select(
       "slot_id, journey_id, owner_id, patient_id, starts_at_utc"
     )
-    .eq("status", "agendado") // 🔹 filtra apenas consultas agendadas
+    
     .gte("starts_at_utc", startIso)
     .lt("starts_at_utc", endIso);
 
