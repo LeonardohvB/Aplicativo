@@ -130,6 +130,8 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
   const { data: subs, error: subsErr } = await supabase
     .from("push_subscriptions")
     .select("user_id, endpoint, p256dh, auth")
+    .eq("is_active", true) 
+    .eq("enabled", true)
     .in("user_id", targets);
 
   if (subsErr) throw new Error("select_subs: " + subsErr.message);
@@ -151,32 +153,31 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     const userId = row.owner_id;
     if (!apptId || !userId) continue;
 
-    // 1) tenta gravar no log, mas NÃO VAMOS mais abortar se for duplicate
-    const { error: logErr } = await supabase
-      .from("push_notifications_log")
-      .insert({
-        appointment_id: apptId,
-        target_user_id: userId,
-        kind,
-      });
+    // 1) tenta gravar no log; SE for duplicate, NÃO envia de novo
+const { error: logErr } = await supabase
+  .from("push_notifications_log")
+  .insert({
+    appointment_id: apptId,
+    target_user_id: userId,
+    kind,
+  });
 
-    let isDuplicate = false;
-    if (logErr) {
-      const msg = String(logErr.message || "").toLowerCase();
-      if (msg.includes("duplicate") || msg.includes("unique")) {
-        // estamos testando → vamos enviar mesmo assim
-        isDuplicate = true;
-      } else {
-        // erro real → registra e pula
-        details.push({
-          apptId,
-          step: "log_insert",
-          kind,
-          error: logErr.message,
-        });
-        continue;
-      }
-    }
+if (logErr) {
+  const msg = String(logErr.message || "").toLowerCase();
+  if (msg.includes("duplicate") || msg.includes("unique")) {
+    // já mandamos essa notificação pra esse usuário e esse atendimento → pula
+    continue;
+  } else {
+    // erro real → registra e pula
+    details.push({
+      apptId,
+      step: "log_insert",
+      kind,
+      error: logErr.message,
+    });
+    continue;
+  }
+}
 
     const userSubs = byUser.get(userId) || [];
     if (!userSubs.length) {

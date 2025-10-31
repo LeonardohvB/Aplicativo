@@ -99,6 +99,7 @@ export async function enableWebPush({ tenantId = null }: EnableArgs = {}) {
       p256dh,
       auth,
       tenant_id: tenantId ?? null,
+      user_agent: navigator.userAgent,
     }),
   });
 
@@ -123,22 +124,21 @@ export async function disableWebPush() {
 
   const reg = await getRegistration();
   const sub = await reg.pushManager.getSubscription();
-  if (!sub) return;
+  const endpoint = sub?.endpoint ?? null;
 
-  try {
+  // desativa no Supabase
+  if (endpoint) {
     await fetch(SUBSCRIBE_URL, {
       method: "DELETE",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ endpoint: sub.endpoint }),
+      body: JSON.stringify({ endpoint }),
     });
-  } catch {}
-
-  await sub.unsubscribe();
+  }
 }
-
+ 
 export async function getCurrentSubscriptionEndpoint(): Promise<string | null> {
   if (!isPushSupported()) return null;
   const reg = await getRegistration();
