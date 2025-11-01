@@ -1,108 +1,105 @@
 // src/components/EnablePushButton.tsx
 import { useEffect, useState } from "react";
-import {
-  enableWebPush,
-  disableWebPush,
-  isPushSupported,
-  getCurrentSubscriptionEndpoint,
-} from "../lib/push";
+import { enableWebPush, disableWebPush, isPushSupported } from "../lib/push";
+import { supabase } from "../lib/supabase";
 
 type Props = {
+  userId: string;
   tenantId?: string | null;
 };
 
-export default function EnablePushButton({ tenantId = null }: Props) {
+export default function EnablePushButton({ userId, tenantId = null }: Props) {
   const [loading, setLoading] = useState(false);
-  const [supported, setSupported] = useState(true);
-  const [active, setActive] = useState<boolean | null>(null);
+  const [enabled, setEnabled] = useState<boolean | null>(null); // null = carregando
   const [msg, setMsg] = useState<string | null>(null);
 
+  // quando montar, descobrir no Supabase se está ativo
   useEffect(() => {
-    setSupported(isPushSupported());
-    (async () => {
-      try {
-        const ep = await getCurrentSubscriptionEndpoint();
-        setActive(!!ep);
-      } catch {
-        setActive(false);
-      }
-    })();
-  }, []);
+    let alive = true;
 
-  const onEnable = async () => {
+    async function fetchStatus() {
+      if (!userId) return;
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("push_subscriptions")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!alive) return;
+
+      if (error) {
+        console.warn("[EnablePushButton] erro ao ler push_subscriptions", error);
+        setEnabled(false);
+      } else {
+        setEnabled(!!data);
+      }
+      setLoading(false);
+    }
+
+    fetchStatus();
+
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  async function handleEnable() {
     setMsg(null);
-    if (!supported) {
+    if (!isPushSupported()) {
       setMsg("Seu navegador não suporta Web Push.");
       return;
     }
     setLoading(true);
     try {
-      await enableWebPush({ tenantId });
-      setActive(true);
-      setMsg("Notificações ativadas! ✅");
+      await enableWebPush({ tenantId,});
+      setEnabled(true);
+      setMsg("Notificações ativadas.");
     } catch (e: any) {
-      const m = String(e?.message || "");
-      if (m.toLowerCase().includes("permissão")) {
-        setMsg("Permissão negada. Libere as notificações no navegador e tente novamente.");
-      } else if (m.toLowerCase().includes("sem sessão")) {
-        setMsg("É preciso estar logado para ativar as notificações.");
-      } else {
-        setMsg(m || "Falha ao ativar notificações.");
-      }
+      setMsg(e?.message || "Erro ao ativar notificações.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const onDisable = async () => {
+  async function handleDisable() {
     setMsg(null);
     setLoading(true);
     try {
       await disableWebPush();
-      setActive(false);
+      setEnabled(false);
       setMsg("Notificações desativadas.");
     } catch (e: any) {
-      setMsg(e?.message || "Falha ao desativar.");
+      setMsg(e?.message || "Erro ao desativar notificações.");
     } finally {
       setLoading(false);
     }
-  };
-
-  if (!supported) {
-    return (
-      <div className="text-xs text-gray-500">
-        Notificações não são suportadas neste dispositivo/navegador.
-      </div>
-    );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      {active ? (
-        <button
-          onClick={onDisable}
-          disabled={loading}
-          className="px-3 py-1.5 rounded-xl bg-gray-200 text-gray-800 text-sm"
-        >
-          {loading ? "Desativando..." : "Desativar notificações"}
-        </button>
-      ) : (
-        <button
-          onClick={onEnable}
-          disabled={loading}
-          className="px-3 py-1.5 rounded-xl bg-sky-600 text-white text-sm shadow"
-        >
-          {loading ? "Ativando..." : "Ativar notificações"}
-        </button>
-      )}
-
-      {active !== null && (
-        <span className="text-[10px] text-gray-500">
-          {active ? "Ativo" : "Inativo"}
-        </span>
-      )}
-
-      {msg && <span className="text-xs text-gray-600 ml-2">{msg}</span>}
+    <div className="flex flex-col gap-1 items-stretch">
+      <button
+        onClick={enabled ? handleDisable : handleEnable}
+        disabled={loading || enabled === null}
+        className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
+          enabled
+            ? "bg-slate-200 text-slate-900 hover:bg-slate-300"
+            : "bg-blue-600 text-white hover:bg-blue-700"
+        } ${loading ? "opacity-70 cursor-not-allowed" : ""}`}
+      >
+        {enabled === null
+          ? "Carregando..."
+          : enabled
+          ? loading
+            ? "Desativando..."
+            : "Desativar notificações"
+          : loading
+          ? "Ativando..."
+          : "Ativar notificações"}
+      </button>
+      {msg ? <p className="text-xs text-slate-500">{msg}</p> : null}
     </div>
   );
 }
