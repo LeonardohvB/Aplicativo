@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-/* Service Worker raiz (public/sw.js) */
+/* Service Worker (produção) — public/sw.js */
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -9,7 +9,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-/* ============== util: abrir ou focar uma aba/rota ============== */
+/* abrir/focar rota */
 async function openOrFocus(url) {
   const clients = await self.clients.matchAll({
     type: "window",
@@ -21,41 +21,28 @@ async function openOrFocus(url) {
       if (new URL(client.url).href === full && "focus" in client) {
         return client.focus();
       }
-    } catch (e) {}
+    } catch (_) {}
   }
   if (self.clients.openWindow) return self.clients.openWindow(full);
 }
 
-/* ========================== push ========================== */
+/* push */
 self.addEventListener("push", (event) => {
-  // 0) Log do bruto (útil para depurar)
-  try {
-    const rawText = event?.data?.text?.();
-    console.log("[SW] raw event.data.text():", rawText);
-  } catch (e) {
-    console.log("[SW] raw read error:", e);
-  }
-
-  // 1) Parse robusto: tenta .json(), cai para .text() -> JSON.parse
+  // parse robusto (sem logs)
   let payload = {};
   try {
     if (event.data && typeof event.data.json === "function") {
       payload = event.data.json();
-      console.log("[SW] payload via .json():", payload);
     } else if (event.data) {
       const t = event.data.text() || "{}";
-      console.log("[SW] text before JSON.parse:", t);
       payload = JSON.parse(t);
-      console.log("[SW] payload via JSON.parse:", payload);
     }
-  } catch (e) {
-    console.warn("[SW] parse error, fallback:", e);
+  } catch (_) {
     try {
       payload = { body: event.data ? event.data.text() : "" };
     } catch {}
   }
 
-  // 2) Normaliza campos (aceita topo, data.*, notification.*)
   const n = payload.notification || {};
   const d = payload.data || {};
 
@@ -77,18 +64,10 @@ self.addEventListener("push", (event) => {
     requireInteraction: false,
   };
 
-  // Logs finais do que será exibido
-  console.log("[SW] normalized fields:", { title, body, icon, badge, tag, url, actions });
-  console.log("[SW] notification options:", options);
-
-  event.waitUntil(
-    self.registration.showNotification(title, options).catch((err) => {
-      console.error("[SW] showNotification error:", err);
-    })
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-/* =================== notification click =================== */
+/* click */
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "/";

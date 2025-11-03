@@ -4,27 +4,28 @@
 import webpush from "npm:web-push@3";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-/* ===== CORS ===== */
+/* ================== CORS ================== */
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type, x-admin-token",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
 };
 
-/* ===== ENVs ===== */
+/* ================== ENVs ================== */
 const PROJECT_URL = Deno.env.get("PROJECT_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!;
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!;
 const ADMIN_TOKEN = Deno.env.get("ADMIN_TOKEN") || "";
 
-/* ===== Helpers ===== */
-function isGone(e: string) {
+/* ================= Helpers ================= */
+function isGone(e: unknown) {
   const m = String(e || "");
   return (
     m.includes("410") ||
     m.includes("404") ||
-    m.toLowerCase().includes("gone")
+    m.toLowerCase().includes("gone") ||
+    m.toLowerCase().includes("not registered")
   );
 }
 
@@ -52,8 +53,8 @@ function isAuthorized(req: Request) {
 }
 
 /** HH:MM America/Sao_Paulo */
-function formatLocalHHMM(isoStringOrDate: string | Date) {
-  const dt = new Date(isoStringOrDate);
+function formatLocalHHMM(iso: string | Date) {
+  const dt = new Date(iso);
   return new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
@@ -62,31 +63,27 @@ function formatLocalHHMM(isoStringOrDate: string | Date) {
   }).format(dt);
 }
 
-/** busca na view dentro da janela */
+/** busca agendamentos na janela */
 async function fetchAppointmentsInWindow(
-  supabase,
+  supabase: any,
   startIso: string,
-  endIso: string
+  endIso: string,
 ) {
   const { data, error } = await supabase
     .from("v_appointment_starts")
-    .select(
-      "slot_id, journey_id, owner_id, patient_id, starts_at_utc, status"
-    )
+    .select("slot_id, journey_id, owner_id, patient_id, starts_at_utc, status")
     .eq("status", "agendado")
     .gte("starts_at_utc", startIso)
     .lt("starts_at_utc", endIso);
 
-  if (error) {
-    throw new Error("select_due: " + error.message);
-  }
+  if (error) throw new Error("select_due: " + error.message);
   return data || [];
 }
 
-/** pega nomes dos pacientes */
-async function buildPatientNameMap(supabase, rows) {
+/** mapa de nomes de pacientes */
+async function buildPatientNameMap(supabase: any, rows: any[]) {
   const ids = Array.from(
-    new Set(rows.map((r: any) => r.patient_id).filter(Boolean))
+    new Set(rows.map((r: any) => r.patient_id).filter(Boolean)),
   );
   if (!ids.length) return new Map();
 
@@ -105,17 +102,22 @@ async function buildPatientNameMap(supabase, rows) {
   return map;
 }
 
-/**
- * Envia notificações e LOGA.
- * DIFERENÇA IMPORTANTE:
- * - se o log disser "duplicate", AGORA nós vamos ENVIAR MESMO ASSIM
- *   (isso é pra facilitar seus testes)
- */
-async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
+/** Envia lote e loga resultado (sem duplicar) */
+async function notifyBatch(
+  supabase: any,
+  rows: any[],
+  kind: "before_10m" | "before_30m" | "late",
+  buildPayloadFn: (row: any, hhmmLocal: string, patientName: string) => {
+    title: string;
+    body: string;
+    url?: string;
+    tag: string;
+    data?: Record<string, unknown>;
+  },
+) {
   const targets = Array.from(
-    new Set(rows.map((r: any) => r.owner_id).filter(Boolean))
+    new Set(rows.map((r: any) => r.owner_id).filter(Boolean)),
   );
-
   if (!targets.length) {
     return {
       kind,
@@ -130,7 +132,7 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
   const { data: subs, error: subsErr } = await supabase
     .from("push_subscriptions")
     .select("user_id, endpoint, p256dh, auth")
-    .eq("is_active", true) 
+    .eq("is_active", true)
     .eq("enabled", true)
     .in("user_id", targets);
 
@@ -153,40 +155,22 @@ async function notifyBatch(supabase, rows, kind, buildPayloadFn) {
     const userId = row.owner_id;
     if (!apptId || !userId) continue;
 
-    // 1) tenta gravar no log; SE for duplicate, NÃO envia de novo
-const { error: logErr } = await supabase
-  .from("push_notifications_log")
-  .insert({
-    appointment_id: apptId,
-    target_user_id: userId,
-    kind,
-  });
+    // ===== log de envio (não repetir) =====
+    const { data: ins, error: upErr } = await supabase
+      .from("push_notifications_log")
+      .upsert(
+        { appointment_id: apptId, target_user_id: userId, kind },
+        { onConflict: "appointment_id,target_user_id,kind", ignoreDuplicates: true },
+      )
+      .select("appointment_id");
 
-if (logErr) {
-  const msg = String(logErr.message || "").toLowerCase();
-  if (msg.includes("duplicate") || msg.includes("unique")) {
-    // já mandamos essa notificação pra esse usuário e esse atendimento → pula
-    continue;
-  } else {
-    // erro real → registra e pula
-    details.push({
-      apptId,
-      step: "log_insert",
-      kind,
-      error: logErr.message,
-    });
-    continue;
-  }
-}
-
-    const userSubs = byUser.get(userId) || [];
-    if (!userSubs.length) {
-      details.push({
-        apptId,
-        warn: "no subscriptions for owner",
-        userId,
-        kind,
-      });
+    if (upErr) {
+      details.push({ apptId, step: "log_upsert", kind, error: upErr.message });
+      continue;
+    }
+    // se não inseriu (conflito), já existe → NÃO envia
+    if (!ins || ins.length === 0) {
+      details.push({ apptId, kind, skipped: "duplicate" });
       continue;
     }
 
@@ -196,31 +180,34 @@ if (logErr) {
 
     const payloadData = buildPayloadFn(row, localHHMM, patientDisplay);
 
-    for (const s of userSubs) {
+    for (const s of byUser.get(userId) || []) {
       const isApple =
         typeof s.endpoint === "string" &&
         s.endpoint.startsWith("https://web.push.apple.com");
 
-      const richPayload = JSON.stringify({
+      // ===== payload plano (top-level) =====
+      const common = {
         title: payloadData.title,
         body: payloadData.body,
         url: payloadData.url ?? "/agenda",
         tag: payloadData.tag,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
         data: {
           url: payloadData.url ?? "/agenda",
           appointment_id: apptId,
           kind,
           ...(payloadData.data || {}),
         },
-      });
+      };
 
-      // payload enxuto pra iPhone
+      const richPayload = JSON.stringify(common);
+
+      // Apple (enxuto)
       const applePayload = JSON.stringify({
-        title: payloadData.title,
-        body: payloadData.body,
-        data: {
-          url: payloadData.url ?? "/agenda",
-        },
+        title: common.title,
+        body: common.body,
+        data: { url: common.url },
       });
 
       const payloadToSend = isApple ? applePayload : richPayload;
@@ -232,7 +219,7 @@ if (logErr) {
             keys: { p256dh: s.p256dh, auth: s.auth },
           },
           payloadToSend,
-          { TTL: 900 }
+          { TTL: 900 },
         );
         sent++;
         details.push({
@@ -240,7 +227,6 @@ if (logErr) {
           kind,
           endpoint: isApple ? "apple" : "other",
           sent: true,
-          duplicate: isDuplicate,
         });
       } catch (e) {
         const msg = String(e?.message || e);
@@ -271,7 +257,7 @@ if (logErr) {
   };
 }
 
-/* ===== SERVE ===== */
+/* ================== SERVE ================== */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -284,7 +270,7 @@ Deno.serve(async (req) => {
         {
           status: 401,
           headers: { ...corsHeaders, "content-type": "application/json" },
-        }
+        },
       );
     }
 
@@ -294,14 +280,14 @@ Deno.serve(async (req) => {
         {
           status: 500,
           headers: { ...corsHeaders, "content-type": "application/json" },
-        }
+        },
       );
     }
 
     webpush.setVapidDetails(
       "mailto:push@yourapp.example",
       VAPID_PUBLIC_KEY,
-      VAPID_PRIVATE_KEY
+      VAPID_PRIVATE_KEY,
     );
 
     const supabase = createClient(PROJECT_URL, SERVICE_ROLE_KEY, {
@@ -312,66 +298,63 @@ Deno.serve(async (req) => {
     const now = new Date();
     const floor = new Date(Math.floor(now.getTime() / 60000) * 60000);
 
-    // 🔁 pra facilitar o teste: qualquer coisa nos PRÓXIMOS 15 MIN
-    const start10 = floor;
-    const end10 = new Date(floor.getTime() + 15 * 60 * 1000);
-    const due10 = await fetchAppointmentsInWindow(
-      supabase,
-      start10.toISOString(),
-      end10.toISOString()
-    );
+    // ===== Janelas (1 minuto) =====
+    // T-10
+    const start10 = new Date(floor.getTime() + 10 * 60 * 1000);
+    const end10   = new Date(start10.getTime() + 60 * 1000);
 
-    // mantém as outras janelas
-    const start30 = new Date(floor.getTime() + 28 * 60 * 1000);
-    const end30 = new Date(floor.getTime() + 32 * 60 * 1000);
-    const due30 = await fetchAppointmentsInWindow(
-      supabase,
-      start30.toISOString(),
-      end30.toISOString()
-    );
+    // T-30
+    const start30 = new Date(floor.getTime() + 30 * 60 * 1000);
+    const end30   = new Date(start30.getTime() + 60 * 1000);
 
-    const startLate = new Date(floor.getTime() - 15 * 60 * 1000);
-    const endLate = new Date(floor.getTime() - 5 * 60 * 1000);
-    const late = await fetchAppointmentsInWindow(
-      supabase,
-      startLate.toISOString(),
-      endLate.toISOString()
-    );
+    // atraso ~10min
+    const startLate = new Date(floor.getTime() - 10 * 60 * 1000);
+    const endLate   = new Date(startLate.getTime() + 60 * 1000);
 
-    const res10 = await notifyBatch(
-      supabase,
-      due10,
-      "before_10m",
-      (row, hhmmLocal, patientDisplay) => ({
-        title: "Lembrete: atendimento em breve",
-        body: `Paciente: ${patientDisplay}\nConsulta às ${hhmmLocal}.`,
-        url: "/agenda",
-        tag: `appt-${row.slot_id ?? row.journey_id}-before10m`,
-      })
-    );
+    const due10  = await fetchAppointmentsInWindow(supabase, start10.toISOString(), end10.toISOString());
+    const due30  = await fetchAppointmentsInWindow(supabase, start30.toISOString(), end30.toISOString());
+    const late   = await fetchAppointmentsInWindow(supabase, startLate.toISOString(), endLate.toISOString());
+
+   const res10 = await notifyBatch(
+  supabase,
+  due10,
+  "before_10m",
+  (row, hhmmLocal, patient) => ({
+    // título informativo (o que aparece no histórico)
+    title: `Consulta ${hhmmLocal} · ${patient}`,
+    // corpo curto (o histórico não mostra tudo)
+    body: "Toque para abrir a agenda.",
+    url: "/agenda",
+    tag: `appt-${row.slot_id ?? row.journey_id}-before10m`,
+    data: { patient_id: row.patient_id },
+  })
+);
+
 
     const res30 = await notifyBatch(
       supabase,
       due30,
       "before_30m",
-      (row, hhmmLocal, patientDisplay) => ({
-        title: "Lembrete: atendimento em 30 minutos",
-        body: `Paciente: ${patientDisplay}\nConsulta às ${hhmmLocal}.`,
+      (row, hhmmLocal, patient) => ({
+        title: `Consulta ${hhmmLocal} · ${patient}`,
+       body: "Toque para abrir a agenda.",
         url: "/agenda",
         tag: `appt-${row.slot_id ?? row.journey_id}-before30m`,
-      })
+        data: { patient_id: row.patient_id },
+      }),
     );
 
     const resLate = await notifyBatch(
       supabase,
       late,
       "late",
-      (row, hhmmLocal, patientDisplay) => ({
-        title: "Atendimento atrasado",
+      (row, hhmmLocal, patient) => ({
+        title: "⚠️ Atendimento atrasado",
         body: `Paciente: ${patientDisplay}\nVocê tinha às ${hhmmLocal}.`,
         url: "/agenda",
         tag: `appt-${row.slot_id ?? row.journey_id}-late`,
-      })
+        data: { patient_id: row.patient_id },
+      }),
     );
 
     return new Response(
@@ -379,20 +362,13 @@ Deno.serve(async (req) => {
         ok: true,
         now: now.toISOString(),
         windows: {
-          // agora mostra a janela larga de teste
           before10m: { start: start10.toISOString(), end: end10.toISOString() },
           before30m: { start: start30.toISOString(), end: end30.toISOString() },
-          late: { start: startLate.toISOString(), end: endLate.toISOString() },
+          late:      { start: startLate.toISOString(), end: endLate.toISOString() },
         },
-        stats: {
-          before10m: res10,
-          before30m: res30,
-          late: resLate,
-        },
+        stats: { before10m: res10, before30m: res30, late: resLate },
       }),
-      {
-        headers: { ...corsHeaders, "content-type": "application/json" },
-      }
+      { headers: { ...corsHeaders, "content-type": "application/json" } },
     );
   } catch (err) {
     return new Response(
@@ -400,7 +376,7 @@ Deno.serve(async (req) => {
       {
         status: 500,
         headers: { ...corsHeaders, "content-type": "application/json" },
-      }
+      },
     );
   }
 });
