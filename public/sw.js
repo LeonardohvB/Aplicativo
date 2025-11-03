@@ -24,30 +24,45 @@ async function openOrFocus(url) {
 }
 
 self.addEventListener("push", (event) => {
+  // Parse robusto: tenta .json(), cai para .text(), aceita payload plano ou aninhado
   let payload = {};
   try {
-    if (event.data) payload = JSON.parse(event.data.text());
-  } catch (e) {
-    payload = {
-      title: "Notificação",
-      body: event.data ? event.data.text() : "",
-    };
+    if (event.data && typeof event.data.json === "function") {
+      payload = event.data.json();
+    } else if (event.data) {
+      payload = JSON.parse(event.data.text() || "{}");
+    }
+  } catch (_e) {
+    try {
+      payload = { body: event.data ? event.data.text() : "" };
+    } catch {}
   }
 
-  const data = payload.data || {};
-  const title = payload.title || data.title || "Notificação";
-  const body = payload.body || data.body || "";
-  const icon = payload.icon || data.icon || "/icons/icon-192.png";
-  const url = payload.url || data.url || "/";
+  const n = payload.notification || {};
+  const d = payload.data || {};
+
+  const title = payload.title || n.title || d.title || "Notificação";
+  const body  = payload.body  || n.body  || d.body  || "";
+  const icon  = payload.icon  || n.icon  || d.icon  || "/icons/icon-192.png";
+  const badge = payload.badge || n.badge || d.badge || "/icons/icon-192.png";
+  const tag   = payload.tag   || n.tag   || d.tag   || "consultorio";
+  const url   = payload.url   || n.url   || d.url   || "/";
+
+  const actions = payload.actions || n.actions || d.actions || [];
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon,
-      data: { url, ...data },
+      badge,
+      tag,
+      actions,
+      data: { url, ...d },
+      requireInteraction: false
     })
   );
 });
+
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
