@@ -206,10 +206,11 @@ if (insErr) {
 
       // Apple (enxuto)
       const applePayload = JSON.stringify({
-        title: common.title,
-        body: common.body,
-        data: { url: common.url },
-      });
+  title: common.title,
+  body: common.body.replace(/\n/g, " "), // remove quebras
+  data: { url: common.url },
+});
+
 
       const payloadToSend = isApple ? applePayload : richPayload;
 
