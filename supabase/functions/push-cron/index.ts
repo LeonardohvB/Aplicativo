@@ -155,24 +155,25 @@ async function notifyBatch(
     const userId = row.owner_id;
     if (!apptId || !userId) continue;
 
-    // ===== log de envio (não repetir) =====
-    const { data: ins, error: upErr } = await supabase
-      .from("push_notifications_log")
-      .upsert(
-        { appointment_id: apptId, target_user_id: userId, kind },
-        { onConflict: "appointment_id,target_user_id,kind", ignoreDuplicates: true },
-      )
-      .select("appointment_id");
+   // ===== log de envio (permite reentrega para novos devices) =====
+let isDuplicate = false;
 
-    if (upErr) {
-      details.push({ apptId, step: "log_upsert", kind, error: upErr.message });
-      continue;
-    }
-    // se não inseriu (conflito), já existe → NÃO envia
-    if (!ins || ins.length === 0) {
-      details.push({ apptId, kind, skipped: "duplicate" });
-      continue;
-    }
+const { error: insErr } = await supabase
+  .from("push_notifications_log")
+  .insert({ appointment_id: apptId, target_user_id: userId, kind });
+
+if (insErr) {
+  const m = String(insErr.message || "").toLowerCase();
+  if (m.includes("duplicate") || m.includes("unique")) {
+    // já existe log para (appointment_id, user_id, kind):
+    // → ainda assim vamos ENVIAR (para permitir novos devices)
+    isDuplicate = true;
+  } else {
+    details.push({ apptId, step: "log_insert", kind, error: insErr.message });
+    continue;
+  }
+}
+
 
     const localHHMM = formatLocalHHMM(row.starts_at_utc);
     const patientDisplay =
@@ -227,6 +228,7 @@ async function notifyBatch(
           kind,
           endpoint: isApple ? "apple" : "other",
           sent: true,
+          duplicate: isDuplicate
         });
       } catch (e) {
         const msg = String(e?.message || e);
