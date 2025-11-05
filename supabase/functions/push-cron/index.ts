@@ -298,64 +298,64 @@ Deno.serve(async (req) => {
     const now = new Date();
     const floor = new Date(Math.floor(now.getTime() / 60000) * 60000);
 
-    // ===== Janelas (1 minuto) =====
-    // T-10
-    const start10 = new Date(floor.getTime() + 10 * 60 * 1000);
-    const end10   = new Date(start10.getTime() + 60 * 1000);
+    // ===== Janelas (1 minuto cada) =====
+// T-10: dispara exatamente 10 min antes
+const start10 = new Date(floor.getTime() + 10 * 60 * 1000);
+const end10   = new Date(start10.getTime() + 60 * 1000);
 
-    // T-30
-    const start30 = new Date(floor.getTime() + 30 * 60 * 1000);
-    const end30   = new Date(start30.getTime() + 60 * 1000);
+// T-30: dispara exatamente 30 min antes
+const start30 = new Date(floor.getTime() + 30 * 60 * 1000);
+const end30   = new Date(start30.getTime() + 60 * 1000);
 
-    // atraso ~10min
-    const startLate = new Date(floor.getTime() - 10 * 60 * 1000);
-    const endLate   = new Date(startLate.getTime() + 60 * 1000);
+// ATRASADO: dispara exatamente 5 min depois do horário (ajuste aqui se quiser 3/7/10)
+const LATE_MINUTES = 5;
+const startLate = new Date(floor.getTime() - LATE_MINUTES * 60 * 1000);
+const endLate   = new Date(startLate.getTime() + 60 * 1000);
 
-    const due10  = await fetchAppointmentsInWindow(supabase, start10.toISOString(), end10.toISOString());
-    const due30  = await fetchAppointmentsInWindow(supabase, start30.toISOString(), end30.toISOString());
-    const late   = await fetchAppointmentsInWindow(supabase, startLate.toISOString(), endLate.toISOString());
+const due10 = await fetchAppointmentsInWindow(supabase, start10.toISOString(), end10.toISOString());
+const due30 = await fetchAppointmentsInWindow(supabase, start30.toISOString(), end30.toISOString());
+const late  = await fetchAppointmentsInWindow(supabase, startLate.toISOString(), endLate.toISOString());
 
-   const res10 = await notifyBatch(
+
+   // T-10 (exatamente o texto que você pediu)
+const res10 = await notifyBatch(
   supabase,
   due10,
   "before_10m",
   (row, hhmmLocal, patient) => ({
-    // título informativo (o que aparece no histórico)
-    title: `Consulta ${hhmmLocal} · ${patient}`,
-    // corpo curto (o histórico não mostra tudo)
-    body: "Toque para abrir a agenda.",
+    title: "Lembrete de Consulta",
+    body: `Faltam 10 minutos para a consulta de ${patient} às ${hhmmLocal}.\nToque para abrir a agenda.`,
     url: "/agenda",
     tag: `appt-${row.slot_id ?? row.journey_id}-before10m`,
-    data: { patient_id: row.patient_id },
   })
 );
 
+// T-30 (opcional — manteve padrão curto)
+const res30 = await notifyBatch(
+  supabase,
+  due30,
+  "before_30m",
+  (row, hhmmLocal, patient) => ({
+    title: "Lembrete de Consulta",
+    body: `Faltam 30 minutos para a consulta de ${patient} às ${hhmmLocal}.\nToque para abrir a agenda.`,
+    url: "/agenda",
+    tag: `appt-${row.slot_id ?? row.journey_id}-before30m`,
+  })
+);
 
-    const res30 = await notifyBatch(
-      supabase,
-      due30,
-      "before_30m",
-      (row, hhmmLocal, patient) => ({
-        title: `Consulta ${hhmmLocal} · ${patient}`,
-       body: "Toque para abrir a agenda.",
-        url: "/agenda",
-        tag: `appt-${row.slot_id ?? row.journey_id}-before30m`,
-        data: { patient_id: row.patient_id },
-      }),
-    );
+// ATRASADO (+5 min)
+const resLate = await notifyBatch(
+  supabase,
+  late,
+  "late",
+  (row, hhmmLocal, patient) => ({
+    title: "Consulta atrasada",
+    body: `A consulta de ${patient} às ${hhmmLocal} está atrasada.\nToque para abrir a agenda.`,
+    url: "/agenda",
+    tag: `appt-${row.slot_id ?? row.journey_id}-late`,
+  })
+);
 
-    const resLate = await notifyBatch(
-      supabase,
-      late,
-      "late",
-      (row, hhmmLocal, patient) => ({
-        title: "⚠️ Atendimento atrasado",
-        body: `Paciente: ${patientDisplay}\nVocê tinha às ${hhmmLocal}.`,
-        url: "/agenda",
-        tag: `appt-${row.slot_id ?? row.journey_id}-late`,
-        data: { patient_id: row.patient_id },
-      }),
-    );
 
     return new Response(
       JSON.stringify({
