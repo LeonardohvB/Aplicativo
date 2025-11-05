@@ -205,10 +205,9 @@ if (insErr) {
       const richPayload = JSON.stringify(common);
 
       // Apple (enxuto)
-      const applePayload = JSON.stringify({
+    const applePayload = JSON.stringify({
   title: common.title,
-  body: common.body.replace(/\n/g, " "), // remove quebras
-  data: { url: common.url },
+  body: (common.body || "").replace(/\n/g, " "),
 });
 
 
@@ -231,21 +230,32 @@ if (insErr) {
           sent: true,
           duplicate: isDuplicate
         });
-      } catch (e) {
-        const msg = String(e?.message || e);
-        details.push({
-          apptId,
-          endpoint: s.endpoint,
-          kind,
-          apple: isApple,
-          error: msg,
-        });
-        if (isGone(msg)) {
-          await supabase
-            .from("push_subscriptions")
-            .delete()
-            .eq("endpoint", s.endpoint)
-            .eq("user_id", s.user_id);
+      } catch (e: any) {
+  // web-push costuma expor essas props quando o APNS/FCM recusa
+  const status = e?.statusCode ?? e?.status ?? null;
+  const body   = e?.body ?? null;
+  // headers pode ser um objeto; pegue alguns úteis se existirem
+  const hdrs   = e?.headers ?? null;
+  const reason = String(e?.message || e);
+
+  details.push({
+    apptId,
+    endpoint: s.endpoint,
+    kind,
+    apple: isApple,
+    status,        // << novo
+    body,          // << novo (às vezes vem "Unsupported content", etc.)
+    headers: hdrs, // << opcional: bom pra diagnóstico
+    error: reason, // string legível
+  });
+
+  // limpeza de assinatura inválida
+  if (isGone(reason)) {
+    await supabase
+      .from("push_subscriptions")
+      .delete()
+      .eq("endpoint", s.endpoint)
+      .eq("user_id", s.user_id);
         }
       }
     }
