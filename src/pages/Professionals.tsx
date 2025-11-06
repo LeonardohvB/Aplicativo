@@ -6,13 +6,11 @@ import EditProfessionalModal from '../components/Professionals/EditProfessionalM
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
 import SwipeRow from '../components/common/SwipeRow';
-import { Archive } from 'lucide-react';
-
+import { Archive, Trash2 } from 'lucide-react';
 
 // padrões globais
 import { useConfirm } from '../providers/ConfirmProvider';
 import { useToast } from '../components/ui/Toast';
-import { Trash2 } from 'lucide-react';
 
 const Professionals: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -97,7 +95,6 @@ const Professionals: React.FC = () => {
       cancelText: 'Cancelar',
       variant: 'danger',
       icon: <Archive className="w-5 h-5 text-yellow-600" />,
-
     });
     if (!ok) return;
 
@@ -156,21 +153,32 @@ const Professionals: React.FC = () => {
     );
   }
 
-  // AGRUPA POR ESPECIALIDADE (para layout desktop)
-  const grouped = professionals.reduce((acc: any, p: Professional) => {
-    const key = p.specialty || "Outros";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(p);
+  // AGRUPA POR ESPECIALIDADE (ou use outro campo se preferir)
+  const grouped = professionals.reduce((acc: Record<string, Professional[]>, p: Professional) => {
+    const key = p.specialty || 'Outros';
+    (acc[key] ||= []).push(p);
     return acc;
   }, {});
 
+  // opcional: ordena grupos alfabeticamente
+  const groupEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'));
+
   return (
-    <div className="p-6 pb-24 bg-gray-50 min-h-screen">
+    <div
+      className="
+        p-6 bg-gray-50 min-h-[100svh]
+        pb-32 md:pb-10
+      "
+      /* Fallback robusto: usa o maior entre 96px e o safe-area real */
+      style={{
+        paddingBottom: 'max(96px, env(safe-area-inset-bottom))'
+      }}
+    >
       <div className="mb-4">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Profissionais</h1>
       </div>
 
-      {/* MOBILE — lista como já era */}
+      {/* MOBILE — lista vertical com swipe */}
       <div className="space-y-4 md:hidden">
         {professionals.map((p) => {
           const isSwipeOpen = swipeOpenId === p.id;
@@ -196,39 +204,49 @@ const Professionals: React.FC = () => {
         })}
       </div>
 
-      {/* DESKTOP — agrupar por especialidade lado a lado */}
-      <div className="hidden md:grid grid-cols-2 lg:grid-cols-3 gap-6">
-        {Object.entries(grouped).map(([specialty, list]: any) => (
-          <div key={specialty} className="space-y-3">
-            <h2 className="inline-flex items-center px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-md">
-              {specialty}
-            </h2>
+      {/* DESKTOP — até 5 grupos por linha */}
+      <div className="hidden md:grid gap-6 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        {groupEntries.map(([specialty, list]) => (
+          <section key={specialty} className="min-w-0">
+            {/* Cabeçalho do grupo (pílula menor) */}
+            <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-200 bg-white text-gray-700">
+              <span className="font-medium truncate">{specialty}</span>
+              <span className="ml-1 text-[11px] px-2 py-[2px] rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {list.length} {list.length === 1 ? 'profissional' : 'profissionais'}
+              </span>
+            </div>
 
-            {list.map((p: Professional) => {
-              const isSwipeOpen = swipeOpenId === p.id;
-              return (
-                <SwipeRow
-                  key={p.id}
-                  rowId={p.id}
-                  isOpen={isSwipeOpen}
-                  onOpen={(id) => setSwipeOpenId(id)}
-                  onClose={() => setSwipeOpenId(null)}
-                  onEdit={() => openEditById(p.id)}
-                  onDelete={() => askAndArchive(p.id)}
-                >
-                  <ProfessionalCard
-                    professional={p}
-                    onToggle={toggleProfessional}
-                    onEdit={openEditById}
-                    onDelete={askAndArchive}
-                    onPhotoChange={handlePhotoChange}
-                  />
-                </SwipeRow>
-              );
-            })}
-          </div>
+            {/* Lista de cards desse grupo */}
+            <div className="space-y-3">
+              {list.map((p: Professional) => {
+                const isSwipeOpen = swipeOpenId === p.id;
+                return (
+                  <SwipeRow
+                    key={p.id}
+                    rowId={p.id}
+                    isOpen={isSwipeOpen}
+                    onOpen={(id) => setSwipeOpenId(id)}
+                    onClose={() => setSwipeOpenId(null)}
+                    onEdit={() => openEditById(p.id)}
+                    onDelete={() => askAndArchive(p.id)}
+                  >
+                    <ProfessionalCard
+                      professional={p}
+                      onToggle={toggleProfessional}
+                      onEdit={openEditById}
+                      onDelete={askAndArchive}
+                      onPhotoChange={handlePhotoChange}
+                    />
+                  </SwipeRow>
+                );
+              })}
+            </div>
+          </section>
         ))}
       </div>
+
+      {/* Spacer final para garantir que nada encoste na bottom bar em qualquer device */}
+      <div className="h-8 md:h-0" role="presentation" />
 
       <AddProfessionalModal
         isOpen={isModalOpen}

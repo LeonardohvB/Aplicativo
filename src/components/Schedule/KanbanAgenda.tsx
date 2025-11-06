@@ -78,6 +78,11 @@ const hhmmToMin = (hhmm: string) => {
 const hhmmToMinSafe = (hhmm?: string, fb = 0) =>
   (isHHMM(hhmm) ? hhmmToMin(String(hhmm)) : fb);
 
+const isAvailableSlot = (s?: AppointmentSlot) => {
+  const st = String(s?.status || '').toLowerCase().trim();
+  return st === '' || st === 'disponivel' || st === 'available';
+};
+
 const SOON_BEFORE_MIN = 20;
 const SOON_AFTER_MIN = 10;
 
@@ -165,6 +170,7 @@ type ToolbarProps = {
   days: string[];
   prosCount: number;
 };
+
 const Toolbar: React.FC<ToolbarProps> = ({
   query,
   onQueryChange,
@@ -174,6 +180,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   prosCount,
 }) => (
   <div className="mb-4 space-y-3">
+    {/* busca */}
     <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
       <span className="text-gray-400">🔎</span>
       <input
@@ -183,16 +190,30 @@ const Toolbar: React.FC<ToolbarProps> = ({
         className="w-full bg-transparent text-[15px] outline-none placeholder:text-gray-400"
       />
     </div>
+
+    {/* chips de dia */}
     <div className="flex gap-2 overflow-x-auto no-scrollbar">
       {days.map((d) => {
         const dt = new Date(`${d}T12:00:00`);
         const wd = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
         const dd = String(dt.getDate()).padStart(2, '0');
         const active = d === activeDay;
+
         return (
           <button
+            id={`day-${d}`}                           // <- id único para rolar até ele
             key={d}
-            onClick={() => onDayChange(d)}
+            onClick={() => {
+              onDayChange(d);                         // troca o dia ativo
+              // rola o chip recém-selecionado para o centro da faixa
+              requestAnimationFrame(() => {
+                document.getElementById(`day-${d}`)?.scrollIntoView({
+                  behavior: 'smooth',
+                  inline: 'center',
+                  block: 'nearest',
+                });
+              });
+            }}
             className={[
               'min-w-[66px] rounded-2xl px-3 py-2 text-center border shadow-sm transition-colors',
               active
@@ -206,12 +227,14 @@ const Toolbar: React.FC<ToolbarProps> = ({
         );
       })}
     </div>
-    <div className="text-sm text-gray-600">
-  {prosCount} {prosCount === 1 ? 'profissional disponível' : 'profissionais disponíveis'}
-</div>
 
+    {/* contador de profissionais */}
+    <div className="text-sm text-gray-600">
+      {prosCount} {prosCount === 1 ? 'profissional disponível' : 'profissionais disponíveis'}
+    </div>
   </div>
 );
+
 
 /* ======================= Slot Card ======================= */
 type MiniSlotProps = {
@@ -323,7 +346,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
         }}
         className={[
           'relative rounded-xl border px-3 py-2 transition w-full text-left',
-          'animate-[toast-in_0.18s_ease-out]', // ← mesmo timing do Toast
+          'animate-[toast-in_0.18s_ease-out]',
           cardH,
           stateBg,
           stateBorder,
@@ -420,7 +443,7 @@ const MiniSlotCard: React.FC<MiniSlotProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onFinish(slot.id); // ← agora abre o modal (wrapper no Kanban)
+                onFinish(slot.id);
               }}
               className="px-3 py-[6px] rounded-full bg-red-600 text-white hover:bg-red-700 text-[11px] font-semibold"
               title="Finalizar consulta"
@@ -557,56 +580,56 @@ const KanbanAgenda: React.FC<Props> = ({
   // === estado do modal de finalizar ===
   const [slotIdToFinish, setSlotIdToFinish] = useState<string | null>(null);
   const askFinish = (slotId: string) => setSlotIdToFinish(slotId);
-  
 
-// --- TOAST ---
-const toast = useToast();
+  // --- TOAST ---
+  const toast = useToast();
 
-// Começar (substitui a versão antiga que existe mais abaixo)
-const handleStartLocal = (slotId: string) => {
-  setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
-  try {
-    onStartAppointment?.(slotId);
-    toast.success("Atendimento iniciado!", { title: "Tudo certo" });
-  } catch {
-    toast.error("Não foi possível iniciar o atendimento.", { title: "Erro" });
-  }
-};
-
-// Faltou
-const handleNoShowLocal = async (slotId: string) => {
-  try {
-    await onNoShow?.(slotId);
-    toast.info("Atendimento marcado como falta.", { title: "Marcado" });
-  } catch {
-    toast.error("Falha ao marcar como falta.", { title: "Erro" });
-  }
-};
-
-// Cancelar
-const handleCancelLocal = async (slotId: string) => {
-  try {
-    await onCancel?.(slotId);
-    toast.success("Atendimento cancelado.", { title: "Cancelado" });
-  } catch {
-    toast.error("Não foi possível cancelar o atendimento.", { title: "Erro" });
-  }
-};
-
-  
-
-  useEffect(() => {
-    const now = new Date();
-    const arr: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(now.getDate() + i);
-      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-      arr.push(d.toISOString().slice(0, 10));
+  // Começar
+  const handleStartLocal = (slotId: string) => {
+    setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
+    try {
+      onStartAppointment?.(slotId);
+      toast.success("Atendimento iniciado!", { title: "Tudo certo" });
+    } catch {
+      toast.error("Não foi possível iniciar o atendimento.", { title: "Erro" });
     }
-    setDays(arr);
-    setActiveDay((prev) => prev || arr[0]);
-  }, []);
+  };
+
+  // Faltou
+  const handleNoShowLocal = async (slotId: string) => {
+    try {
+      await onNoShow?.(slotId);
+      toast.info("Atendimento marcado como falta.", { title: "Marcado" });
+    } catch {
+      toast.error("Falha ao marcar como falta.", { title: "Erro" });
+    }
+  };
+
+  // Cancelar
+  const handleCancelLocal = async (slotId: string) => {
+    try {
+      await onCancel?.(slotId);
+      toast.success("Atendimento cancelado.", { title: "Cancelado" });
+    } catch {
+      toast.error("Não foi possível cancelar o atendimento.", { title: "Erro" });
+    }
+  };
+  
+const DAYS_AHEAD = 15;
+
+ useEffect(() => {
+  const now = new Date();
+  const arr: string[] = [];
+  for (let i = 0; i < DAYS_AHEAD; i++) {  // <-- era 7
+    const d = new Date();
+    d.setDate(now.getDate() + i);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    arr.push(d.toISOString().slice(0, 10));
+  }
+  setDays(arr);
+  setActiveDay((prev) => prev || arr[0]);
+}, []);
+
 
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 30_000);
@@ -671,6 +694,7 @@ const handleCancelLocal = async (slotId: string) => {
       journey?: AppointmentJourney;
       slots: AppointmentSlot[];
     };
+
     const byPro = new Map<string, SlotGroup>();
     for (const s of daySlots) {
       const j = jById.get(String(s?.journeyId || ''));
@@ -707,6 +731,48 @@ const handleCancelLocal = async (slotId: string) => {
       .map(([key, val]) => ({ key, label: val.label, groups: val.items }));
   }, [daySlots, jById, proById, defaultSort]);
 
+  const daySummary = useMemo(() => {
+    const list = sections.map((sec) => {
+      const count = sec.groups.reduce((sum, g) => {
+        return sum + g.slots.filter(isAvailableSlot).length;
+      }, 0);
+      return { key: sec.key, label: sec.label, count };
+    });
+    return list.filter(x => x.count > 0).sort((a, b) => b.count - a.count);
+  }, [sections]);
+
+  const totalAvailable = useMemo(
+    () => daySummary.reduce((acc, x) => acc + x.count, 0),
+    [daySummary]
+  );
+
+  // primeiro slot disponível por profissão (sectionKey -> slotId)
+  const firstAvailableBySection = useMemo(() => {
+    const m = new Map<string, string>();
+    sections.forEach((sec) => {
+      const first = sec.groups
+        .flatMap((g) => g.slots)
+        .sort(defaultSort)
+        .find(isAvailableSlot);
+      if (first) m.set(sec.key, first.id);
+    });
+    return m;
+  }, [sections, defaultSort]);
+
+  // rolar até o card e destacar por 1.4s
+  const scrollToAvailable = (sectionKey: string) => {
+    const slotId = firstAvailableBySection.get(sectionKey);
+    if (!slotId) return;
+    const el = document.getElementById(`slot-${slotId}`);
+    if (!el) return;
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    el.classList.add('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
+    setTimeout(() => {
+       el.classList.remove('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
+}, 1400);
+  };
+
   const prosCountForDay = useMemo(
     () =>
       new Set(
@@ -716,11 +782,6 @@ const handleCancelLocal = async (slotId: string) => {
       ).size,
     [daySlots, jById]
   );
-
- /* const handleStartLocal = (slotId: string) => {
-    setStartedAtMap((m) => ({ ...m, [slotId]: Date.now() }));
-    onStartAppointment?.(slotId);
-  };*/
 
   const getElapsedMin = (s: AppointmentSlot) => {
     const apiStarted = (s as any)?.startedAt
@@ -744,6 +805,31 @@ const handleCancelLocal = async (slotId: string) => {
         days={days}
         prosCount={prosCountForDay}
       />
+
+      {daySummary.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {/* total do dia */}
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-800 text-sm">
+            <span className="font-semibold">{totalAvailable}</span>
+            {totalAvailable === 1 ? 'vaga no dia' : 'vagas no dia'}
+          </span>
+
+          {/* por profissão (clicável) */}
+          {daySummary.map(item => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => scrollToAvailable(item.key)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm hover:bg-emerald-100 focus:outline-none"
+              title={`${item.count} ${item.count === 1 ? 'vaga' : 'vagas'} em ${item.label}`}
+            >
+              <span className="font-semibold">{item.count}</span>
+              {item.count === 1 ? 'vaga' : 'vagas'}
+              <span className="opacity-70">• {item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {sections.length === 0 && (
         <div className="text-center text-gray-500 py-16">
@@ -774,10 +860,7 @@ const handleCancelLocal = async (slotId: string) => {
                 const dateLabel = fmtDateLong(normISO(j?.date) || toLocalISO(new Date()));
                 const address = pro?.address;
 
-                const availableCount = g.slots.filter((s) => {
-                  const st = String(s?.status || '').toLowerCase().trim();
-                  return st === '' || st === 'disponivel' || st === 'available';
-                }).length;
+                const availableCount = g.slots.filter((s) => isAvailableSlot(s)).length;
 
                 const baseAvatar = resolveProAvatarBaseUrl(pro);
                 const version = resolveProAvatarVersion(pro);
@@ -891,30 +974,31 @@ const handleCancelLocal = async (slotId: string) => {
                           const elapsed = isRunning ? getElapsedMin(s) : undefined;
 
                           return (
-                            <MiniSlotCard
-                              key={s.id}
-                              slot={s}
-                              isPast={isPast}
-                              isSoon={isSoon}
-                              isRunning={isRunning}
-                              elapsedMin={elapsed}
-                              onSchedule={onSchedulePatient}
-                              onEdit={() => {
-                                if (isAvailable) {
-                                  if (jId) onEditJourney(jId);
-                                } else {
-                                  onEditPatient(s.id);
-                                }
-                              }}
-                              onStart={handleStartLocal}
-                              onFinish={askFinish}               // ← wrapper abre modal
-                              onCancel={handleCancelLocal}
-                              onNoShow={handleNoShowLocal}
-                              onDelete={() => {
-                                if (jId) onDeleteJourney(jId);
-                              }}
-                              professionalName={pro?.name || 'Profissional'}
-                            />
+                            <div id={`slot-${s.id}`} key={s.id} className="snap-start rounded-xl transition-shadow">
+                              <MiniSlotCard
+                                slot={s}
+                                isPast={isPast}
+                                isSoon={isSoon}
+                                isRunning={isRunning}
+                                elapsedMin={elapsed}
+                                onSchedule={onSchedulePatient}
+                                onEdit={() => {
+                                  if (isAvailable) {
+                                    if (jId) onEditJourney(jId);
+                                  } else {
+                                    onEditPatient(s.id);
+                                  }
+                                }}
+                                onStart={handleStartLocal}
+                                onFinish={askFinish}
+                                onCancel={handleCancelLocal}
+                                onNoShow={handleNoShowLocal}
+                                onDelete={() => {
+                                  if (jId) onDeleteJourney(jId);
+                                }}
+                                professionalName={pro?.name || 'Profissional'}
+                              />
+                            </div>
                           );
                         })}
                       </div>
@@ -959,7 +1043,7 @@ const handleCancelLocal = async (slotId: string) => {
               patientName,
               professionalName: proName,
               serviceName,
-              autoFinalize: true,   // ← chave p/ o LiveEncounter
+              autoFinalize: true,
             },
           }));
 

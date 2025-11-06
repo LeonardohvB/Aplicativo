@@ -12,7 +12,12 @@ import {
   Edit2,
   Trash2,
   Calendar,
+  Search,
+  ArrowUpRight,
+  ArrowDownRight,
+  Clock3,
 } from 'lucide-react';
+
 import TransactionCard from '../components/Finance/TransactionCard';
 import AddTransactionModal from '../components/Finance/AddTransactionModal';
 import EditTransactionModal from '../components/Finance/EditTransactionModal';
@@ -21,15 +26,13 @@ import { useTransactions } from '../hooks/useTransactions';
 import type { Transaction } from '../types';
 import { getMoneyVisible, setMoneyVisible } from '../utils/prefs';
 import { useConfirm } from '../providers/ConfirmProvider';
-
-// ✅ Toast
 import { ToastContainer, useToast } from '../components/ui/Toast';
 
-/* Tipo local suficiente para o uso neste arquivo */
+/* ====================== Tipos ====================== */
 type TxStatus = 'paid' | 'pending' | (string & {});
-
-/* ====================== SPARKLINE ====================== */
 type Pt = { x: number; y: number };
+
+/* ====================== Utils spark ====================== */
 function catmullToBezier(points: Pt[]): string {
   if (points.length < 2) return `M0,110 C150,110 300,110 600,110`;
   let d = `M ${points[0].x},${points[0].y}`;
@@ -63,8 +66,7 @@ function useAnimatedNumber(
   const prevRef = React.useRef(value);
 
   useEffect(() => {
-    const from = prevRef.current,
-      to = value;
+    const from = prevRef.current, to = value;
     if (from === to) return;
     let raf = 0;
     const start = performance.now();
@@ -110,7 +112,7 @@ function dayKey(dateStr?: string): string {
   return d.toISOString();
 }
 
-/* ====================== Swipe Row ====================== */
+/* ====================== Swipe Row (mobile/desktop) ====================== */
 type SwipeRowProps = {
   rowId: string;
   isOpen: boolean;
@@ -127,7 +129,7 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
   const dragging = useRef<boolean>(false);
   const [tx, setTx] = useState<number>(0);
 
-  const ACTIONS_WIDTH = 100;
+  const ACTIONS_WIDTH = 144;
   const OPEN_TX = -ACTIONS_WIDTH;
 
   useEffect(() => {
@@ -139,9 +141,7 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
     return () => document.removeEventListener('mousedown', handleDocClick);
   }, [onClose]);
 
-  useEffect(() => {
-    setTx(isOpen ? OPEN_TX : 0);
-  }, [isOpen]);
+  useEffect(() => { setTx(isOpen ? OPEN_TX : 0); }, [isOpen]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     dragging.current = true;
@@ -158,19 +158,11 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
   const onPointerUp = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    if (tx < -40) {
-      setTx(OPEN_TX);
-      onOpen(rowId);
-    } else {
-      setTx(0);
-      onClose();
-    }
+    if (tx < -40) { setTx(OPEN_TX); onOpen(rowId); }
+    else { setTx(0); onClose(); }
   };
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    dragging.current = true;
-    startX.current = e.touches[0].clientX;
-  };
+  const onTouchStart = (e: React.TouchEvent) => { dragging.current = true; startX.current = e.touches[0].clientX; };
   const onTouchMove = (e: React.TouchEvent) => {
     if (!dragging.current) return;
     const dx = e.touches[0].clientX - startX.current;
@@ -181,33 +173,25 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
   const onTouchEnd = () => {
     if (!dragging.current) return;
     dragging.current = false;
-    if (tx < -40) {
-      setTx(OPEN_TX);
-      onOpen(rowId);
-    } else {
-      setTx(0);
-      onClose();
-    }
+    if (tx < -40) { setTx(OPEN_TX); onOpen(rowId); }
+    else { setTx(0); onClose(); }
   };
 
   return (
     <div ref={containerRef} className="relative select-none">
-      <div className="absolute right-0 top-0 z-0 flex h-full w-24 items-center justify-center pr-2 pl-2 pointer-events-none">
-        <div className="flex flex-col items-center justify-center gap-3 p-0">
+      {/* ações */}
+      <div className="absolute right-0 top-0 z-0 flex h-full w-36 items-center justify-center pr-3 pl-3 pointer-events-none">
+        <div className="flex flex-col items-center justify-center gap-4 p-0">
           <button
-            type="button"
             onClick={(e) => { e.stopPropagation(); onEdit(); }}
-            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow transition hover:bg-indigo-700"
-            aria-label="Editar"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white shadow transition hover:bg-indigo-700"
             title="Editar"
           >
             <Edit2 className="h-4 w-4" />
           </button>
           <button
-            type="button"
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-xl bg-red-600 text-white shadow transition hover:bg-red-700"
-            aria-label="Excluir"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-xl bg-rose-600 text-white shadow transition hover:bg-rose-700"
             title="Excluir"
           >
             <Trash2 className="h-4 w-4" />
@@ -215,6 +199,7 @@ function SwipeRow({ rowId, isOpen, onOpen, onClose, onEdit, onDelete, children }
         </div>
       </div>
 
+      {/* card deslizante */}
       <div
         className="bg-transparent"
         style={{ transform: `translateX(${tx}px)`, transition: dragging.current ? 'none' : 'transform 180ms ease' }}
@@ -237,7 +222,7 @@ const Finance: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
 
-  // preferência persistida
+  // preferências
   const [showBalance, setShowBalance] = useState<boolean>(() => getMoneyVisible());
   const toggleShowBalance = () => {
     setShowBalance((v) => {
@@ -249,25 +234,24 @@ const Finance: React.FC = () => {
 
   const [detailsOpenId, setDetailsOpenId] = useState<string | null>(null);
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
-
   const [pulse, setPulse] = useState(false);
 
   const { transactions, loading, addTransaction, deleteTransaction, editTransaction, updateTxStatus } =
     useTransactions();
 
-  // ✅ toast
   const { success } = useToast();
 
   /* Filtros */
   const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [statusTab, setStatusTab] = useState<'all' | 'paid' | 'pending'>('all'); // tabs
   const [customEnabled, setCustomEnabled] = useState(false);
   const [dateFrom, setDateFrom] = useState<string>(isoLocalDate());
   const [dateTo, setDateTo] = useState<string>(isoLocalDate());
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // confirmação estilizada
   const askConfirm = useConfirm();
 
-  // ✅ filtro "Não pagos"
+  /* “Não pagos” = receitas pendentes (toggle único “Pendentes”) */
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const unpaidCount = useMemo(
     () => transactions.filter((t) => t.type === 'income' && (t.status ?? 'pending') !== 'paid').length,
@@ -281,15 +265,26 @@ const Finance: React.FC = () => {
     });
   };
 
+  /* Filtro combinado */
   const visibleTxs = useMemo(() => {
     let base = [...transactions];
 
+    // tipo
     if (txFilter !== 'all') base = base.filter((t) => t.type === txFilter);
 
+    // status tabs
+    if (statusTab !== 'all') {
+      base = base.filter((t) =>
+        t.type === 'income' ? ((t.status ?? 'pending') === statusTab) : true
+      );
+    }
+
+    // não pagos toggle
     if (unpaidOnly) {
       base = base.filter((t) => t.type === 'income' && (t.status ?? 'pending') !== 'paid');
     }
 
+    // datas
     if (customEnabled) {
       const min = new Date(`${dateFrom}T00:00:00`).getTime();
       const max = new Date(`${dateTo}T23:59:59`).getTime();
@@ -298,10 +293,26 @@ const Finance: React.FC = () => {
         return tt >= min && tt <= max;
       });
     }
-    return base;
-  }, [transactions, txFilter, customEnabled, dateFrom, dateTo, unpaidOnly]);
 
-  /* Helpers do card */
+    // busca
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      base = base.filter((t) => {
+        const hay = [
+          t.description, t.category, (t as any).professionalName, (t as any).patientName,
+          (t as any).service, (t as any).notes, (t as any).paymentMethod
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    return base;
+  }, [transactions, txFilter, customEnabled, dateFrom, dateTo, unpaidOnly, searchQuery, statusTab]);
+
+  /* Helpers extração */
   const extractProfessional = (t: any): string | undefined => {
     if (t?.professionalName) return t.professionalName;
     if (t?.professional) return t.professional;
@@ -328,46 +339,36 @@ const Finance: React.FC = () => {
   const extractNotes = (t: any): string | undefined =>
     t?.notes ?? t?.observation ?? t?.observations ?? t?.appointmentNotes ?? undefined;
 
-  // Totais (globais)
-  const totalRevenue = transactions
+  // Totais
+  const totalRevenuePaid = transactions
     .filter((t: any) => t.type === 'income' && (t.status ?? 'pending') === 'paid')
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
   const totalExpenses = transactions
     .filter((t) => t.type === 'expense')
     .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-  const balance = totalRevenue - totalExpenses;
+
+  const balance = totalRevenuePaid - totalExpenses;
+  const paidIncomes = transactions.filter((t) => t.type === 'income' && (t.status ?? 'pending') === 'paid');
+  const avgTicket = paidIncomes.length ? totalRevenuePaid / paidIncomes.length : 0;
 
   const MASK = '•'.repeat(6);
+  const isNegative = balance < 0, isPositive = balance > 0;
 
-  const isNegative = balance < 0,
-    isPositive = balance > 0;
-
-  // animação (saldo total)
+  // animações
   const animatedBalance = useAnimatedNumber(balance, {
     duration: 900,
-    onFinish: () => {
-      setPulse(true);
-      setTimeout(() => setPulse(false), 180);
-    },
+    onFinish: () => { setPulse(true); setTimeout(() => setPulse(false), 180); },
   });
-
-  // animação para receitas e despesas (pulso individual)
   const [revPulse, setRevPulse] = useState(false);
   const [expPulse, setExpPulse] = useState(false);
-
-  const animatedRevenue = useAnimatedNumber(totalRevenue, {
+  const animatedRevenue = useAnimatedNumber(totalRevenuePaid, {
     duration: 900,
-    onFinish: () => {
-      setRevPulse(true);
-      setTimeout(() => setRevPulse(false), 180);
-    },
+    onFinish: () => { setRevPulse(true); setTimeout(() => setRevPulse(false), 180); },
   });
   const animatedExpenses = useAnimatedNumber(totalExpenses, {
     duration: 900,
-    onFinish: () => {
-      setExpPulse(true);
-      setTimeout(() => setExpPulse(false), 180);
-    },
+    onFinish: () => { setExpPulse(true); setTimeout(() => setExpPulse(false), 180); },
   });
 
   const sparkPathD = useMemo(() => {
@@ -387,8 +388,7 @@ const Finance: React.FC = () => {
       min = Math.min(...last),
       max = Math.max(...last),
       range = Math.max(1, max - min);
-    const width = 600,
-      height = 200;
+    const width = 600, height = 200;
     const midY = height * 0.52,
       ampLog = Math.log10(range + 10),
       ampBase = Math.min(96, Math.max(36, ampLog * 28));
@@ -399,7 +399,7 @@ const Finance: React.FC = () => {
     return catmullToBezier(pts);
   }, [transactions]);
 
-  /* Agrupamento por dia */
+  /* Agrupamento por dia (para lista de cards) */
   type Group = { key: string; label: string; items: any[] };
   const groups: Group[] = useMemo(() => {
     const map = new Map<string, Group>();
@@ -410,14 +410,17 @@ const Finance: React.FC = () => {
       else map.set(k, { key: k, label: formatBr(new Date(k)), items: [t] });
     }
     const out = Array.from(map.values()).sort((a, b) => +new Date(b.key) - +new Date(a.key));
-    for (const g of out) {
-      g.items.sort((a, b) => parseBrDate(b.date) - parseBrDate(a.date));
-    }
+    for (const g of out) g.items.sort((a, b) => parseBrDate(b.date) - parseBrDate(a.date));
     return out;
   }, [visibleTxs]);
 
   const handleEdit = (id: string) =>
     setEditing((transactions.find((x) => x.id === id) as Transaction) || null);
+
+  // alterna Pago/Pendente em receitas
+  const toggleIncomeStatus = (id: string, next: 'paid' | 'pending') => {
+    updateTxStatus(id, next);
+  };
 
   const handleDelete = async (id: string) => {
     const ok = await askConfirm({
@@ -458,287 +461,274 @@ const Finance: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Carregando transações...</div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-300">
+        Carregando transações...
       </div>
     );
   }
 
   const neutralMode = !showBalance || balance === 0;
 
+  /* ====================== LAYOUT ====================== */
   return (
-    <div className="pb-24 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+    <div className="min-h-screen pb-24 bg-gradient-to-b from-slate-50 via-slate-50 to-white text-slate-800">
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-6 lg:px-8">
+
       {/* Header */}
-      <div className=" p-5 md:p-6 bg-gradient-to-br from-slate-900 to-indigo-900 text-white shadow-xl">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-white">Financeiro</h1>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            title="Adicionar transação"
-            aria-label="Adicionar transação"
-            className="h-10 w-10 flex items-center justify-center bg-white/20 backdrop-blur-sm text-white rounded-full hover:bg-white/30 transition-all shadow-lg hover:shadow-xl mr-14 md:mr-24 -mt-1"
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
+<div className="pt-6 mb-6 md:mb-8">
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <h1 className="text-2xl md:text-3xl font-bold">Financeiro</h1>
+      <p className="text-slate-400 text-sm md:text-base mt-1">
+        Gerencie suas finanças e transações
+      </p>
+    </div>
 
-        {/* Card do Saldo */}
-        <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_8px_24px_rgba(0,0,0,0.18)]">
-          <svg
-            className="pointer-events-none absolute inset-0 w-full h-full"
-            viewBox="0 0 600 200"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <path
-              d={sparkPathD}
-              fill="none"
-              stroke={neutralMode ? 'rgba(255, 255, 255, 0.5)' : isNegative ? '#ef4444' : '#22c55e'}
-              strokeWidth="2.8"
-              strokeLinecap="round"
-            >
-              <animateTransform
-                attributeName="transform"
-                type="translate"
-                from="-120 0"
-                to="0 0"
-                dur="4.5s"
-                repeatCount="indefinite"
-              />
-            </path>
-          </svg>
-
-          <div className="flex items-start justify-between mb-4 relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/15 rounded-xl">
-                <Wallet className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-white/90 font-medium text-sm sm:text-base">Saldo Total</span>
-            </div>
-            <button
-              onClick={toggleShowBalance}
-              className="p-2 bg-white/15 rounded-xl hover:bg-white/25 transition-colors"
-              title={showBalance ? 'Ocultar valores' : 'Mostrar valores'}
-            >
-              {showBalance ? <Eye className="w-4 h-4 text-white" /> : <EyeOff className="w-4 h-4 text-white" />}
-            </button>
-          </div>
-
-          <div className="text-center relative z-10">
-            <div
-              className={[
-                'inline-flex items-center justify-center px-5 py-2.5 rounded-2xl backdrop-blur transition-transform duration-250 will-change-transform',
-                pulse ? 'scale-110' : 'scale-100',
-                neutralMode ? 'bg-transparent shadow-none ring-0' : 'bg-white/92 shadow-[0_8px_20px_rgba(0,0,0,.18)] ring-0',
-              ].join(' ')}
-            >
-              <span
-                className={[
-                  'text-2xl sm:text-4xl font-bold tabular-nums tracking-tight',
-                  neutralMode ? 'text-white' : isNegative ? 'text-red-600' : isPositive ? 'text-green-600' : 'text-slate-900',
-                ].join(' ')}
-              >
-                {showBalance
-                  ? `R$ ${animatedBalance.toLocaleString('pt-BR', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}`
-                  : `R$ ${MASK}`}
-              </span>
-            </div>
-          </div>
-        </div>
+    {/* Desktop: somente a busca (branco / texto escuro) */}
+    <div className="hidden md:flex items-center gap-2">
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Buscar transações..."
+          className="h-10 w-[22rem] pl-9 pr-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-500
+                     ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/70"
+        />
       </div>
+    </div>
+  </div>
+</div>
 
-      {/* Resumo */}
-      <div className="px-6 mt-10 md:mt-20 lg:mt-24 mb-6 relative z-10">
-        <div className="grid grid-cols-2 gap-4">
-          {/* Receitas */}
-          <button
-            onClick={() => setTxFilter((f) => (f === 'income' ? 'all' : 'income'))}
-            className={`text-left bg-white rounded-2xl p-5 shadow-lg border transition-all ${
-              txFilter === 'income' ? 'border-green-400 ring-2 ring-green-200' : 'border-gray-100/50 hover:shadow-xl'
-            }`}
-            aria-pressed={txFilter === 'income'}
-            title="Filtrar por receitas"
-          >
-            <div className="flex items-start gap-2 mb-3">
-              <div className="p-2 bg-green-50 rounded-xl">
-                <TrendingUp className="w-5 h-5 text-green-600" />
-              </div>
-              <span className="text-gray-700 font-medium text-xs sm:text-sm">Receitas</span>
-            </div>
-            <p
-              className={[
-                'inline-flex items-center justify-center px-1 py-0.5 rounded-md transition-transform duration-250 will-change-transform',
-                revPulse ? 'scale-110' : 'scale-100',
-                'text-lg sm:text-2xl font-bold text-green-600 break-all',
-              ].join(' ')}
-            >
-              {showBalance
-                ? `R$ ${animatedRevenue.toLocaleString('pt-BR', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`
-                : `R$ ${MASK}`}
-            </p>
-            <div className="mt-2 w-full bg-green-100 rounded-full h-1.5">
-              <div
-                className="bg-green-500 h-1.5 rounded-full transition-all duration-500"
-                style={{ width: totalRevenue > 0 ? '100%' : '0%' }}
-              />
-            </div>
-          </button>
 
-          {/* Despesas */}
-          <button
-            onClick={() => setTxFilter((f) => (f === 'expense' ? 'all' : 'expense'))}
-            className={`text-left bg-white rounded-2xl p-5 shadow-lg border transition-all ${
-              txFilter === 'expense' ? 'border-red-400 ring-2 ring-red-200' : 'border-gray-100/50 hover:shadow-xl'
-            }`}
-            aria-pressed={txFilter === 'expense'}
-            title="Filtrar por despesas"
-          >
-            <div className="flex items-start gap-2 mb-3">
-              <div className="p-2 bg-red-50 rounded-xl">
-                <TrendingDown className="w-5 h-5 text-red-600" />
-              </div>
-              <span className="text-gray-700 font-medium text-xs sm:text-sm">Despesas</span>
-            </div>
-            <p
-              className={[
-                'inline-flex items-center justify-center px-1 py-0.5 rounded-md transition-transform duration-250 will-change-transform',
-                expPulse ? 'scale-110' : 'scale-100',
-                'text-lg sm:text-2xl font-bold text-red-600 break-all',
-              ].join(' ')}
-            >
-              {showBalance
-                ? `R$ ${animatedExpenses.toLocaleString('pt-BR', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`
-                : `R$ ${MASK}`}
-            </p>
-            <div className="mt-2 w-full bg-red-100 rounded-full h-1.5">
-              <div
-                className="bg-red-500 h-1.5 rounded-full transition-all duration-500"
-                style={{ width: totalExpenses > 0 ? '100%' : '0%' }}
-              />
-            </div>
-          </button>
-        </div>
-      </div>
+        {/* GRID PRINCIPAL */}
+        <div className="grid grid-cols-12 gap-4 md:gap-6">
 
-      {/* Transações + filtro Personalizado */}
-      <div className="px-6">
-        <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <h2 className="text-xl font-bold text-gray-900">Transações Recentes</h2>
-
-          {/* 🔧 grupo com wrap e contador fixo à direita */}
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            {/* Botões */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCustomEnabled((v) => !v)}
-                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
-                  customEnabled ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Filtrar por intervalo de datas"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Personalizado
-                </span>
-              </button>
-
-              <button
-                onClick={toggleUnpaidOnly}
-                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
-                  unpaidOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 border-gray-200'
-                }`}
-                title="Mostrar apenas recebimentos pendentes"
-              >
-                <span className="inline-flex items-center gap-2">
-                  Não pagos
-                  {unpaidCount > 0 && !unpaidOnly && (
-                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-700">
-                      {unpaidCount}
-                    </span>
-                  )}
-                  {unpaidOnly && (
-                    <span className="rounded-full bg-white/30 px-1.5 py-0.5 text-[11px] text-white/90">
-                      {unpaidCount}
-                    </span>
-                  )}
-                </span>
-              </button>
-
-              {txFilter !== 'all' && (
-                <button
-                  onClick={() => setTxFilter('all')}
-                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
-                  title="Mostrar todas as transações"
+          {/* Coluna principal (Saldo grande) */}
+          <div className="col-span-12 xl:col-span-8">
+            <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/10 bg-gradient-to-br from-slate-900 to-indigo-950 shadow-xl">
+              {/* sparkline */}
+              <svg className="pointer-events-none absolute inset-0 w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true">
+                <path
+                  d={sparkPathD}
+                  fill="none"
+                  stroke={neutralMode ? 'rgba(148,163,184,.35)' : isNegative ? '#ef4444' : '#22c55e'}
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
                 >
-                  Todos
+                  <animateTransform attributeName="transform" type="translate" from="-120 0" to="0 0" dur="5s" repeatCount="indefinite" />
+                </path>
+              </svg>
+
+              <div className="relative z-10 flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-white/10">
+                    <Wallet className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-white/90 font-medium">Saldo Total Disponível</div>
+                </div>
+
+                <button
+                  onClick={toggleShowBalance}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition"
+                  title={showBalance ? 'Ocultar valores' : 'Mostrar valores'}
+                >
+                  {showBalance ? <Eye className="w-4 h-4 text-white" /> : <EyeOff className="w-4 h-4 text-white" />}
                 </button>
-              )}
+              </div>
+
+              <div className="relative z-10 mt-6">
+  <div
+    className={[
+      'inline-flex items-center justify-center px-5 py-3 rounded-2xl backdrop-blur transition-transform duration-250',
+      pulse ? 'scale-110' : 'scale-100',
+      // mesmo visual para visível/oculto
+      'bg-white/5 ring-1 ring-white/10 text-white'
+    ].join(' ')}
+  >
+    <span className="text-3xl md:text-4xl font-bold tabular-nums tracking-tight">
+      {showBalance
+        ? `R$ ${animatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : `R$ ${'•'.repeat(6)}`}
+    </span>
+  </div>
+
+
+                {/* mini-cards Receitas / Despesas */}
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className={`rounded-xl p-4 ring-1 transition ${txFilter === 'income' ? 'ring-emerald-400/40 bg-emerald-500/5' : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15"><TrendingUp className="w-4 h-4 text-emerald-400" /></span>
+                        <div className="text-sm text-slate-300">Receitas (este mês)</div>
+                      </div>
+                      <button onClick={() => setTxFilter((f) => (f === 'income' ? 'all' : 'income'))} className="text-xs text-emerald-400 hover:underline">
+                        {txFilter === 'income' ? 'Mostrar todas' : 'Filtrar'}
+                      </button>
+                    </div>
+                    <div className={`mt-2 text-2xl font-bold text-emerald-400 ${revPulse ? 'scale-105' : ''}`}>
+    {showBalance ? `R$ ${animatedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `R$ ${MASK}`}
+  </div>
+</div>
+
+                  <div className={`rounded-xl p-4 ring-1 transition ${txFilter === 'expense' ? 'ring-rose-400/40 bg-rose-500/5' : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/15"><TrendingDown className="w-4 h-4 text-rose-400" /></span>
+                        <div className="text-sm text-slate-300">Despesas (este mês)</div>
+                      </div>
+                      <button onClick={() => setTxFilter((f) => (f === 'expense' ? 'all' : 'expense'))} className="text-xs text-rose-400 hover:underline">
+                        {txFilter === 'expense' ? 'Mostrar todas' : 'Filtrar'}
+                      </button>
+                    </div>
+                     <div className={`mt-2 text-2xl font-bold text-rose-400 ${expPulse ? 'scale-105' : ''}`}>
+    {showBalance ? `R$ ${animatedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `R$ ${MASK}`}
+  </div>
+                    <div className="mt-1 inline-flex items-center gap-1 text-rose-300 text-xs">
+                      <ArrowDownRight className="w-3 h-3" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Coluna direita (cards métricas) */}
+          <div className="col-span-12 xl:col-span-4 grid grid-cols-1 gap-4 md:gap-6">
+            <div className="rounded-2xl p-5 ring-1 ring-white/10 bg-gradient-to-br from-slate-900 to-indigo-950 shadow">
+              <div className="text-sm text-slate-300">Transações</div>
+              <div className="mt-2 text-2xl font-bold text-slate-100">{visibleTxs.length}</div>
+              <div className="mt-2 inline-flex items-center gap-1 text-emerald-400 text-xs">
+                <ArrowUpRight className="w-3 h-3" /> +{Math.max(0, visibleTxs.length - 1)}%
+              </div>
             </div>
 
-            {/* Contador — sempre à direita */}
-            <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap text-gray-500">
-              <CreditCard className="h-5 w-5" />
-              <span className="text-xs sm:text-sm">{visibleTxs.length} transações</span>
+            <div className="rounded-2xl p-5 ring-1 ring-white/10 bg-gradient-to-br from-slate-900 to-indigo-950 shadow">
+              <div className="text-sm text-slate-300">Ticket Médio</div>
+              <div className="mt-2 text-2xl font-bold text-slate-100">
+                R$ {avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
+              <div className="mt-2 inline-flex items-center gap-1 text-emerald-400 text-xs">
+                <ArrowUpRight className="w-3 h-3" /> +8%
+              </div>
+            </div>
+
+            <div className="rounded-2xl p-5 ring-1 ring-white/10 bg-gradient-to-br from-slate-900 to-indigo-950 shadow">
+              <div className="text-sm text-slate-300">Recebimentos</div>
+              <div className="mt-2 text-2xl font-bold text-slate-100">
+                R$ {totalRevenuePaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
+              <div className="mt-2 inline-flex items-center gap-1 text-emerald-400 text-xs">
+                <ArrowUpRight className="w-3 h-3" /> +100%
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Intervalo de datas */}
+        {/* Barra de ações (mobile) */}
+        <div className="md:hidden mt-6 flex items-center gap-2">
+          <div className="relative flex-1 rounded-xl ring-1 ring-slate-200 bg-white shadow">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar transações..."
+              className="pl-9 pr-3 h-10 w-full bg-transparent text-slate-900 placeholder:text-slate-500
+               focus:outline-none focus:ring-2 focus:ring-indigo-500/60 rounded-xl"
+            />
+          </div>
+          <button
+            onClick={toggleUnpaidOnly}
+            className={`h-10 inline-flex items-center gap-2 px-3 rounded-xl ring-1 transition shadow
+              ${unpaidOnly ? 'bg-amber-500 text-white ring-amber-500' : 'bg-white text-slate-700 ring-slate-200'}`}
+            title="Mostrar apenas receitas pendentes"
+          >
+            <Clock3 className="w-4 h-4" />
+            <span>Pendentes</span>
+            <span className={`ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full text-xs ${unpaidOnly ? 'bg-white/20' : 'bg-slate-200 text-slate-700'}`}>{unpaidCount}</span>
+          </button>
+          <button
+            onClick={() => setCustomEnabled((v) => !v)}
+            className={`h-10 inline-flex items-center gap-2 px-3 rounded-xl ring-1 transition shadow
+              ${customEnabled ? 'bg-indigo-600 text-white ring-indigo-600'
+              : 'bg-white text-slate-700 ring-slate-200'}`}
+            title="Filtros"
+          >
+            <Filter className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Filtros extras (datas) — usa setDateFrom / setDateTo */}
         {customEnabled && (
-          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-4 rounded-2xl ring-1 ring-white/10 bg-slate-900/70 p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Data inicial</label>
+              <label className="mb-1 block text-xs font-medium text-slate-300">Data inicial</label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                className="w-full rounded-lg bg-slate-950/60 ring-1 ring-white/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Data final</label>
+              <label className="mb-1 block text-xs font-medium text-slate-300">Data final</label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                className="w-full rounded-lg bg-slate-950/60 ring-1 ring-white/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100"
               />
             </div>
           </div>
         )}
 
-        {/* LISTA AGRUPADA POR DIA */}
-        {groups.length === 0 ? (
-          <div className="rounded-2xl border border-gray-100/50 bg-white p-8 text-center shadow-lg">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
-              <CreditCard className="h-8 w-8 text-gray-400" />
+        {/* Tabela / Lista de transações */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-xl font-bold">Transações Recentes</h2>
+              <p className="text-slate-400 text-sm">Histórico completo de movimentações</p>
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-gray-900">Nenhuma transação</h3>
-            <p className="mb-4 text-gray-500">Tente alterar o tipo ou o intervalo personalizado.</p>
+
+            {/* Tabs status (desktop) */}
+            <div className="hidden md:flex items-center gap-2">
+              {(['all','paid','pending'] as const).map(k => (
+                <button
+                  key={k}
+                  onClick={() => setStatusTab(k)}
+                  className={`px-3 py-1.5 rounded-lg text-sm ring-1 transition
+                    ${statusTab === k ? 'bg-slate-800 text-white ring-white/20' : 'bg-slate-900/60 text-slate-300 ring-white/10 hover:bg-slate-900'}`}
+                >
+                  {k === 'all' ? 'Todos' : k === 'paid' ? 'Pagos' : 'Pendentes'}
+                </button>
+              ))}
+              <div className="ml-2 text-slate-400 text-sm flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                {visibleTxs.length} transações
+              </div>
+            </div>
+          </div>
+
+          {/* “Nova Transação” abaixo das tabs (desktop e mobile) */}
+          <div className="mb-4 flex justify-end">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="rounded-xl bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700"
+              className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow"
+              title="Nova Transação"
             >
-              Adicionar Transação
+              <Plus className="w-4 h-4" />
+              Nova Transação
             </button>
           </div>
-        ) : (
+
+          {/* LISTA EM CARDS (desktop e mobile iguais) */}
           <div className="space-y-8 pb-32">
             {groups.map((g) => (
               <div key={g.key}>
                 {/* Cabeçalho da data */}
-                <div className="mb-3 flex items-center gap-2 pl-0.5 text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 text-gray-400" />
-                  <span className="font-medium">{g.label}</span>
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-400">
+                  <Calendar className="h-4 w-4" />
+                  <span className="font-medium text-slate-600">{g.label}</span>
                 </div>
 
                 <div className="space-y-3">
@@ -763,12 +753,8 @@ const Finance: React.FC = () => {
                         onEdit={() => handleEdit(t.id)}
                         onDelete={() => handleDelete(t.id)}
                       >
-                        {/* CARD ÚNICO */}
-                        <div
-                          className={`rounded-2xl border border-gray-100/50 bg-white shadow-lg transition-all ${
-                            isDetailsOpen ? 'ring-2 ring-blue-300/60' : ''
-                          }`}
-                        >
+                        {/* CARD único */}
+                        <div className={`rounded-2xl ring-1 ring-gray-200 bg-white shadow-md transition-all ${isDetailsOpen ? 'ring-2 ring-indigo-200' : ''}`}>
                           {/* Header */}
                           <div
                             role="button"
@@ -785,18 +771,16 @@ const Finance: React.FC = () => {
                             <TransactionCard
                               wrap={false}
                               transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
-                              onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                              onUpdateStatus={toggleIncomeStatus}
                               isOpen={isDetailsOpen}
                             />
                           </div>
 
                           {/* Expand */}
                           <div
-                            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
-                              isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
-                            }`}
+                            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'}`}
                           >
-                            <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+                            <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                             <div className="px-5 pb-5">
                               <TransactionDetails
                                 tx={{
@@ -821,19 +805,24 @@ const Finance: React.FC = () => {
               </div>
             ))}
           </div>
-        )}
+        </div>
+
+        {/* Modais */}
+        <EditTransactionModal
+          isOpen={!!editing}
+          transaction={editing}
+          onClose={() => setEditing(null)}
+          onSave={handleSaveEdit}
+        />
+        <AddTransactionModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onAdd={handleAdd}
+        />
+
+        {/* Toast */}
+        <ToastContainer />
       </div>
-
-      <EditTransactionModal
-        isOpen={!!editing}
-        transaction={editing}
-        onClose={() => setEditing(null)}
-        onSave={handleSaveEdit}
-      />
-      <AddTransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onAdd={handleAdd} />
-
-      {/* Toast container (uma vez na página) */}
-      <ToastContainer />
     </div>
   );
 };

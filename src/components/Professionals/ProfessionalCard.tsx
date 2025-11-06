@@ -21,22 +21,17 @@ interface ProfessionalCardProps {
 const placeholder = "https://placehold.co/96x96?text=Foto";
 
 /* ----------------- helpers de URL ----------------- */
-// remove ?v=... ou &v=... do final para evitar duplicar
 function stripVersionParam(url: string): string {
   try {
     const u = new URL(url);
     u.searchParams.delete("v");
     return u.toString();
   } catch {
-    // URL inválida? tenta fallback simples
     return url.replace(/[?&]v=[^&]+/, "").replace(/[?&]$/, "");
   }
 }
-
-// se vier com %2520 etc, decodifica uma vez
 function normalizeEncoded(url: string): string {
   try {
-    // só tenta quando claramente há encoding de '%'
     if (/%25[0-9a-f]{2}/i.test(url)) {
       return decodeURIComponent(url);
     }
@@ -45,17 +40,12 @@ function normalizeEncoded(url: string): string {
     return url;
   }
 }
-
-// adiciona cache-buster
 const withCacheBust = (url: string, v?: string | null) =>
   v ? `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(v)}` : url;
 /* -------------------------------------------------- */
 
-/** Helpers locais de formatação de telefone */
 const onlyDigits = (v: string | null | undefined) =>
   String(v ?? "").replace(/\D+/g, "");
-
-/** 10 dígitos -> (DD) XXXX-XXXX | 11 dígitos -> (DD) 9 XXXX-XXXX */
 const formatPhoneBR = (v: string | null | undefined): string => {
   const d = onlyDigits(v);
   if (!d) return "—";
@@ -71,15 +61,13 @@ const formatPhoneBR = (v: string | null | undefined): string => {
   return `(${ddd}) ${nine} ${p1}${p2 ? `-${p2}` : ""}`;
 };
 
-/** Retorna uma URL exibível a partir de (path ou URL) + fallback */
 function toDisplayUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed; // já é URL
-  return publicUrlFromPath(trimmed) || null; // path do storage
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return publicUrlFromPath(trimmed) || null;
 }
-
 function resolveAvatarBaseUrl(p: Professional): string {
   const camelPathOrUrl = (p as any).avatar as string | undefined;
   const camel = toDisplayUrl(camelPathOrUrl);
@@ -124,7 +112,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
   }, [professional]);
 
   const avatarSrc = useMemo(() => {
-    // pega URL base (ou placeholder), normaliza e garante que não existe v= duplicado
     const baseRaw =
       toDisplayUrl(avatarPathOrUrl) ?? resolveAvatarBaseUrl(professional);
     const normalized = normalizeEncoded(stripVersionParam(baseRaw));
@@ -133,7 +120,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-  // ===== Handlers passados para o modal =====
+  // ===== Modal handlers
   const handleReplaceFromModal = async (id: string, file: File) => {
     try {
       const { path, updatedAt } = await uploadAvatarAndCleanup(id, file);
@@ -145,21 +132,24 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
       alert("Não foi possível atualizar a foto. Tente novamente.");
     }
   };
-
   const handleRemoveFromModal = async (id: string) => {
     try {
       await removeAvatarAndCleanup(id);
       setAvatarPathOrUrl(null);
-      setAvatarVersion(String(Date.now())); // força cache-busting do placeholder
+      setAvatarVersion(String(Date.now()));
     } catch (err) {
       console.error("Erro ao remover avatar:", err);
       alert("Não foi possível remover a foto. Tente novamente.");
     }
   };
-  // =========================================
 
   const formattedPhone = formatPhoneBR(professional.phone);
   const telHref = `tel:+55${onlyDigits(professional.phone)}`;
+  const registry =
+    professional.registrationCode ||
+    (professional as any).registration ||
+    (professional as any).document ||
+    "";
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -169,7 +159,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
           <button
             type="button"
             data-noswipe
-            className="relative h-16 w-16 rounded-full overflow-hidden ring-2 ring-gray-100 hover:scale-[1.02] transition"
+            className="relative h-16 w-16 overflow-hidden rounded-full ring-2 ring-gray-100 transition hover:scale-[1.02]"
             onClick={(e) => {
               e.stopPropagation();
               setPreviewOpen(true);
@@ -190,7 +180,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             />
             {!avatarPathOrUrl && (
               <span className="absolute inset-0 grid place-items-center text-xs text-gray-400">
-                <Camera className="w-4 h-4" />
+                <Camera className="h-4 w-4" />
               </span>
             )}
           </button>
@@ -205,6 +195,7 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
         {/* Conteúdo */}
         <div className="min-w-0 flex-1">
+          {/* ===== Linha 1: Nome, Especialidade e Toggle ===== */}
           <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 sm:gap-y-3">
             <div className="min-w-0">
               <div
@@ -240,52 +231,42 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 />
               </button>
             </div>
+          </div>
 
-            <div className="col-span-2 my-3 h-px bg-gradient-to-r from-gray-100 via-gray-100 to-transparent" />
-
-            {/* Telefone */}
-            <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
-              {professional.phone && (
-                <div
-                  className="flex items-center gap-2 text-gray-700"
-                  onClick={stop}
-                  onMouseDown={stop}
-                >
-                  <Phone className="h-4 w-4 text-blue-600" />
-                  <span className="select-text">{formattedPhone}</span>
-                </div>
-              )}
-            </div>
-
+          {/* ===== Linha 2: Telefone + Ligar (logo abaixo do avatar) ===== */}
+          <div className="mt-3 flex items-center gap-3">
             <div
-              className="flex items-center justify-center"
+              className="inline-flex min-w-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-sm text-gray-800"
               onClick={stop}
               onMouseDown={stop}
             >
-              {professional.phone && (
-                <a
-                  href={telHref}
-                  className="inline-flex items-center gap-1 rounded-full border border-blue-600 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  title="Ligar"
-                  aria-label={`Ligar para ${formattedPhone}`}
-                >
-                  Ligar
-                </a>
-              )}
+              <Phone className="h-4 w-4 text-gray-600" />
+              <span className="truncate select-text">{formattedPhone}</span>
             </div>
 
-            {/* Registro */}
-            <div className="space-y-1.5 text-sm -ml-12 sm:-ml-3">
-              <div className="flex items-center gap-2 text-gray-700">
-                <BadgeCheck className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">Registro:</span>
-                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 ring-1 ring-inset ring-gray-200">
-                  {professional.registrationCode}
-                </span>
-              </div>
-            </div>
+            {professional.phone && (
+              <a
+                href={telHref}
+                onClick={stop}
+                onMouseDown={stop}
+                className="ml-auto inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                title="Ligar"
+                aria-label={`Ligar para ${formattedPhone}`}
+              >
+                Ligar
+              </a>
+            )}
+          </div>
 
-            <div />
+          {/* ===== Linha 3: Registro (chip) ===== */}
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700">
+              <BadgeCheck className="h-4 w-4 text-emerald-600" />
+              <span className="opacity-70">Registro:</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-800">
+                {registry || "—"}
+              </span>
+            </span>
           </div>
         </div>
       </div>
