@@ -7,9 +7,14 @@ type Props = {
   value: React.ReactNode;
   icon?: LucideIcon;
   color?: 'blue' | 'orange' | 'purple' | 'green' | 'slate';
-  dropdown?: boolean;
   /** Quando true, mascara dígitos e separadores (0-9 . ,) por • e desativa animação */
   maskDigits?: boolean;
+  /** Tamanho do padding/tipografia do card (apenas conteúdo) */
+  size?: 'sm' | 'md';
+  /** Classes extras opcionais no wrapper interno */
+  className?: string;
+  /** Slot opcional à direita do cabeçalho (ex: botão de ação “olho”) */
+  rightSlot?: React.ReactNode;
 };
 
 const pillMap: Record<NonNullable<Props['color']>, string> = {
@@ -20,7 +25,7 @@ const pillMap: Record<NonNullable<Props['color']>, string> = {
   slate:  'bg-gradient-to-br from-slate-400 to-slate-600',
 };
 
-/* ===== Helpers de número/anim ===== */
+/* ========= Helpers numéricos / animação ========= */
 
 function parseNumeric(val: React.ReactNode): { num: number; kind: 'currency' | 'int' | 'float' } | null {
   if (typeof val === 'number') {
@@ -32,14 +37,20 @@ function parseNumeric(val: React.ReactNode): { num: number; kind: 'currency' | '
     const only = val.replace(/[^\d.,-]/g, '');
     const normalized = only.replace(/\./g, '').replace(',', '.');
     const num = Number(normalized);
-    if (!isNaN(num)) return { num, kind: isCurrency ? 'currency' : (Number.isInteger(num) ? 'int' : 'float') };
+    if (!isNaN(num)) {
+      return { num, kind: isCurrency ? 'currency' : (Number.isInteger(num) ? 'int' : 'float') };
+    }
   }
   return null;
 }
 
 function formatByKind(n: number, kind: 'currency' | 'int' | 'float') {
-  if (kind === 'currency') return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (kind === 'int') return n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  if (kind === 'currency') {
+    return `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  if (kind === 'int') {
+    return n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  }
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -73,7 +84,7 @@ function useCountUp(target: number, duration = 800) {
   return val;
 }
 
-/* ===== Componente ===== */
+/* ================= Componente ================= */
 
 export default function StatCard({
   title,
@@ -81,10 +92,13 @@ export default function StatCard({
   icon: Icon,
   color = 'blue',
   maskDigits = false,
+  size = 'md',
+  className = '',
+  rightSlot,
 }: Props) {
   const parsed = useMemo(() => parseNumeric(value), [value]);
 
-  // Se está mascarando, NÃO anima para manter quantidade de bolinhas estável
+  // Se está mascarando, não anima (para manter quantidade de bolinhas estável)
   const animatedVal = useCountUp(parsed && !maskDigits ? parsed.num : 0);
 
   const SIX_DOTS = '•'.repeat(6);
@@ -93,8 +107,6 @@ export default function StatCard({
   if (parsed) {
     const baseNumber = (!maskDigits ? (parsed.kind === 'int' ? Math.round(animatedVal) : animatedVal) : parsed.num);
     const formatted = formatByKind(baseNumber, parsed.kind);
-
-    // Quando mascarado: colapsa QUALQUER sequência de dígitos/., numa sequência fixa de 6 bolinhas.
     display = maskDigits ? formatted.replace(/[0-9.,]+/g, SIX_DOTS) : formatted;
   } else if (typeof value === 'string') {
     display = maskDigits ? value.replace(/[0-9.,]+/g, SIX_DOTS) : value;
@@ -102,22 +114,36 @@ export default function StatCard({
     display = value;
   }
 
+  const paddingCls = size === 'sm' ? 'p-1 md:p-2' : 'p-1 md:p-2';
+  const iconBoxCls = size === 'sm' ? 'w-9 h-9' : 'w-10 h-10';
+  const iconSizeCls = size === 'sm' ? 'w-[18px] h-[18px]' : 'w-5 h-5';
+  const titleCls = size === 'sm' ? 'text-[13px]' : 'text-sm';
+  const valueCls = size === 'sm' ? 'text-xl' : 'text-2xl';
+
   return (
-    <div className="p-4 md:p-5 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition">
+    // Wrapper apenas com padding; o card (bg/border/shadow) fica no container externo
+    <div className={[paddingCls, className].join(' ')}>
       <div className="flex items-start justify-between">
-        <div className={[
-          'inline-flex items-center justify-center',
-          'w-10 h-10 rounded-xl',
-          'text-white shadow-md ring-1 ring-black/5',
-          pillMap[color],
-        ].join(' ')}>
-          {Icon ? <Icon className="w-5 h-5" /> : null}
+        <div
+          className={[
+            'inline-flex items-center justify-center',
+            iconBoxCls,
+            'rounded-xl text-white shadow-md ring-1 ring-black/5',
+            pillMap[color],
+          ].join(' ')}
+        >
+          {Icon ? <Icon className={iconSizeCls} aria-hidden="true" /> : null}
         </div>
+
+        {/* Slot opcional no canto superior direito (ex: botão “olho”) */}
+        {rightSlot ? <div className="ml-3">{rightSlot}</div> : null}
       </div>
 
-      <p className="mt-3 text-sm text-slate-600">{title}</p>
+      <p className={['mt-3', titleCls, 'text-slate-600'].join(' ')}>
+        {title}
+      </p>
 
-      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">
+      <div className={['mt-1', valueCls, 'font-semibold tracking-tight text-slate-900 tabular-nums'].join(' ')}>
         {display}
       </div>
     </div>

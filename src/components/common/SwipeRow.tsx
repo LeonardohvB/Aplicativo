@@ -1,6 +1,8 @@
 // src/components/common/SwipeRow.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
+import { Archive } from "lucide-react";
+
 
 type Props = {
   rowId: string;
@@ -91,26 +93,30 @@ export default function SwipeRow({
   className="flex flex-col items-center justify-center gap-3 p-0 bg-transparent shadow-none border-0"
 >
 
-          <button
-            type="button"
-            data-noswipe
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onEdit(); }}
-            className="p-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow transition pointer-events-auto"
-            title="Editar"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            data-noswipe
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-4 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow transition pointer-events-auto"
-            title="Excluir"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+         <button
+  type="button"
+  data-noswipe
+  onMouseDown={(e) => e.stopPropagation()}
+  onClick={(e) => { e.stopPropagation(); onEdit(); }}
+  className="p-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow 
+             transition-all duration-200 ease-out hover:scale-110 pointer-events-auto"
+  title="Editar"
+>
+  <Edit2 className="w-4 h-4" />
+</button>
+
+<button
+  type="button"
+  data-noswipe
+  onMouseDown={(e) => e.stopPropagation()}
+  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+  className="p-4 rounded-xl bg-yellow-600 hover:bg-yellow-700 text-white shadow 
+             transition-all duration-200 ease-out hover:scale-110 pointer-events-auto"
+  title="Arquivar"
+>
+  <Archive className="w-4 h-4" />
+</button>
+
         </div>
       </div>
 
