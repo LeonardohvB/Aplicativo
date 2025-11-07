@@ -166,12 +166,13 @@ const Professionals: React.FC = () => {
   return (
     <div
       className="
+        relative z-0
         p-6 bg-gray-50 min-h-[100svh]
         pb-32 md:pb-10
       "
-      /* Fallback robusto: usa o maior entre 96px e o safe-area real */
       style={{
-        paddingBottom: 'max(96px, env(safe-area-inset-bottom))'
+        // fallback robusto para iPhone: garante pelo menos 96px ou o safe-area real
+        paddingBottom: 'max(96px, env(safe-area-inset-bottom))',
       }}
     >
       <div className="mb-4">
@@ -245,7 +246,7 @@ const Professionals: React.FC = () => {
         ))}
       </div>
 
-      {/* Spacer final para garantir que nada encoste na bottom bar em qualquer device */}
+      {/* Spacer final discreto */}
       <div className="h-8 md:h-0" role="presentation" />
 
       <AddProfessionalModal
