@@ -414,6 +414,24 @@ const Finance: React.FC = () => {
     return out;
   }, [visibleTxs]);
 
+  /* ===== Helpers para mensagens de vazio ===== */
+  const hasAnyExpense = useMemo(
+    () => transactions.some(t => t.type === 'expense'),
+    [transactions]
+  );
+
+  const hasAnyIncome = useMemo(
+    () => transactions.some(t => t.type === 'income'),
+    [transactions]
+  );
+
+  const emptyMessage = useMemo(() => {
+    if (txFilter === 'expense' && !hasAnyExpense) return 'Você não possui despesas registradas.';
+    if (txFilter === 'income' && !hasAnyIncome) return 'Você não possui receitas registradas.';
+    if (visibleTxs.length === 0) return 'Nenhuma transação encontrada para os filtros atuais.';
+    return '';
+  }, [txFilter, hasAnyExpense, hasAnyIncome, visibleTxs.length]);
+
   const handleEdit = (id: string) =>
     setEditing((transactions.find((x) => x.id === id) as Transaction) || null);
 
@@ -461,7 +479,7 @@ const Finance: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-300">
+      <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
         Carregando transações...
       </div>
     );
@@ -474,32 +492,31 @@ const Finance: React.FC = () => {
     <div className="min-h-screen pb-24 bg-gradient-to-b from-slate-50 via-slate-50 to-white text-slate-800">
       <div className="mx-auto w-full max-w-7xl px-4 md:px-6 lg:px-8">
 
-      {/* Header */}
-<div className="pt-6 mb-6 md:mb-8">
-  <div className="flex items-start justify-between gap-4">
-    <div>
-      <h1 className="text-2xl md:text-3xl font-bold">Financeiro</h1>
-      <p className="text-slate-400 text-sm md:text-base mt-1">
-        Gerencie suas finanças e transações
-      </p>
-    </div>
+        {/* Header */}
+        <div className="pt-6 mb-6 md:mb-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold">Financeiro</h1>
+              <p className="text-slate-400 text-sm md:text-base mt-1">
+                Gerencie suas finanças e transações
+              </p>
+            </div>
 
-    {/* Desktop: somente a busca (branco / texto escuro) */}
-    <div className="hidden md:flex items-center gap-2">
-      <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-        <input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Buscar transações..."
-          className="h-10 w-[22rem] pl-9 pr-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-500
-                     ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/70"
-        />
-      </div>
-    </div>
-  </div>
-</div>
-
+            {/* Desktop: somente a busca (branco / texto escuro) */}
+            <div className="hidden md:flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar transações..."
+                  className="h-10 w-[22rem] pl-9 pr-3 rounded-xl bg-white text-slate-900 placeholder:text-slate-500
+                             ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/70"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* GRID PRINCIPAL */}
         <div className="grid grid-cols-12 gap-4 md:gap-6">
@@ -538,56 +555,84 @@ const Finance: React.FC = () => {
               </div>
 
               <div className="relative z-10 mt-6">
-  <div
-    className={[
-      'inline-flex items-center justify-center px-5 py-3 rounded-2xl backdrop-blur transition-transform duration-250',
-      pulse ? 'scale-110' : 'scale-100',
-      // mesmo visual para visível/oculto
-      'bg-white/5 ring-1 ring-white/10 text-white'
-    ].join(' ')}
-  >
-    <span className="text-3xl md:text-4xl font-bold tabular-nums tracking-tight">
-      {showBalance
-        ? `R$ ${animatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : `R$ ${'•'.repeat(6)}`}
-    </span>
-  </div>
-
+                <div
+                  className={[
+                    'inline-flex items-center justify-center px-5 py-3 rounded-2xl backdrop-blur transition-transform duration-250',
+                    pulse ? 'scale-110' : 'scale-100',
+                    'bg-white/5 ring-1 ring-white/10 text-white'
+                  ].join(' ')}
+                >
+                  <span className="text-3xl md:text-4xl font-bold tabular-nums tracking-tight">
+                    {showBalance
+                      ? `R$ ${animatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `R$ ${'•'.repeat(6)}`}
+                  </span>
+                </div>
 
                 {/* mini-cards Receitas / Despesas */}
                 <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className={`rounded-xl p-4 ring-1 transition ${txFilter === 'income' ? 'ring-emerald-400/40 bg-emerald-500/5' : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}>
+
+                  {/* RECEITAS */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setTxFilter(f => (f === 'income' ? 'all' : 'income'))}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTxFilter(f => (f === 'income' ? 'all' : 'income'))}
+                    className={`cursor-pointer rounded-xl p-4 ring-1 transition
+                      ${txFilter === 'income'
+                        ? 'ring-emerald-400/40 bg-emerald-500/5'
+                        : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15"><TrendingUp className="w-4 h-4 text-emerald-400" /></span>
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
+                          <TrendingUp className="w-4 h-4 text-emerald-400" />
+                        </span>
                         <div className="text-sm text-slate-300">Receitas (este mês)</div>
                       </div>
-                      <button onClick={() => setTxFilter((f) => (f === 'income' ? 'all' : 'income'))} className="text-xs text-emerald-400 hover:underline">
+                      <span className="text-xs text-emerald-400">
                         {txFilter === 'income' ? 'Mostrar todas' : 'Filtrar'}
-                      </button>
+                      </span>
                     </div>
                     <div className={`mt-2 text-2xl font-bold text-emerald-400 ${revPulse ? 'scale-105' : ''}`}>
-    {showBalance ? `R$ ${animatedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `R$ ${MASK}`}
-  </div>
-</div>
+                      {showBalance
+                        ? `R$ ${animatedRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `R$ ${'•'.repeat(6)}`}
+                    </div>
+                  </div>
 
-                  <div className={`rounded-xl p-4 ring-1 transition ${txFilter === 'expense' ? 'ring-rose-400/40 bg-rose-500/5' : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}>
+                  {/* DESPESAS */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setTxFilter(f => (f === 'expense' ? 'all' : 'expense'))}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTxFilter(f => (f === 'expense' ? 'all' : 'expense'))}
+                    className={`cursor-pointer rounded-xl p-4 ring-1 transition
+                      ${txFilter === 'expense'
+                        ? 'ring-rose-400/40 bg-rose-500/5'
+                        : 'ring-white/10 bg-white/5 hover:bg-white/10'}`}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/15"><TrendingDown className="w-4 h-4 text-rose-400" /></span>
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/15">
+                          <TrendingDown className="w-4 h-4 text-rose-400" />
+                        </span>
                         <div className="text-sm text-slate-300">Despesas (este mês)</div>
                       </div>
-                      <button onClick={() => setTxFilter((f) => (f === 'expense' ? 'all' : 'expense'))} className="text-xs text-rose-400 hover:underline">
+                      <span className="text-xs text-rose-400">
                         {txFilter === 'expense' ? 'Mostrar todas' : 'Filtrar'}
-                      </button>
+                      </span>
                     </div>
-                     <div className={`mt-2 text-2xl font-bold text-rose-400 ${expPulse ? 'scale-105' : ''}`}>
-    {showBalance ? `R$ ${animatedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `R$ ${MASK}`}
-  </div>
+                    <div className={`mt-2 text-2xl font-bold text-rose-400 ${expPulse ? 'scale-105' : ''}`}>
+                      {showBalance
+                        ? `R$ ${animatedExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `R$ ${'•'.repeat(6)}`}
+                    </div>
                     <div className="mt-1 inline-flex items-center gap-1 text-rose-300 text-xs">
                       <ArrowDownRight className="w-3 h-3" />
                     </div>
                   </div>
+
                 </div>
               </div>
             </div>
@@ -723,87 +768,93 @@ const Finance: React.FC = () => {
 
           {/* LISTA EM CARDS (desktop e mobile iguais) */}
           <div className="space-y-8 pb-32">
-            {groups.map((g) => (
-              <div key={g.key}>
-                {/* Cabeçalho da data */}
-                <div className="mb-3 flex items-center gap-2 text-sm text-slate-400">
-                  <Calendar className="h-4 w-4" />
-                  <span className="font-medium text-slate-600">{g.label}</span>
-                </div>
+            {visibleTxs.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+                {emptyMessage}
+              </div>
+            ) : (
+              groups.map((g) => (
+                <div key={g.key}>
+                  {/* Cabeçalho da data */}
+                  <div className="mb-3 flex items-center gap-2 text-sm text-slate-400">
+                    <Calendar className="h-4 w-4" />
+                    <span className="font-medium text-slate-600">{g.label}</span>
+                  </div>
 
-                <div className="space-y-3">
-                  {g.items.map((t: any) => {
-                    const prof = extractProfessional(t);
-                    const patient = t.patientName ?? extractPatientFromDesc(t.description);
-                    const service = extractService(t);
-                    const status: TxStatus | undefined =
-                      t.type === 'income' ? ((t.status ?? 'pending') as TxStatus) : undefined;
-                    const notes = extractNotes(t);
+                  <div className="space-y-3">
+                    {g.items.map((t: any) => {
+                      const prof = extractProfessional(t);
+                      const patient = t.patientName ?? extractPatientFromDesc(t.description);
+                      const service = extractService(t);
+                      const status: TxStatus | undefined =
+                        t.type === 'income' ? ((t.status ?? 'pending') as TxStatus) : undefined;
+                      const notes = extractNotes(t);
 
-                    const isDetailsOpen = detailsOpenId === t.id;
-                    const isSwipeOpen = swipeOpenId === t.id;
+                      const isDetailsOpen = detailsOpenId === t.id;
+                      const isSwipeOpen = swipeOpenId === t.id;
 
-                    return (
-                      <SwipeRow
-                        key={t.id}
-                        rowId={t.id}
-                        isOpen={isSwipeOpen}
-                        onOpen={(id) => setSwipeOpenId(id)}
-                        onClose={() => setSwipeOpenId(null)}
-                        onEdit={() => handleEdit(t.id)}
-                        onDelete={() => handleDelete(t.id)}
-                      >
-                        {/* CARD único */}
-                        <div className={`rounded-2xl ring-1 ring-gray-200 bg-white shadow-md transition-all ${isDetailsOpen ? 'ring-2 ring-indigo-200' : ''}`}>
-                          {/* Header */}
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            className="p-5"
-                            onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                setDetailsOpenId((cur) => (cur === t.id ? null : t.id));
-                              }
-                            }}
-                          >
-                            <TransactionCard
-                              wrap={false}
-                              transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
-                              onUpdateStatus={toggleIncomeStatus}
-                              isOpen={isDetailsOpen}
-                            />
-                          </div>
-
-                          {/* Expand */}
-                          <div
-                            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'}`}
-                          >
-                            <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-                            <div className="px-5 pb-5">
-                              <TransactionDetails
-                                tx={{
-                                  ...t,
-                                  professionalName: prof,
-                                  patientName: patient,
-                                  service,
-                                  notes,
-                                  status,
-                                  paymentMethod: (t as any).paymentMethod ?? (t as any).method ?? null,
-                                  paidAt: (t as any).paidAt ?? (t as any).paid_at ?? null,
-                                }}
-                                onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                      return (
+                        <SwipeRow
+                          key={t.id}
+                          rowId={t.id}
+                          isOpen={isSwipeOpen}
+                          onOpen={(id) => setSwipeOpenId(id)}
+                          onClose={() => setSwipeOpenId(null)}
+                          onEdit={() => handleEdit(t.id)}
+                          onDelete={() => handleDelete(t.id)}
+                        >
+                          {/* CARD único */}
+                          <div className={`rounded-2xl ring-1 ring-gray-200 bg-white shadow-md transition-all ${isDetailsOpen ? 'ring-2 ring-indigo-200' : ''}`}>
+                            {/* Header */}
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className="p-5"
+                              onClick={() => setDetailsOpenId((cur) => (cur === t.id ? null : t.id))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setDetailsOpenId((cur) => (cur === t.id ? null : t.id));
+                                }
+                              }}
+                            >
+                              <TransactionCard
+                                wrap={false}
+                                transaction={{ ...t, professionalName: prof, patientName: patient, service, status }}
+                                onUpdateStatus={toggleIncomeStatus}
+                                isOpen={isDetailsOpen}
                               />
                             </div>
+
+                            {/* Expand */}
+                            <div
+                              className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${isDetailsOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'}`}
+                            >
+                              <div className="mx-5 mt-2 mb-3 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                              <div className="px-5 pb-5">
+                                <TransactionDetails
+                                  tx={{
+                                    ...t,
+                                    professionalName: prof,
+                                    patientName: patient,
+                                    service,
+                                    notes,
+                                    status,
+                                    paymentMethod: (t as any).paymentMethod ?? (t as any).method ?? null,
+                                    paidAt: (t as any).paidAt ?? (t as any).paid_at ?? null,
+                                  }}
+                                  onUpdateStatus={(id, next) => updateTxStatus(id, next)}
+                                />
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </SwipeRow>
-                    );
-                  })}
+                        </SwipeRow>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 

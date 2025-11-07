@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Menu as MenuIcon,
@@ -8,8 +9,8 @@ import {
   History,
   FileText,
   Archive,
+  ClipboardList,
 } from "lucide-react";
-import { ClipboardList } from "lucide-react";
 
 // ⬇️ adicionados para o "Encerrar sessão"
 import { supabase } from "../../lib/supabase";
@@ -20,8 +21,6 @@ type Props = {
   onOpenNewPatient: () => void;
   onOpenNewProfessional: () => void;
   onOpenHistory: () => void;
-
-  // opcionais
   onOpenCertificateNew?: () => void;
   onOpenProfessionalsArchived?: () => void;
 };
@@ -35,15 +34,13 @@ export default function OverlayMenu({
   onOpenProfessionalsArchived,
 }: Props) {
   const [open, setOpen] = useState(false);
-
   const panelRef = useRef<HTMLDivElement>(null);
   const menuItemsRef = useRef<HTMLButtonElement[]>([]);
 
-  // ⬇️ estado do diálogo de sair
+  // diálogo de sair
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  // ---------- registrar item para navegação ----------
   const registerItemRef = (el: HTMLButtonElement | null, index: number) => {
     if (!el) return;
     menuItemsRef.current[index] = el;
@@ -75,7 +72,7 @@ export default function OverlayMenu({
     }
   };
 
-  // ---------- fechar por ESC / clique fora ----------
+  // fechar por ESC / clique fora
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -93,7 +90,7 @@ export default function OverlayMenu({
     };
   }, []);
 
-  // ---------- scroll lock + foco inicial ----------
+  // scroll lock + foco inicial
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -110,11 +107,9 @@ export default function OverlayMenu({
     };
   }, [open]);
 
-  // util p/ índices (evita quebrar a navegação quando tem itens opcionais)
   let i = 0;
   const nextIndex = () => (i += 1) - 1;
 
-  // ⬇️ ação de sair (mesmo esquema do Perfil)
   const reallySignOut = async () => {
     try {
       setSigningOut(true);
@@ -129,7 +124,7 @@ export default function OverlayMenu({
 
   return (
     <>
-      {/* Botão do menu (posicionado pelo container no App) */}
+      {/* Botão do menu (posicionado no container do App) */}
       <button
         onClick={() => setOpen(true)}
         title="Menu"
@@ -141,209 +136,200 @@ export default function OverlayMenu({
         <MenuIcon className="h-5 w-5 text-slate-700" />
       </button>
 
-      {/* Overlay + painel */}
-      {open && (
-        <div
-          className="fixed inset-0 z-50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="overlay-menu-title"
-        >
-          {/* fundo escuro */}
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
-
-          {/* painel (agora expandido até embaixo) */}
+      {open &&
+        createPortal(
           <div
-            id="overlay-menu-panel"
-            ref={panelRef}
-            className="absolute left-1/2 -translate-x-1/2 top-4 bottom-4 w-[92%] max-w-sm rounded-xl bg-white shadow-2xl ring-1 ring-black/10 overflow-hidden animate-[slideDown_.18s_ease-out] pb-[env(safe-area-inset-bottom)] flex flex-col"
-            role="menu"
+            className="fixed inset-0 z-[80]" // acima da BottomNav (z-[40])
+            role="dialog"
+            aria-modal="true"
             aria-labelledby="overlay-menu-title"
-            onKeyDown={onKeyNav}
           >
-            {/* Cabeçalho */}
-            <div className="flex items-center justify-between px-4 py-3 ">
-              <div id="overlay-menu-title" className="text-xs font-semibold text-emerald-600">
-                ● Aberto <span className="text-slate-500 ml-2">(menu)</span>
+            {/* Overlay */}
+            <div className="absolute inset-0 z-[80] bg-black/40 backdrop-blur-[2px]" />
+
+            {/* Painel */}
+            <div
+              id="overlay-menu-panel"
+              ref={panelRef}
+              className="absolute left-1/2 -translate-x-1/2 top-4 bottom-4 z-[81] w-[92%] max-w-sm rounded-xl bg-white shadow-2xl ring-1 ring-black/10 overflow-hidden animate-[slideDown_.18s_ease-out] flex flex-col"
+              role="menu"
+              aria-labelledby="overlay-menu-title"
+              onKeyDown={onKeyNav}
+            >
+              {/* Cabeçalho */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div id="overlay-menu-title" className="text-xs font-semibold text-emerald-600">
+                  ● Aberto <span className="text-slate-500 ml-2">(menu)</span>
+                </div>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="p-1 rounded hover:bg-slate-100"
+                  aria-label="Fechar"
+                >
+                  <X className="h-5 w-5 text-slate-600" />
+                </button>
               </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="p-1 rounded hover:bg-slate-100"
-                aria-label="Fechar"
-              >
-                <X className="h-5 w-5 text-slate-600" />
-              </button>
-            </div>
 
-            {/* Conteúdo rolável */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="px-4 py-2 text-[11px] font-bold tracking-wide text-slate-500">
-                INÍCIO
-              </div>
+              {/* Conteúdo rolável — com “respiro” suficiente para a TabBar */}
+              <div className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+96px)]">
+                <div className="px-4 py-2 text-[11px] font-bold tracking-wide text-slate-500">
+                  INÍCIO
+                </div>
 
-              <ul className="px-1 pb-3 text-sm text-slate-700">
-                {/* Perfil */}
-                <li>
-                  <button
-                    role="menuitem"
-                    ref={(el) => registerItemRef(el, nextIndex())}
-                    onClick={() => {
-                      setOpen(false);
-                      onOpenProfile();
-                    }}
-                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-                  >
-                    <User className="h-4 w-4" />
-                    <span>Perfil</span>
-                  </button>
-                </li>
-
-                {/* Cadastrar paciente */}
-                <li>
-                  <button
-                    role="menuitem"
-                    ref={(el) => registerItemRef(el, nextIndex())}
-                    onClick={() => {
-                      setOpen(false);
-                      onOpenNewPatient();
-                    }}
-                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    <span>Cadastrar paciente</span>
-                  </button>
-                </li>
-
-                {/* Cadastrar profissional */}
-                <li>
-                  <button
-                    role="menuitem"
-                    ref={(el) => registerItemRef(el, nextIndex())}
-                    onClick={() => {
-                      setOpen(false);
-                      onOpenNewProfessional();
-                    }}
-                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-                  >
-                    <Briefcase className="h-4 w-4" />
-                    <span>Cadastrar profissional</span>
-                  </button>
-                </li>
-
-                {/* Evolução do paciente */}
-                <li>
-                  <button
-                    role="menuitem"
-                    ref={(el) => registerItemRef(el, nextIndex())}
-                    onClick={() => {
-                      setOpen(false);
-                      window.dispatchEvent(new CustomEvent("evolution:open"));
-                    }}
-                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-                  >
-                    <ClipboardList className="h-4 w-4" />
-                    <span>Evolução do paciente</span>
-                  </button>
-                </li>
-
-                {/* Atestado (opcional) */}
-                {onOpenCertificateNew && (
+                <ul className="px-1 pb-3 text-sm text-slate-700">
                   <li>
                     <button
                       role="menuitem"
                       ref={(el) => registerItemRef(el, nextIndex())}
                       onClick={() => {
                         setOpen(false);
-                        onOpenCertificateNew();
+                        onOpenProfile();
                       }}
                       className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                     >
-                      <FileText className="h-4 w-4" />
-                      <span>Atestado</span>
+                      <User className="h-4 w-4" />
+                      <span>Perfil</span>
                     </button>
                   </li>
+
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, nextIndex())}
+                      onClick={() => {
+                        setOpen(false);
+                        onOpenNewPatient();
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Cadastrar paciente</span>
+                    </button>
+                  </li>
+
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, nextIndex())}
+                      onClick={() => {
+                        setOpen(false);
+                        onOpenNewProfessional();
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <Briefcase className="h-4 w-4" />
+                      <span>Cadastrar profissional</span>
+                    </button>
+                  </li>
+
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, nextIndex())}
+                      onClick={() => {
+                        setOpen(false);
+                        window.dispatchEvent(new CustomEvent("evolution:open"));
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      <span>Evolução do paciente</span>
+                    </button>
+                  </li>
+
+                  {onOpenCertificateNew && (
+                    <li>
+                      <button
+                        role="menuitem"
+                        ref={(el) => registerItemRef(el, nextIndex())}
+                        onClick={() => {
+                          setOpen(false);
+                          onOpenCertificateNew();
+                        }}
+                        className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                      >
+                        <FileText className="h-4 w-4" />
+                        <span>Atestado</span>
+                      </button>
+                    </li>
+                  )}
+
+                  <li>
+                    <button
+                      role="menuitem"
+                      ref={(el) => registerItemRef(el, nextIndex())}
+                      onClick={() => {
+                        setOpen(false);
+                        onOpenHistory();
+                      }}
+                      className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    >
+                      <History className="h-4 w-4" />
+                      <span>Histórico de atendimentos</span>
+                    </button>
+                  </li>
+                </ul>
+
+                {/* Espaçador pequeno (o grosso é o pb do container) */}
+                <div className="h-2" />
+              </div>
+
+              {/* Rodapé (fica sempre visível, acima da TabBar) */}
+              <div className="bg-white border-t border-slate-100">
+                {onOpenProfessionalsArchived && (
+                  <ul className="px-1 py-2 text-sm text-slate-700">
+                    <li>
+                      <button
+                        role="menuitem"
+                        ref={(el) => registerItemRef(el, nextIndex())}
+                        onClick={() => {
+                          setOpen(false);
+                          onOpenProfessionalsArchived();
+                        }}
+                        className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                      >
+                        <Archive className="h-4 w-4 text-amber-600" />
+                        <span>Profissionais desativados</span>
+                      </button>
+                    </li>
+                  </ul>
                 )}
 
-                {/* Histórico de atendimentos */}
-                <li>
+                <div className="px-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
                   <button
                     role="menuitem"
                     ref={(el) => registerItemRef(el, nextIndex())}
-                    onClick={() => {
-                      setOpen(false);
-                      onOpenHistory();
-                    }}
-                    className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    onClick={() => setConfirmSignOut(true)}
+                    disabled={signingOut}
+                    className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
                   >
-                    <History className="h-4 w-4" />
-                    <span>Histórico de atendimentos</span>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 8v8a4 4 0 004 4h2" />
+                    </svg>
+                    Encerrar sessão
                   </button>
-                </li>
-              </ul>
-
-              {/* espaçador para empurrar as ações de rodapé */}
-              <div className="h-2" />
+                </div>
+              </div>
             </div>
 
-           {/* Rodapé fixo: Profissionais desativados (antes) e Encerrar sessão (por último) */}
-<div className=" bg-white">
-  {/* Profissionais desativados com o MESMO estilo dos itens de cima */}
-  {onOpenProfessionalsArchived && (
-    <ul className="px-1 py-2 text-sm text-slate-700">
-      <li>
-        <button
-          role="menuitem"
-          ref={(el) => registerItemRef(el, nextIndex())}
-          onClick={() => {
-            setOpen(false);
-            onOpenProfessionalsArchived();
-          }}
-          className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
-        >
-          <Archive className="h-4 w-4 text-amber-600" />
-          <span>Profissionais desativados</span>
-        </button>
-      </li>
-    </ul>
-  )}
+            <style>{`
+              @keyframes slideDown {
+                from { opacity: 0; transform: translate(-50%, -6px); }
+                to   { opacity: 1; transform: translate(-50%, 0); }
+              }
+            `}</style>
+          </div>,
+          document.body
+        )}
 
-  {/* Encerrar sessão (mesmo esquema do Perfil) */}
-  <div className="px-3 pb-3">
-    <button
-      role="menuitem"
-      ref={(el) => registerItemRef(el, nextIndex())}
-      onClick={() => setConfirmSignOut(true)}
-      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-4 w-4"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 8v8a4 4 0 004 4h2" />
-      </svg>
-      Encerrar sessão
-    </button>
-  </div>
-</div>
-
-          </div>
-
-          {/* animação */}
-          <style>{`
-            @keyframes slideDown {
-              from { opacity: 0; transform: translate(-50%, -6px); }
-              to   { opacity: 1; transform: translate(-50%, 0); }
-            }
-          `}</style>
-        </div>
-      )}
-
-      {/* Diálogo de confirmação (igual ao Perfil) */}
       <ConfirmDialog
         open={confirmSignOut}
         onClose={() => setConfirmSignOut(false)}

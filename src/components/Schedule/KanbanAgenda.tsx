@@ -614,22 +614,24 @@ const KanbanAgenda: React.FC<Props> = ({
       toast.error("Não foi possível cancelar o atendimento.", { title: "Erro" });
     }
   };
-  
-const DAYS_AHEAD = 15;
 
- useEffect(() => {
-  const now = new Date();
-  const arr: string[] = [];
-  for (let i = 0; i < DAYS_AHEAD; i++) {  // <-- era 7
-    const d = new Date();
-    d.setDate(now.getDate() + i);
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    arr.push(d.toISOString().slice(0, 10));
-  }
-  setDays(arr);
-  setActiveDay((prev) => prev || arr[0]);
-}, []);
-
+  /* ======== NOVO: dias do mês atual (1..28/29/30/31) ======== */
+  useEffect(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month0 = now.getMonth();            // 0-11
+    const total = new Date(year, month0 + 1, 0).getDate(); // último dia do mês
+    const arr: string[] = [];
+    for (let day = 1; day <= total; day++) {
+      const d = new Date(year, month0, day);
+      // ISO local yyyy-mm-dd (fixa TZ)
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      arr.push(d.toISOString().slice(0, 10));
+    }
+    setDays(arr);
+    const todayISO = toLocalISO(now);
+    setActiveDay((prev) => prev || todayISO); // seleciona hoje
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 30_000);
@@ -770,7 +772,7 @@ const DAYS_AHEAD = 15;
     el.classList.add('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
     setTimeout(() => {
        el.classList.remove('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
-}, 1400);
+    }, 1400);
   };
 
   const prosCountForDay = useMemo(
