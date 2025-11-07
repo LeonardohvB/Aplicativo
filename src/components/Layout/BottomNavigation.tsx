@@ -32,7 +32,7 @@ const BottomNavigation: React.FC<BottomNavigationProps> = ({ activeTab, onTabCha
         'fixed bottom-0 left-0 right-0 z-50',
         'bg-white border-t border-gray-200',
         // altura fixa + acolchoamento da área segura (iOS)
-        'min-h-[0px] pt-1',
+        'min-h-[56px] pt-1',
         'pb-[calc(env(safe-area-inset-bottom))]',
       ].join(' ')}
       role="navigation"

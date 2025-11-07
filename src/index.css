@@ -7,7 +7,7 @@
 /* =================== Safe Area / TabBar global =================== */
 /* Altura padrão da BottomNavigation; ajuste se necessário */
 :root {
-  --tabbar-h: 0px; /* ↓ menor para reduzir o “vão” externo */
+  --tabbar-h: 56px; /* ↓ menor para reduzir o “vão” externo */
 }
 
 /* Utilitários opcionais */
@@ -103,9 +103,10 @@ body {
 }
 
 /* ✅ Quando houver TabBar visível, adiciona a altura dela */
-/*     Diminuímos 8px para tirar o “excesso” externo */
+
 .app-viewport.has-tabbar {
-  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) - 8px);
+  /* reserva espaço: altura da TabBar + safe area */
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
 
 /* ✅ Normaliza páginas que usam min-h-screen para respeitar o padding do app-viewport
