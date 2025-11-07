@@ -57,7 +57,7 @@ const BottomNavigation: React.FC<BottomNavigationProps> = ({ activeTab, onTabCha
                 aria-current={isActive ? 'page' : undefined}
               >
                 {/* Ícone tamanho fixo */}
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                <Icon className="h-5 w-5 shrink-0" aria-hidden />
                 {/* Rótulo tamanho fixo (11px), sem variação por acessibilidade do SO */}
                 <span className="text-[11px] leading-none font-medium not-italic tracking-tight">
                   {label}
