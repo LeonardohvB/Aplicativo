@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+// src/components/Schedule/EditJourneyModal.tsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { AppointmentJourney, Professional } from '../../types';
 import { useToast } from '../ui/Toast';
+import { supabase } from '../../lib/supabase';
 
-interface EditJourneyModalProps {
+type Props = {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (
@@ -22,9 +24,9 @@ interface EditJourneyModalProps {
   ) => void;
   journey: AppointmentJourney | null;
   professionals: Professional[];
-}
+};
 
-const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
+const EditJourneyModal: React.FC<Props> = ({
   isOpen,
   onClose,
   onUpdate,
@@ -44,6 +46,12 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
     clinicPercentage: '20',
   });
 
+  const [showSearch, setShowSearch] = useState(false);
+  const [proQuery, setProQuery] = useState('');
+  const [remotePros, setRemotePros] = useState<Professional[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     if (journey && isOpen) {
       setFormData({
@@ -51,18 +59,122 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
         date: journey.date,
         startTime: journey.startTime,
         endTime: journey.endTime,
-        consultationDuration: journey.consultationDuration.toString(),
-        bufferDuration: journey.bufferDuration.toString(),
-        defaultPrice: journey.defaultPrice.toString(),
-        clinicPercentage: journey.clinicPercentage.toString(),
+        consultationDuration: String(journey.consultationDuration),
+        bufferDuration: String(journey.bufferDuration),
+        defaultPrice: String(journey.defaultPrice),
+        clinicPercentage: String(journey.clinicPercentage),
       });
+      setShowSearch(false);
+      setProQuery('');
+      setRemotePros([]);
     }
   }, [journey, isOpen]);
+
+  useEffect(() => {
+    if (showSearch) setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, [showSearch]);
+
+  const localActivePros = useMemo(
+    () => (professionals || []).filter((p) => (p as any).isActive !== false),
+    [professionals]
+  );
+
+  const combinedProsForSelect: Professional[] = useMemo(() => {
+    if (!formData.professionalId) return localActivePros;
+    const exists = localActivePros.some((p) => p.id === formData.professionalId);
+    if (exists) return localActivePros;
+    const selected = remotePros.find((p) => p.id === formData.professionalId);
+    return selected ? [selected, ...localActivePros] : localActivePros;
+  }, [localActivePros, remotePros, formData.professionalId]);
+
+  // ===== Busca no Supabase (com regra de "primeira letra" = prefixo) =====
+  useEffect(() => {
+    let ignore = false;
+
+    const run = async () => {
+      const raw = proQuery.trim();
+      if (!raw) {
+        if (!ignore) setRemotePros([]);
+        return;
+      }
+      const q = raw.toLowerCase();
+      setIsSearching(true);
+      try {
+        // Se só 1 caractere → prefixo; senão → contém
+        const like = q.length === 1 ? `${q}%` : `%${q}%`;
+        const { data, error } = await supabase
+          .from('professionals')
+          .select('id, name, specialty, is_active')
+          .or(`name.ilike.${like},specialty.ilike.${like}`)
+          .order('name', { ascending: true })
+          .limit(30);
+
+        if (error) throw error;
+
+        if (!ignore) {
+          const list =
+            (data || [])
+              .filter((p: any) => p.is_active !== false)
+              .map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                specialty: p.specialty ?? '',
+                isActive: p.is_active !== false,
+              })) as Professional[];
+          setRemotePros(list);
+        }
+      } catch (e) {
+        console.error(e);
+        if (!ignore) setRemotePros([]);
+      } finally {
+        if (!ignore) setIsSearching(false);
+      }
+    };
+
+    const t = setTimeout(run, 250);
+    return () => {
+      ignore = true;
+      clearTimeout(t);
+    };
+  }, [proQuery]);
+
+  // ===== Painel de sugestões (só mostra após digitar) com regra de iniciais =====
+  const panelOptions: Professional[] = useMemo(() => {
+    const raw = proQuery.trim();
+    if (!raw) return [];
+    const q = raw.toLowerCase();
+
+    // Junta remotos + locais e tira duplicados
+    const source = [...remotePros, ...localActivePros];
+    const uniqById = new Map<string, Professional>();
+    for (const p of source) if (!uniqById.has(p.id)) uniqById.set(p.id, p);
+    const uniq = [...uniqById.values()];
+
+    // Normalizador
+    const norm = (s: string) => (s || '').toLowerCase().trim();
+
+    return uniq.filter((p) => {
+      const name = norm(p.name);
+      const spec = norm(p.specialty || '');
+      if (q.length === 1) {
+        // 1ª letra: precisa ser a inicial do nome OU da especialidade
+        return name.startsWith(q) || spec.startsWith(q);
+      }
+      // Para consultas maiores: "prefixo de palavra" no nome ou especialidade
+      const tokens = (name + ' ' + spec).split(/\s+/).filter(Boolean);
+      return tokens.some((t) => t.startsWith(q));
+    });
+  }, [proQuery, remotePros, localActivePros]);
+
+  const pickProfessional = (p: Professional) => {
+    setFormData((s) => ({ ...s, professionalId: p.id }));
+    setProQuery('');
+    setShowSearch(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Campos obrigatórios
     if (
       !formData.professionalId ||
       !formData.date ||
@@ -77,7 +189,6 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
       return;
     }
 
-    // Hora final > hora inicial
     if (formData.startTime >= formData.endTime) {
       toast.error('A hora final deve ser posterior à hora inicial.', {
         title: 'Horário inválido',
@@ -85,16 +196,12 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
       return;
     }
 
-    // Hoje: não permitir iniciar no passado
-    const todayISO = new Date();
-    const today = todayISO.toISOString().split('T')[0];
-
-    if (formData.date === today) {
-      const h = todayISO.getHours().toString().padStart(2, '0');
-      const m = todayISO.getMinutes().toString().padStart(2, '0');
-      const currentTime = `${h}:${m}`;
-
-      if (formData.startTime < currentTime) {
+    const todayISO = new Date().toISOString().slice(0, 10);
+    if (formData.date === todayISO) {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      if (formData.startTime < `${hh}:${mm}`) {
         toast.error('Não é possível agendar para um horário que já passou hoje.', {
           title: 'Horário inválido',
         });
@@ -104,17 +211,18 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
 
     if (!journey) return;
 
-    const selectedProfessional = professionals.find(
-      (p) => p.id === formData.professionalId
-    );
-    if (!selectedProfessional) {
+    const selected =
+      combinedProsForSelect.find((p) => p.id === formData.professionalId) ||
+      remotePros.find((p) => p.id === formData.professionalId);
+
+    if (!selected) {
       toast.error('Profissional não encontrado.', { title: 'Erro' });
       return;
     }
 
     onUpdate(journey.id, {
       professionalId: formData.professionalId,
-      professionalName: selectedProfessional.name,
+      professionalName: selected.name,
       date: formData.date,
       startTime: formData.startTime,
       endTime: formData.endTime,
@@ -131,10 +239,7 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData((s) => ({ ...s, [e.target.name]: e.target.value }));
   };
 
   if (!isOpen || !journey) return null;
@@ -155,26 +260,93 @@ const EditJourneyModal: React.FC<EditJourneyModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* PROFISSIONAL */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Profissional *
-            </label>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">
+                Profissional *
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowSearch((s) => !s)}
+                title={showSearch ? 'Fechar busca' : 'Pesquisar profissional'}
+                className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-2 py-1.5 text-gray-600 hover:text-gray-900"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+              </button>
+            </div>
+
             <select
               name="professionalId"
               value={formData.professionalId}
-              onChange={handleChange}
+              onChange={(e) =>
+                setFormData((s) => ({ ...s, professionalId: e.target.value }))
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
               <option value="">Selecione um profissional</option>
-              {professionals
-                .filter((p) => p.isActive)
-                .map((professional) => (
-                  <option key={professional.id} value={professional.id}>
-                    {professional.name} - {professional.specialty}
-                  </option>
-                ))}
+              {combinedProsForSelect.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.specialty ? `- ${p.specialty}` : ''}
+                </option>
+              ))}
             </select>
+
+            {showSearch && (
+              <>
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                  <input
+                    ref={searchInputRef}
+                    value={proQuery}
+                    onChange={(e) => setProQuery(e.target.value)}
+                    placeholder="Digite para buscar por nome/especialidade…"
+                    className="w-full py-1.5 bg-transparent outline-none text-sm"
+                  />
+                  {proQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setProQuery('')}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+
+                {/* Lista só quando há texto digitado */}
+                {proQuery.trim() && (
+                  <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                    {isSearching ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">Buscando…</div>
+                    ) : panelOptions.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">Nenhum profissional encontrado</div>
+                    ) : (
+                      panelOptions.slice(0, 50).map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => pickProfessional(p)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
+                        >
+                          <span className="font-medium text-gray-800">{p.name}</span>
+                          {p.specialty ? (
+                            <span className="text-gray-500"> — {p.specialty}</span>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div>
