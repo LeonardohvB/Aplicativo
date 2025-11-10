@@ -733,20 +733,60 @@ const KanbanAgenda: React.FC<Props> = ({
       .map(([key, val]) => ({ key, label: val.label, groups: val.items }));
   }, [daySlots, jById, proById, defaultSort]);
 
-  const daySummary = useMemo(() => {
-    const list = sections.map((sec) => {
-      const count = sec.groups.reduce((sum, g) => {
-        return sum + g.slots.filter(isAvailableSlot).length;
-      }, 0);
-      return { key: sec.key, label: sec.label, count };
-    });
-    return list.filter(x => x.count > 0).sort((a, b) => b.count - a.count);
-  }, [sections]);
+ // ===== Resumo de vagas do dia (agora direto dos slots) =====
+ const isSlotPast = (s?: AppointmentSlot) => {
+  if (!s) return true;
+  const slotDay = normISO(s.date);
+  const todayISO = toLocalISO(new Date());
 
-  const totalAvailable = useMemo(
-    () => daySummary.reduce((acc, x) => acc + x.count, 0),
-    [daySummary]
+  const startMin = hhmmToMinSafe(s.startTime, 0);
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  const BLOCK_GRACE_MIN = 10; // mesma tolerância que você usa nos cards
+  return (
+    slotDay < todayISO ||
+    (slotDay === todayISO && nowMin > startMin + BLOCK_GRACE_MIN)
   );
+};
+
+const daySummary = useMemo(() => {
+  if (!activeDay) return [] as { key: string; label: string; count: number }[];
+
+  const byCat = new Map<string, { label: string; count: number }>();
+
+  for (const s of (slots || [])) {
+    if (normISO(s?.date) !== activeDay) continue;
+    if (!isAvailableSlot(s)) continue;      // precisa estar disponível
+    if (isSlotPast(s)) continue;            // e não pode ter passado do horário
+
+    const j = jById.get(String(s?.journeyId || ''));
+    const pro = proById.get(j?.professionalId || '');
+    const cat = resolveCategory(pro);
+
+    const v = byCat.get(cat.key) ?? { label: cat.label, count: 0 };
+    v.count += 1;
+    byCat.set(cat.key, v);
+  }
+
+  const order = ['CRP', 'CRM'];
+  return Array.from(byCat.entries())
+    .map(([key, v]) => ({ key, label: v.label, count: v.count }))
+    .sort((a, b) => {
+      const ia = order.indexOf(a.key), ib = order.indexOf(b.key);
+      if (ia === -1 && ib === -1) return a.label.localeCompare(b.label, 'pt-BR');
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+}, [slots, activeDay, jById, proById]);
+
+
+const totalAvailable = useMemo(
+  () => daySummary.reduce((acc, x) => acc + x.count, 0),
+  [daySummary]
+);
+
 
   // primeiro slot disponível por profissão (sectionKey -> slotId)
   const firstAvailableBySection = useMemo(() => {
@@ -763,18 +803,26 @@ const KanbanAgenda: React.FC<Props> = ({
 
   // rolar até o card e destacar por 1.4s
   const scrollToAvailable = (sectionKey: string) => {
-    const slotId = firstAvailableBySection.get(sectionKey);
-    if (!slotId) return;
-    const el = document.getElementById(`slot-${slotId}`);
-    if (!el) return;
+  const slotId = firstAvailableBySection.get(sectionKey);
+  if (!slotId) return;
 
-    el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    el.classList.add('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
-    setTimeout(() => {
-       el.classList.remove('ring-2','ring-orange-400','ring-offset-2','ring-offset-orange-50');
-    }, 1400);
-  };
+  const root = document.getElementById(`slot-${slotId}`);
+  if (!root) return;
 
+  root.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+
+  // acende o anel laranja (overlay fora do card)
+  const hl = document.getElementById(`slot-hl-${slotId}`);
+  hl?.classList.add('opacity-100');
+  setTimeout(() => hl?.classList.remove('opacity-100'), 1400);
+
+  // zoom no conteúdo interno (segundo filho)
+  const inner = root.children.item(1) as HTMLElement | null;
+  inner?.classList.add('scale-[1.04]', 'shadow-lg', 'z-10');
+  setTimeout(() => inner?.classList.remove('scale-[1.04]', 'shadow-lg', 'z-10'), 500);
+};
+
+  
   const prosCountForDay = useMemo(
     () =>
       new Set(
@@ -808,30 +856,37 @@ const KanbanAgenda: React.FC<Props> = ({
         prosCount={prosCountForDay}
       />
 
-      {daySummary.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {/* total do dia */}
-          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-800 text-sm">
-            <span className="font-semibold">{totalAvailable}</span>
-            {totalAvailable === 1 ? 'vaga no dia' : 'vagas no dia'}
-          </span>
+ {/* Barra de resumo de vagas — sempre mostra o total; categorias só quando houver */}
+<div className="mb-3 flex flex-wrap items-center gap-2">
+  <span
+    className={[
+      "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
+      totalAvailable > 0
+        ? "border border-blue-200 bg-blue-50 text-blue-800"
+        : "border border-gray-200 bg-gray-50 text-gray-500"
+    ].join(" ")}
+    aria-disabled={totalAvailable === 0}
+  >
+    <span className="font-semibold tabular-nums">{totalAvailable}</span>
+    {totalAvailable === 1 ? "vaga no dia" : "vagas no dia"}
+  </span>
 
-          {/* por profissão (clicável) */}
-          {daySummary.map(item => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => scrollToAvailable(item.key)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm hover:bg-emerald-100 focus:outline-none"
-              title={`${item.count} ${item.count === 1 ? 'vaga' : 'vagas'} em ${item.label}`}
-            >
-              <span className="font-semibold">{item.count}</span>
-              {item.count === 1 ? 'vaga' : 'vagas'}
-              <span className="opacity-70">• {item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+  {daySummary
+    .filter((item) => item.count > 0)
+    .map((item) => (
+      <button
+        key={item.key}
+        type="button"
+        onClick={() => scrollToAvailable(item.key)}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm hover:bg-emerald-100"
+        title={`${item.count} ${item.count === 1 ? "vaga" : "vagas"} em ${item.label}`}
+      >
+        <span className="font-semibold tabular-nums">{item.count}</span>
+        {item.count === 1 ? "vaga" : "vagas"}
+        <span className="opacity-70">• {item.label}</span>
+      </button>
+    ))}
+</div>
 
       {sections.length === 0 && (
         <div className="text-center text-gray-500 py-16">
@@ -945,7 +1000,8 @@ const KanbanAgenda: React.FC<Props> = ({
 
                     {/* Carrossel de slots */}
                     <div className="mt-2 -mx-1 overflow-x-auto no-scrollbar">
-                      <div className="flex items-stretch gap-3 px-1 pr-3 snap-x snap-mandatory">
+                      <div className="flex items-stretch gap-3 px-1 pr-3 snap-x snap-mandatory overflow-visible">
+
                         {(g.slots || []).map((s) => {
                           const jId = s?.journeyId || j?.id;
                           const st = String(s?.status || '').toLowerCase();
@@ -976,32 +1032,40 @@ const KanbanAgenda: React.FC<Props> = ({
                           const elapsed = isRunning ? getElapsedMin(s) : undefined;
 
                           return (
-                            <div id={`slot-${s.id}`} key={s.id} className="snap-start rounded-xl transition-shadow">
-                              <MiniSlotCard
-                                slot={s}
-                                isPast={isPast}
-                                isSoon={isSoon}
-                                isRunning={isRunning}
-                                elapsedMin={elapsed}
-                                onSchedule={onSchedulePatient}
-                                onEdit={() => {
-                                  if (isAvailable) {
-                                    if (jId) onEditJourney(jId);
-                                  } else {
-                                    onEditPatient(s.id);
-                                  }
-                                }}
-                                onStart={handleStartLocal}
-                                onFinish={askFinish}
-                                onCancel={handleCancelLocal}
-                                onNoShow={handleNoShowLocal}
-                                onDelete={() => {
-                                  if (jId) onDeleteJourney(jId);
-                                }}
-                                professionalName={pro?.name || 'Profissional'}
-                              />
-                            </div>
-                          );
+  <div id={`slot-${s.id}`} key={s.id} className="relative snap-start p-1">
+  {/* overlay do destaque agora fica dentro do padding (não corta) */}
+  <div
+    id={`slot-hl-${s.id}`}
+    className="pointer-events-none absolute inset-0 rounded-2xl ring-2 ring-orange-400 ring-offset-2 ring-offset-orange-50 opacity-0 transition-opacity duration-300"
+  />
+  {/* conteúdo que recebe o zoom */}
+  <div className="rounded-xl transition-[transform,box-shadow] duration-200 ease-out will-change-transform">
+    <MiniSlotCard
+      slot={s}
+      isPast={isPast}
+      isSoon={isSoon}
+      isRunning={isRunning}
+      elapsedMin={elapsed}
+      onSchedule={onSchedulePatient}
+      onEdit={() => {
+        if (isAvailable) {
+          if (jId) onEditJourney(jId);
+        } else {
+          onEditPatient(s.id);
+        }
+      }}
+      onStart={handleStartLocal}
+      onFinish={askFinish}
+      onCancel={handleCancelLocal}
+      onNoShow={handleNoShowLocal}
+      onDelete={() => { if (jId) onDeleteJourney(jId); }}
+      professionalName={pro?.name || 'Profissional'}
+    />
+  </div>
+</div>
+
+);
+
                         })}
                       </div>
                     </div>
