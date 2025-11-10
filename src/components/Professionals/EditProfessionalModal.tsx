@@ -70,6 +70,8 @@ export default function EditProfessionalModal({
   const [council, setCouncil] = useState('CRM');
   const [regNumber, setRegNumber] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);       // <- NOVO
+  const [errorMsg, setErrorMsg] = useState<string>('');  // <- NOVO
 
   // Deriva council/number a partir do registrationCode existente
   const initialCouncil = useMemo(() => {
@@ -90,6 +92,8 @@ export default function EditProfessionalModal({
     setPhone(formatBRCell(professional.phone ?? ''));
     setCouncil(initialCouncil);
     setRegNumber(initialReg);
+    setErrorMsg('');
+    setDeleting(false);
   }, [isOpen, professional, initialCouncil, initialReg]);
 
   if (!isOpen || !professional) return null;
@@ -99,7 +103,7 @@ export default function EditProfessionalModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const phoneDigits = onlyDigits(phone);
-    if (phone && !isValidCell(phone)) return; // validação simples no campo
+    if (phone && !isValidCell(phone)) return;
 
     setSaving(true);
     try {
@@ -107,11 +111,31 @@ export default function EditProfessionalModal({
         name: name.trim() || professional.name,
         phone: phoneDigits,
         registrationCode: `${council.toUpperCase()} - ${regNumber.trim()}`,
-        specialty, // mantém em sincronia com o conselho
+        specialty,
       });
       onClose();
     } finally {
       setSaving(false);
+    }
+  };
+
+  // <- NOVO: aguarda o onDelete, mostra erro, fecha apenas no sucesso
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setErrorMsg('');
+    setDeleting(true);
+    try {
+      await onDelete(professional.id);
+      onClose();
+    } catch (e: any) {
+      const msg =
+        e?.message ||
+        e?.error?.message ||
+        'Não foi possível excluir. Verifique a conexão/RLS/relacionamentos.';
+      setErrorMsg(msg);
+      console.error('[delete professional]', e);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -132,7 +156,7 @@ export default function EditProfessionalModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              disabled={saving}
+              disabled={saving || deleting}
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
             />
           </div>
@@ -158,7 +182,7 @@ export default function EditProfessionalModal({
             <input
               value={phone}
               onChange={(e) => setPhone(formatBRCell(e.target.value))}
-              disabled={saving}
+              disabled={saving || deleting}
               className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
                 phone && !isValidCell(phone)
                   ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
@@ -174,7 +198,7 @@ export default function EditProfessionalModal({
               <select
                 value={council}
                 onChange={(e) => setCouncil(e.target.value)}
-                disabled={saving}
+                disabled={saving || deleting}
                 className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               >
                 {Object.keys(COUNCIL_TO_PROFESSION).map(c => (
@@ -185,7 +209,7 @@ export default function EditProfessionalModal({
               <input
                 value={regNumber}
                 onChange={(e) => setRegNumber(e.target.value)}
-                disabled={saving}
+                disabled={saving || deleting}
                 className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
                 placeholder="número (ex.: 26465 / SP)"
               />
@@ -199,7 +223,7 @@ export default function EditProfessionalModal({
             </div>
           </div>
 
-          {/* Profissão/Especialidade — TRAVADO (auto) */}
+          {/* Profissão/Especialidade — travado */}
           <div>
             <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
             <input
@@ -211,12 +235,19 @@ export default function EditProfessionalModal({
             <p className="mt-1 text-xs text-gray-400">Atualizado automaticamente pela sigla do conselho.</p>
           </div>
 
+          {/* Erro de exclusão (se houver) */}
+          {errorMsg && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMsg}
+            </div>
+          )}
+
           <div className="flex gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
               className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
-              disabled={saving}
+              disabled={saving || deleting}
             >
               Cancelar
             </button>
@@ -226,7 +257,7 @@ export default function EditProfessionalModal({
                 type="button"
                 onClick={() => onArchive(professional.id)}
                 className="flex-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-amber-800 hover:bg-amber-100"
-                disabled={saving}
+                disabled={saving || deleting}
               >
                 Arquivar
               </button>
@@ -234,7 +265,7 @@ export default function EditProfessionalModal({
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || deleting}
               className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {saving ? 'Salvando…' : 'Salvar'}
@@ -245,11 +276,11 @@ export default function EditProfessionalModal({
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => onDelete(professional.id)}
-                className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100"
-                disabled={saving}
+                onClick={handleDelete}                 // <- usar handler com await/erros
+                className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100 disabled:opacity-70"
+                disabled={saving || deleting}
               >
-                Excluir (admin)
+                {deleting ? 'Excluindo…' : 'Excluir (admin)'}
               </button>
             </div>
           )}
