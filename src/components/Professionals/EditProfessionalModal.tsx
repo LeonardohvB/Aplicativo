@@ -70,8 +70,8 @@ export default function EditProfessionalModal({
   const [council, setCouncil] = useState('CRM');
   const [regNumber, setRegNumber] = useState('');
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);       // <- NOVO
-  const [errorMsg, setErrorMsg] = useState<string>('');  // <- NOVO
+  const [deleting, setDeleting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
   // Deriva council/number a partir do registrationCode existente
   const initialCouncil = useMemo(() => {
@@ -96,6 +96,20 @@ export default function EditProfessionalModal({
     setDeleting(false);
   }, [isOpen, professional, initialCouncil, initialReg]);
 
+  // 🔒 Travar scroll do body enquanto o modal está aberto (inclusive iOS)
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    const prevPos = document.body.style.position;
+    document.body.style.overflow = 'hidden';
+    // ajuda no iOS para evitar “scroll leak”
+    document.body.style.position = 'relative';
+    return () => {
+      document.body.style.overflow = prev;
+      document.body.style.position = prevPos;
+    };
+  }, [isOpen]);
+
   if (!isOpen || !professional) return null;
 
   const specialty = COUNCIL_TO_PROFESSION[council] ?? '';
@@ -119,7 +133,6 @@ export default function EditProfessionalModal({
     }
   };
 
-  // <- NOVO: aguarda o onDelete, mostra erro, fecha apenas no sucesso
   const handleDelete = async () => {
     if (!onDelete) return;
     setErrorMsg('');
@@ -140,151 +153,186 @@ export default function EditProfessionalModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Editar profissional</h2>
-          <button onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Fechar">
-            <X />
-          </button>
+    // Backdrop com scroll próprio e contenção de overscroll (fundo não rola)
+    <div
+      className="
+        fixed inset-0 z-50 bg-black/40 backdrop-blur-sm
+        overflow-y-auto overscroll-contain
+        p-4
+      "
+    >
+      {/* Wrapper para centralizar e respeitar safe-areas */}
+      <div
+        className="
+          min-h-[100svh] flex items-start justify-center
+          pt-[max(12px,env(safe-area-inset-top))]
+          pb-[max(12px,env(safe-area-inset-bottom))]
+        "
+      >
+        {/* Card rolável se ficar alto */}
+        <div
+          className="
+            w-full max-w-md rounded-xl bg-white shadow-xl
+            max-h-[85svh] overflow-y-auto
+            touch-pan-y
+          "
+        >
+          <div className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Editar profissional</h2>
+              <button
+                onClick={onClose}
+                className="rounded p-1 hover:bg-gray-100"
+                aria-label="Fechar"
+              >
+                <X />
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="space-y-4">
+              {/* Nome */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Nome</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={saving || deleting}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+
+              {/* CPF (somente leitura) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">CPF</label>
+                <input
+                  value={formatCPF(professional.cpf ?? '')}
+                  readOnly
+                  disabled
+                  className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
+                  placeholder="—"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Este CPF não pode ser alterado após o cadastro.
+                </p>
+              </div>
+
+              {/* Telefone */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Telefone</label>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(formatBRCell(e.target.value))}
+                  disabled={saving || deleting}
+                  className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
+                    phone && !isValidCell(phone)
+                      ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
+                      : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
+                  }`}
+                />
+              </div>
+
+              {/* Registro Profissional */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Registro Profissional (obrigatório)
+                </label>
+                <div className="mt-1 flex gap-2">
+                  <select
+                    value={council}
+                    onChange={(e) => setCouncil(e.target.value)}
+                    disabled={saving || deleting}
+                    className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+                  >
+                    {Object.keys(COUNCIL_TO_PROFESSION).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    value={regNumber}
+                    onChange={(e) => setRegNumber(e.target.value)}
+                    disabled={saving || deleting}
+                    className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+                    placeholder="número (ex.: 26465 / SP)"
+                  />
+                </div>
+
+                <div className="mt-1 text-xs text-gray-500">
+                  Pré-visualização:{' '}
+                  <span className="font-medium text-gray-700">
+                    {council.toUpperCase()} - {regNumber || '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Profissão/Especialidade — travado */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
+                <input
+                  value={COUNCIL_TO_PROFESSION[council] ?? ''}
+                  readOnly
+                  disabled
+                  className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Atualizado automaticamente pela sigla do conselho.
+                </p>
+              </div>
+
+              {/* Erro de exclusão (se houver) */}
+              {errorMsg && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
+                  disabled={saving || deleting}
+                >
+                  Cancelar
+                </button>
+
+                {onArchive && (
+                  <button
+                    type="button"
+                    onClick={() => onArchive(professional.id)}
+                    className="flex-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-amber-800 hover:bg-amber-100"
+                    disabled={saving || deleting}
+                  >
+                    Arquivar
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={saving || deleting}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+
+              {onDelete && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100 disabled:opacity-70"
+                    disabled={saving || deleting}
+                  >
+                    {deleting ? 'Excluindo…' : 'Excluir (admin)'}
+                  </button>
+                </div>
+              )}
+            </form>
+          </div>
         </div>
-
-        <form onSubmit={handleSave} className="space-y-4">
-          {/* Nome */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Nome</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={saving || deleting}
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-            />
-          </div>
-
-          {/* CPF (somente leitura) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">CPF</label>
-            <input
-              value={formatCPF(professional.cpf ?? '')}
-              readOnly
-              disabled
-              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
-              placeholder="—"
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              Este CPF não pode ser alterado após o cadastro.
-            </p>
-          </div>
-
-          {/* Telefone */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Telefone</label>
-            <input
-              value={phone}
-              onChange={(e) => setPhone(formatBRCell(e.target.value))}
-              disabled={saving || deleting}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 ${
-                phone && !isValidCell(phone)
-                  ? 'border-red-400 focus:border-red-500 focus:ring-red-200'
-                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200'
-              }`}
-            />
-          </div>
-
-          {/* Registro Profissional */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Registro Profissional (obrigatório)</label>
-            <div className="mt-1 flex gap-2">
-              <select
-                value={council}
-                onChange={(e) => setCouncil(e.target.value)}
-                disabled={saving || deleting}
-                className="w-[44%] rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-              >
-                {Object.keys(COUNCIL_TO_PROFESSION).map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-
-              <input
-                value={regNumber}
-                onChange={(e) => setRegNumber(e.target.value)}
-                disabled={saving || deleting}
-                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-                placeholder="número (ex.: 26465 / SP)"
-              />
-            </div>
-
-            <div className="mt-1 text-xs text-gray-500">
-              Pré-visualização:{' '}
-              <span className="font-medium text-gray-700">
-                {council.toUpperCase()} - {regNumber || '—'}
-              </span>
-            </div>
-          </div>
-
-          {/* Profissão/Especialidade — travado */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Profissão/Especialidade</label>
-            <input
-              value={specialty}
-              readOnly
-              disabled
-              className="mt-1 w-full rounded-lg border px-3 py-2 bg-gray-100 text-gray-700 cursor-not-allowed"
-            />
-            <p className="mt-1 text-xs text-gray-400">Atualizado automaticamente pela sigla do conselho.</p>
-          </div>
-
-          {/* Erro de exclusão (se houver) */}
-          {errorMsg && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {errorMsg}
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50"
-              disabled={saving || deleting}
-            >
-              Cancelar
-            </button>
-
-            {onArchive && (
-              <button
-                type="button"
-                onClick={() => onArchive(professional.id)}
-                className="flex-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-amber-800 hover:bg-amber-100"
-                disabled={saving || deleting}
-              >
-                Arquivar
-              </button>
-            )}
-
-            <button
-              type="submit"
-              disabled={saving || deleting}
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {saving ? 'Salvando…' : 'Salvar'}
-            </button>
-          </div>
-
-          {onDelete && (
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleDelete}                 // <- usar handler com await/erros
-                className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-red-700 hover:bg-red-100 disabled:opacity-70"
-                disabled={saving || deleting}
-              >
-                {deleting ? 'Excluindo…' : 'Excluir (admin)'}
-              </button>
-            </div>
-          )}
-        </form>
       </div>
     </div>
   );
