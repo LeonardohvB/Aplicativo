@@ -405,7 +405,7 @@ export default function Profile({ onBack }: Props) {
         <div className="w-[64px]" />
       </div>
 
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-6 max-w-xl mx-auto">
+<div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-6 w-full max-w-6xl mx-auto">
         {/* ===== Dados do usuário ===== */}
         <section>
           <h2 className="text-sm font-semibold text-slate-600 mb-3">Dados do usuário</h2>
