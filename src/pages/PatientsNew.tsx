@@ -381,485 +381,455 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
   };
 
   /* ==================== Render (full-screen) ==================== */
- return (
-  <div className="min-h-screen bg-gray-50 flex flex-col">
-    {/* VOLTAR - fora do card, estilo Perfil */}
-    <div className="sticky top-0 z-20 bg-transparent px-4 pt-4">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
-        aria-label="Voltar"
-      >
-        <ChevronLeft className="h-5 w-5" />
-        <span className="font-medium">Voltar</span>
-      </button>
-    </div>
-        {/* CARD central — mesma largura do Histórico */}
-    <div className="w-full max-w-[1120px] mx-auto px-4 pb-20">
-      <div className="rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* VOLTAR - fora do card, estilo Perfil */}
+      <div className="sticky top-0 z-20 bg-transparent px-4 pt-4">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
+          aria-label="Voltar"
+        >
+          <ChevronLeft className="h-5 w-5" />
+          <span className="font-medium">Voltar</span>
+        </button>
+      </div>
 
-
-      {/* WRAPPER PARA IGUALAR A LARGURA DO HISTÓRICO */}
-      <div className="mx-auto w-full max-w-5xl px-4 md:px-6">
-
-               {/* HEADER do card (sem o Voltar) */}
-        <header className="border-b">
-          {/* Título centralizado */}
-          <div className="px-4 sm:px-6 py-4 text-center">
-            <h1 className="text-base sm:text-lg font-semibold text-slate-900">
-              {mode === "create" && "Cadastrar Paciente"}
-              {mode === "search" && "Buscar / Editar Paciente"}
-              {mode === "list"   && "Lista de Pacientes"}
-              {mode === "view"   && "Informações do Paciente"}
-              {mode === "edit"   && "Editar Paciente"}
-            </h1>
-          </div>
-
-          {/* Abas (desktop) */}
-          {mode !== "edit" && mode !== "view" && (
-            <div className="px-4 sm:px-6 pb-3 hidden sm:flex gap-2 flex-wrap">
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("create")}
-              >
-                Cadastrar
-              </button>
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("search")}
-              >
-                Buscar / Editar
-              </button>
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("list")}
-              >
-                Lista
-              </button>
-            </div>
-          )}
-
-          {/* Abas (mobile) */}
-          {mode !== "edit" && mode !== "view" && (
-            <div className="px-4 sm:px-6 pb-3 sm:hidden flex gap-2">
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("create")}
-              >
-                Cadastrar
-              </button>
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("search")}
-              >
-                Buscar / Editar
-              </button>
-              <button
-                className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-                onClick={() => setMode("list")}
-              >
-                Lista
-              </button>
-            </div>
-          )}
-        </header>
-
-
-        {/* Abinhas em telas pequenas (mobile) */}
-        {mode !== "edit" && mode !== "view" && (
-          <div className="sm:hidden p-3 border-b flex gap-2">
-            <button
-              className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-              onClick={() => setMode("create")}
-            >
-              Cadastrar
-            </button>
-            <button
-              className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-              onClick={() => setMode("search")}
-            >
-              Buscar / Editar
-            </button>
-            <button
-              className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
-              onClick={() => setMode("list")}
-            >
-              Lista
-            </button>
-          </div>
-        )}
-
-        {/* Erro global */}
-        {errors._global && (
-          <div className="mx-4 mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="polite">
-            {errors._global}
-          </div>
-        )}
-
-        {/* Conteúdo */}
-        <div className={`flex-1 overflow-y-auto p-4 ${shake ? "animate-input-shake" : ""}`}>
-          {/* CREATE */}
-          {mode === "create" && (
-            <form onSubmit={onSubmitCreate} noValidate className="space-y-4" autoComplete="off">
-              {/* Nome */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nome *</label>
-                <input
-                  value={name}
-                  onChange={(e) => { setName(titleLive(e.target.value)); if (errors.name) setErrors(s => ({...s, name: ""})); }}
-                  onBlur={() => { setTouched(t => ({...t, name: true})); setName(v => titleFinal(v)); }}
-                  className={inputClass(!!(touched.name && errors.name))}
-                  aria-invalid={!!(touched.name && errors.name)}
-                  placeholder="Nome completo"
-                />
-                {touched.name && errors.name && (
-                  <p className="mt-1 text-xs text-red-600">{errors.name}</p>
-                )}
+      {/* CARD central — mesma largura do Histórico */}
+      <div className="w-full max-w-[1120px] mx-auto px-4 pb-20">
+        <div className="rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+          {/* WRAPPER PARA IGUALAR A LARGURA DO HISTÓRICO */}
+          <div className="mx-auto w-full max-w-5xl px-4 md:px-6">
+            {/* HEADER do card (sem o Voltar) */}
+            <header className="border-b">
+              {/* Título centralizado */}
+              <div className="px-4 sm:px-6 py-4 text-center">
+                <h1 className="text-base sm:text-lg font-semibold text-slate-900">
+                  {mode === "create" && "Cadastrar Paciente"}
+                  {mode === "search" && "Buscar / Editar Paciente"}
+                  {mode === "list"   && "Lista de Pacientes"}
+                  {mode === "view"   && "Informações do Paciente"}
+                  {mode === "edit"   && "Editar Paciente"}
+                </h1>
               </div>
 
-              {/* CPF */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">CPF *</label>
-                <input
-                  value={formatCPF(cpf)}
-                  onChange={(e) => {
-                    const digits = onlyDigits(e.target.value).slice(0, 11);
-                    setCPF(digits);
-                    if (errors.cpf) setErrors(s => ({...s, cpf: ""}));
-                    if (cpfTimer.current) window.clearTimeout(cpfTimer.current);
-                    cpfTimer.current = window.setTimeout(async () => {
-                      if (digits.length === 11 && isValidCPF(digits)) {
-                        const { data } = await supabase.from("patients").select("id").eq("cpf", digits).limit(1);
-                        const exists = Array.isArray(data) && data.length > 0;
-                        setErrors(s => ({ ...s, cpf: exists ? "CPF já cadastrado." : "" }));
-                      }
-                    }, 350);
-                  }}
-                  maxLength={14}
-                  className={inputClass(!!(touched.cpf && (!cpfOk || !!errors.cpf)))}
-                  placeholder="000.000.000-00"
-                  inputMode="numeric"
-                  aria-invalid={touched.cpf && (!cpfOk || !!errors.cpf)}
-                  onBlur={() => setTouched(t => ({...t, cpf: true}))}
-                />
-                {touched.cpf && !cpfOk && !errors.cpf && <p className="mt-1 text-xs text-red-600">CPF inválido.</p>}
-                {errors.cpf && <p className="mt-1 text-xs text-red-600">{errors.cpf}</p>}
-              </div>
-
-              {/* Data de Nascimento — OBRIGATÓRIA */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Data de Nascimento *</label>
-                <input
-                  value={formatBRDate(birthDate)}
-                  onChange={(e) => { setBirthDate(formatBRDate(e.target.value)); if (errors.birthDate) setErrors(s => ({...s, birthDate: ""})); }}
-                  onBlur={() => setTouched(t => ({...t, birthDate: true}))}
-                  placeholder="DD/MM/AAAA"
-                  inputMode="numeric"
-                  maxLength={10}
-                  aria-invalid={!!(touched.birthDate && errors.birthDate)}
-                  className={inputClass(!!(touched.birthDate && errors.birthDate))}
-                />
-                {touched.birthDate && errors.birthDate && <p className="mt-1 text-xs text-red-600">{errors.birthDate}</p>}
-              </div>
-
-              {/* Telefone — OBRIGATÓRIO */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Telefone *</label>
-                <input
-                  value={formatBRCell(phone)}
-                  onChange={(e) => { setPhone(onlyDigits(e.target.value).slice(0,11)); if (errors.phone) setErrors(s => ({...s, phone: ""})); }}
-                  className={inputClass(!!(touched.phone && (!phoneOk || !!errors.phone)))}
-                  aria-invalid={touched.phone && (!phoneOk || !!errors.phone)}
-                  placeholder="(11) 9 9999-9999"
-                  inputMode="numeric"
-                  maxLength={17}
-                  onBlur={() => setTouched(t => ({...t, phone: true}))}
-                />
-                {touched.phone && !phoneOk && <p className="mt-1 text-xs text-red-600">Telefone obrigatório.</p>}
-              </div>
-
-              {/* E-mail (opcional) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">E-mail (opcional)</label>
-                <input
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (errors.email) setErrors(s => ({...s, email: ""})); }}
-                  className={inputClass(!!errors.email)}
-                  aria-invalid={!!errors.email}
-                  placeholder="email@exemplo.com"
-                  type="email"
-                />
-                {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-              </div>
-
-              {/* Ações */}
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={onBack} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60">
-                  {loading ? "Salvando…" : "Salvar"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* SEARCH */}
-          {mode === "search" && (
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={q}
-                  onChange={(e) => onQueryChange(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-9 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  placeholder="Buscar por nome ou CPF"
-                />
-              </div>
-
-              {searching && <p className="text-sm text-gray-500">Buscando…</p>}
-
-              <ul className="divide-y divide-gray-100 rounded-lg border">
-                {results.map((p) => (
-                  <li
-                    key={p.id}
-                    className="cursor-pointer px-3 py-2 hover:bg-gray-50"
-                    onClick={() => {
-                      editOriginRef.current = "search";
-                      setEditing(p);
-                      setName(p.name);
-                      setCPF(p.cpf);
-                      setPhone(p.phone || "");
-                      setEmail(p.email || "");
-                      setBirthDate(isoToBRDate(p.birth_date));
-                      setErrors({});
-                      setMode("edit");
-                    }}
+              {/* Abas (desktop) */}
+              {mode !== "edit" && mode !== "view" && (
+                <div className="px-4 sm:px-6 pb-3 hidden sm:flex gap-2 flex-wrap">
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("create")}
                   >
-                    <div className="font-medium text-gray-900">{p.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {formatCPF(p.cpf)} {p.phone ? `· ${formatBRCell(p.phone)}` : ""}
-                    </div>
-                  </li>
-                ))}
-                {results.length === 0 && !searching && (
-                  <li className="px-3 py-4 text-sm text-gray-500">
-                    {q.trim().length === 0 ? "Digite para buscar." : "Nenhum resultado."}
-                  </li>
-                )}
-              </ul>
-            </div>
-          )}
+                    Cadastrar
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("search")}
+                  >
+                    Buscar / Editar
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("list")}
+                  >
+                    Lista
+                  </button>
+                </div>
+              )}
 
-          {/* LISTA */}
-          {mode === "list" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <span>Pacientes cadastrados</span>
-                <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gray-200 px-1 text-xs text-gray-700">
-                  {typeof listCount === "number" ? listCount : "—"}
-                </span>
+              {/* Abas (mobile) – ÚNICO BLOCO (mantido) */}
+              {mode !== "edit" && mode !== "view" && (
+                <div className="px-4 sm:px-6 pb-3 sm:hidden flex gap-2">
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "create" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("create")}
+                  >
+                    Cadastrar
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "search" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("search")}
+                  >
+                    Buscar / Editar
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-lg ${mode === "list" ? "bg-blue-600 text-white" : "border hover:bg-slate-50"}`}
+                    onClick={() => setMode("list")}
+                  >
+                    Lista
+                  </button>
+                </div>
+              )}
+            </header>
+
+            {/* Erro global */}
+            {errors._global && (
+              <div className="mx-4 mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert" aria-live="polite">
+                {errors._global}
               </div>
+            )}
 
-              <div ref={listBoxRef} className="max-h-[60vh] overflow-y-auto rounded-lg border">
-                <ul className="divide-y divide-gray-100">
-                  {results.map((p) => (
-                    <li
-                      key={p.id}
-                      className="cursor-pointer px-3 py-3 hover:bg-gray-50"
-                      onClick={() => {
-                        // guarda scroll e abre modo de visualização
-                        listScrollRef.current = listBoxRef.current?.scrollTop || 0;
-                        setViewing(p);
-                        setMode("view");
+            {/* Conteúdo */}
+            <div className={`flex-1 overflow-y-auto p-4 ${shake ? "animate-input-shake" : ""}`}>
+              {/* CREATE */}
+              {mode === "create" && (
+                <form onSubmit={onSubmitCreate} noValidate className="space-y-4" autoComplete="off">
+                  {/* Nome */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Nome *</label>
+                    <input
+                      value={name}
+                      onChange={(e) => { setName(titleLive(e.target.value)); if (errors.name) setErrors(s => ({...s, name: ""})); }}
+                      onBlur={() => { setTouched(t => ({...t, name: true})); setName(v => titleFinal(v)); }}
+                      className={inputClass(!!(touched.name && errors.name))}
+                      aria-invalid={!!(touched.name && errors.name)}
+                      placeholder="Nome completo"
+                    />
+                    {touched.name && errors.name && (
+                      <p className="mt-1 text-xs text-red-600">{errors.name}</p>
+                    )}
+                  </div>
+
+                  {/* CPF */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">CPF *</label>
+                    <input
+                      value={formatCPF(cpf)}
+                      onChange={(e) => {
+                        const digits = onlyDigits(e.target.value).slice(0, 11);
+                        setCPF(digits);
+                        if (errors.cpf) setErrors(s => ({...s, cpf: ""}));
+                        if (cpfTimer.current) window.clearTimeout(cpfTimer.current);
+                        cpfTimer.current = window.setTimeout(async () => {
+                          if (digits.length === 11 && isValidCPF(digits)) {
+                            const { data } = await supabase.from("patients").select("id").eq("cpf", digits).limit(1);
+                            const exists = Array.isArray(data) && data.length > 0;
+                            setErrors(s => ({ ...s, cpf: exists ? "CPF já cadastrado." : "" }));
+                          }
+                        }, 350);
                       }}
+                      maxLength={14}
+                      className={inputClass(!!(touched.cpf && (!cpfOk || !!errors.cpf)))}
+                      placeholder="000.000.000-00"
+                      inputMode="numeric"
+                      aria-invalid={touched.cpf && (!cpfOk || !!errors.cpf)}
+                      onBlur={() => setTouched(t => ({...t, cpf: true}))}
+                    />
+                    {touched.cpf && !cpfOk && !errors.cpf && <p className="mt-1 text-xs text-red-600">CPF inválido.</p>}
+                    {errors.cpf && <p className="mt-1 text-xs text-red-600">{errors.cpf}</p>}
+                  </div>
+
+                  {/* Data de Nascimento — OBRIGATÓRIA */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Data de Nascimento *</label>
+                    <input
+                      value={formatBRDate(birthDate)}
+                      onChange={(e) => { setBirthDate(formatBRDate(e.target.value)); if (errors.birthDate) setErrors(s => ({...s, birthDate: ""})); }}
+                      onBlur={() => setTouched(t => ({...t, birthDate: true}))}
+                      placeholder="DD/MM/AAAA"
+                      inputMode="numeric"
+                      maxLength={10}
+                      aria-invalid={!!(touched.birthDate && errors.birthDate)}
+                      className={inputClass(!!(touched.birthDate && errors.birthDate))}
+                    />
+                    {touched.birthDate && errors.birthDate && <p className="mt-1 text-xs text-red-600">{errors.birthDate}</p>}
+                  </div>
+
+                  {/* Telefone — OBRIGATÓRIO */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Telefone *</label>
+                    <input
+                      value={formatBRCell(phone)}
+                      onChange={(e) => { setPhone(onlyDigits(e.target.value).slice(0,11)); if (errors.phone) setErrors(s => ({...s, phone: ""})); }}
+                      className={inputClass(!!(touched.phone && (!phoneOk || !!errors.phone)))}
+                      aria-invalid={touched.phone && (!phoneOk || !!errors.phone)}
+                      placeholder="(11) 9 9999-9999"
+                      inputMode="numeric"
+                      maxLength={17}
+                      onBlur={() => setTouched(t => ({...t, phone: true}))}
+                    />
+                    {touched.phone && !phoneOk && <p className="mt-1 text-xs text-red-600">Telefone obrigatório.</p>}
+                  </div>
+
+                  {/* E-mail (opcional) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">E-mail (opcional)</label>
+                    <input
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); if (errors.email) setErrors(s => ({...s, email: ""})); }}
+                      className={inputClass(!!errors.email)}
+                      aria-invalid={!!errors.email}
+                      placeholder="email@exemplo.com"
+                      type="email"
+                    />
+                    {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+                  </div>
+
+                  {/* Ações */}
+                  <div className="flex gap-2 pt-2">
+                    <button type="button" onClick={onBack} className="flex-1 rounded-lg border px-4 py-2 hover:bg-gray-50">
+                      Cancelar
+                    </button>
+                    <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60">
+                      {loading ? "Salvando…" : "Salvar"}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* SEARCH */}
+              {mode === "search" && (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      value={q}
+                      onChange={(e) => onQueryChange(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-9 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      placeholder="Buscar por nome ou CPF"
+                    />
+                  </div>
+
+                  {searching && <p className="text-sm text-gray-500">Buscando…</p>}
+
+                  <ul className="divide-y divide-gray-100 rounded-lg border">
+                    {results.map((p) => (
+                      <li
+                        key={p.id}
+                        className="cursor-pointer px-3 py-2 hover:bg-gray-50"
+                        onClick={() => {
+                          editOriginRef.current = "search";
+                          setEditing(p);
+                          setName(p.name);
+                          setCPF(p.cpf);
+                          setPhone(p.phone || "");
+                          setEmail(p.email || "");
+                          setBirthDate(isoToBRDate(p.birth_date));
+                          setErrors({});
+                          setMode("edit");
+                        }}
+                      >
+                        <div className="font-medium text-gray-900">{p.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {formatCPF(p.cpf)} {p.phone ? `· ${formatBRCell(p.phone)}` : ""}
+                        </div>
+                      </li>
+                    ))}
+                    {results.length === 0 && !searching && (
+                      <li className="px-3 py-4 text-sm text-gray-500">
+                        {q.trim().length === 0 ? "Digite para buscar." : "Nenhum resultado."}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* LISTA */}
+              {mode === "list" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Pacientes cadastrados</span>
+                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gray-200 px-1 text-xs text-gray-700">
+                      {typeof listCount === "number" ? listCount : "—"}
+                    </span>
+                  </div>
+
+                  <div ref={listBoxRef} className="max-h-[60vh] overflow-y-auto rounded-lg border">
+                    <ul className="divide-y divide-gray-100">
+                      {results.map((p) => (
+                        <li
+                          key={p.id}
+                          className="cursor-pointer px-3 py-3 hover:bg-gray-50"
+                          onClick={() => {
+                            // guarda scroll e abre modo de visualização
+                            listScrollRef.current = listBoxRef.current?.scrollTop || 0;
+                            setViewing(p);
+                            setMode("view");
+                          }}
+                        >
+                          <div className="font-medium text-gray-900">{p.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatCPF(p.cpf)} {p.phone ? ` · ${formatBRCell(p.phone)}` : ""}
+                          </div>
+                        </li>
+                      ))}
+                      {results.length === 0 && (
+                        <li className="px-3 py-4 text-sm text-gray-500">Nenhum paciente cadastrado.</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* VIEW */}
+              {mode === "view" && viewing && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Nome</label>
+                    <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">{viewing.name}</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">CPF</label>
+                    <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">{formatCPF(viewing.cpf)}</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Telefone</label>
+                    <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      {viewing.phone ? formatBRCell(viewing.phone) : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Data de Nascimento</label>
+                    <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      {isoToBRDate(viewing.birth_date) || "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">E-mail</label>
+                    <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      {viewing.email || "—"}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setMode("list"); /* scroll restaura via ref */ }}
+                      className="rounded-lg border px-4 py-2 hover:bg-gray-50"
                     >
-                      <div className="font-medium text-gray-900">{p.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {formatCPF(p.cpf)} {p.phone ? ` · ${formatBRCell(p.phone)}` : ""}
-                      </div>
-                    </li>
-                  ))}
-                  {results.length === 0 && (
-                    <li className="px-3 py-4 text-sm text-gray-500">Nenhum paciente cadastrado.</li>
-                  )}
-                </ul>
-              </div>
+                      Voltar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        editOriginRef.current = "view";
+                        setEditing(viewing);
+                        setName(viewing.name);
+                        setCPF(viewing.cpf);
+                        setPhone(viewing.phone || "");
+                        setEmail(viewing.email || "");
+                        setBirthDate(isoToBRDate(viewing.birth_date));
+                        setErrors({});
+                        setMode("edit");
+                      }}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                    >
+                      Editar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* EDIT */}
+              {mode === "edit" && editing && (
+                <form onSubmit={onSubmitEdit} className="space-y-4" noValidate>
+                  {/* CPF (somente leitura) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">CPF</label>
+                    <input
+                      value={formatCPF(editing.cpf)}
+                      disabled
+                      className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-gray-600"
+                    />
+                  </div>
+
+                  {/* Nome */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Nome *</label>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(titleLive(e.target.value))}
+                      onBlur={() => setName((v) => titleFinal(v))}
+                      className={inputClass(!!errors.name)}
+                      aria-invalid={!!errors.name}
+                    />
+                    {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+                  </div>
+
+                  {/* Telefone */}
+                  <div>
+                    <label className="block text sm font-medium text-gray-700">Telefone</label>
+                    <input
+                      value={formatBRCell(phone)}
+                      onChange={(e) => setPhone(onlyDigits(e.target.value).slice(0,11))}
+                      className={inputClass(!!errors.phone)}
+                      aria-invalid={!!errors.phone}
+                      inputMode="numeric"
+                      maxLength={17}
+                    />
+                    {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
+                  </div>
+
+                  {/* Data de Nascimento */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Data de Nascimento</label>
+                    <input
+                      value={formatBRDate(birthDate)}
+                      onChange={(e) => setBirthDate(formatBRDate(e.target.value))}
+                      placeholder="DD/MM/AAAA"
+                      inputMode="numeric"
+                      maxLength={10}
+                      className={inputClass(false)}
+                    />
+                  </div>
+
+                  {/* E-mail */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">E-mail (opcional)</label>
+                    <input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className={inputClass(!!errors.email)}
+                      aria-invalid={!!errors.email}
+                      type="email"
+                    />
+                    {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editOriginRef.current === "view") setMode("view");
+                        else setMode("search");
+                        setEditing(null);
+                      }}
+                      className="rounded-lg border px-4 py-2 hover:bg-gray-50"
+                    >
+                      Voltar
+                    </button>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={onDelete}
+                        disabled={loading}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-60"
+                        title="Excluir paciente"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Excluir
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        {loading ? "Salvando…" : "Salvar"}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
             </div>
-          )}
 
-          {/* VIEW */}
-          {mode === "view" && viewing && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nome</label>
-                <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">{viewing.name}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">CPF</label>
-                <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">{formatCPF(viewing.cpf)}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Telefone</label>
-                <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  {viewing.phone ? formatBRCell(viewing.phone) : "—"}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Data de Nascimento</label>
-                <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  {isoToBRDate(viewing.birth_date) || "—"}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">E-mail</label>
-                <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  {viewing.email || "—"}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setMode("list"); /* scroll restaura via ref */ }}
-                  className="rounded-lg border px-4 py-2 hover:bg-gray-50"
-                >
-                  Voltar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    editOriginRef.current = "view";
-                    setEditing(viewing);
-                    setName(viewing.name);
-                    setCPF(viewing.cpf);
-                    setPhone(viewing.phone || "");
-                    setEmail(viewing.email || "");
-                    setBirthDate(isoToBRDate(viewing.birth_date));
-                    setErrors({});
-                    setMode("edit");
-                  }}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-                >
-                  Editar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* EDIT */}
-          {mode === "edit" && editing && (
-            <form onSubmit={onSubmitEdit} className="space-y-4" noValidate>
-              {/* CPF (somente leitura) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">CPF</label>
-                <input
-                  value={formatCPF(editing.cpf)}
-                  disabled
-                  className="w-full cursor-not-allowed rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-gray-600"
-                />
-              </div>
-
-              {/* Nome */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nome *</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(titleLive(e.target.value))}
-                  onBlur={() => setName((v) => titleFinal(v))}
-                  className={inputClass(!!errors.name)}
-                  aria-invalid={!!errors.name}
-                />
-                {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
-              </div>
-
-              {/* Telefone */}
-              <div>
-                <label className="block text sm font-medium text-gray-700">Telefone</label>
-                <input
-                  value={formatBRCell(phone)}
-                  onChange={(e) => setPhone(onlyDigits(e.target.value).slice(0,11))}
-                  className={inputClass(!!errors.phone)}
-                  aria-invalid={!!errors.phone}
-                  inputMode="numeric"
-                  maxLength={17}
-                />
-                {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
-              </div>
-
-              {/* Data de Nascimento */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Data de Nascimento</label>
-                <input
-                  value={formatBRDate(birthDate)}
-                  onChange={(e) => setBirthDate(formatBRDate(e.target.value))}
-                  placeholder="DD/MM/AAAA"
-                  inputMode="numeric"
-                  maxLength={10}
-                  className={inputClass(false)}
-                />
-              </div>
-
-              {/* E-mail */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">E-mail (opcional)</label>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className={inputClass(!!errors.email)}
-                  aria-invalid={!!errors.email}
-                  type="email"
-                />
-                {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (editOriginRef.current === "view") setMode("view");
-                    else setMode("search");
-                    setEditing(null);
-                  }}
-                  className="rounded-lg border px-4 py-2 hover:bg-gray-50"
-                >
-                  Voltar
-                </button>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={onDelete}
-                    disabled={loading}
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-60"
-                    title="Excluir paciente"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Excluir
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
-                  >
-                    {loading ? "Salvando…" : "Salvar"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {/* animação leve para inputs com erro */}
-        <style>{`
-  /* Animação de entrada da página */
+            {/* animação leve para inputs com erro */}
+            <style>{`
   @keyframes pageIn {
     from { opacity: 0; transform: translateY(12px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-
-  /* Você já tinha esta aqui para chacoalhar inputs com erro */
   @keyframes input-shake {
     0% { transform: translateX(0); }
     25% { transform: translateX(-2px); }
@@ -869,10 +839,9 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
   }
   .animate-input-shake { animation: input-shake .2s linear 1; }
 `}</style>
-</div>
-</div>
-
-      </div>{/* fim do wrapper max-w-5xl */}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
