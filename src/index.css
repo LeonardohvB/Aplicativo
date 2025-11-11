@@ -8,11 +8,12 @@
 /* Altura padrão da BottomNavigation; ajuste se necessário */
 :root {
   --tabbar-h: 0px; /* ↓ menor para reduzir o “vão” externo */
+  --safe-top-extra: 8px; /* folga adicional no topo */
 }
 
 /* Utilitários opcionais */
 @layer utilities {
-  .pt-safe { padding-top: calc(env(safe-area-inset-top) + 8px); }
+  .pt-safe { padding-top: calc(env(safe-area-inset-top) + var(--safe-top-extra)); }
   .pb-safe { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
 }
 
@@ -91,13 +92,16 @@ body {
 #root { height: 100%; }
 
 /* ================== CONTAINER QUE ROLA A PÁGINA ================== */
-/* ✅ Padrão: só a safe-area inferior (sem TabBar) */
+/* ✅ Padrão: safe-area superior + inferior (sem TabBar) */
 .app-viewport {
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   background-color: #f9fafb;
+
+  /* NOVO: empurra o conteúdo abaixo do notch/status bar globalmente */
+  padding-top: calc(env(safe-area-inset-top) + var(--safe-top-extra));
 
   padding-bottom: env(safe-area-inset-bottom);
 }
