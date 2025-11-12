@@ -94,7 +94,7 @@ export default function AddProfessionalModal({
   onAdd,
 }: AddProfessionalModalProps) {
   const [name, setName] = useState('');
-  const [cpf, setCpf] = useState(''); // <- NOVO
+  const [cpf, setCpf] = useState('');
   const [specialty, setSpecialty] = useState(''); // <- preenchido automaticamente
   const [phone, setPhone] = useState('');
 
@@ -128,6 +128,19 @@ export default function AddProfessionalModal({
       setCouncil('CRM'); setCustomCouncil(''); setRegNumber('');
       setCommissionRate(''); setErrors({}); setShake(false); setSaving(false);
     }
+  }, [isOpen]);
+
+  // 🔒 Bloqueia o scroll do body quando o modal está aberto (iOS-friendly)
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const originalPosition = document.body.style.position;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.position = originalPosition;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -170,19 +183,17 @@ export default function AddProfessionalModal({
     try {
       await onAdd({
         name: name.trim(),
-        cpf: onlyDigits(cpf),          // envia apenas dígitos
-        specialty: specialty,
+        cpf: onlyDigits(cpf),
+        specialty,
         phone: phoneDigits,
         registrationCode,
         commissionRate: commissionRate === '' ? undefined : Number(commissionRate),
       });
       onClose();
     } catch (err: any) {
-      // trata erros vindos do hook (CPF duplicado, etc.)
       const msg: string = err?.message || String(err) || 'Erro ao salvar.';
       const normalized = msg.toLowerCase();
 
-      // mensagens possíveis: nossa (CPF já cadastrado) ou do Postgres (índice único)
       if (normalized.includes('cpf já está cadastrado') ||
           normalized.includes('duplicado') ||
           normalized.includes('duplicate key') ||
@@ -201,10 +212,12 @@ export default function AddProfessionalModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className={`w-full max-w-md rounded-xl bg-white p-5 shadow-xl ${shake ? 'animate-shake' : ''}`}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 overscroll-contain">
+      <div
+        className={`w-full max-w-md max-h-[min(680px,calc(100vh-24px))] overflow-y-auto rounded-xl bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-xl ${shake ? 'animate-shake' : ''}`}
+      >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Adicionar profissional</h2>
+          <h2 className="text-lg font-semibold">Cadastrar profissional</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-gray-100" aria-label="Fechar">
             <X />
           </button>
@@ -373,7 +386,7 @@ export default function AddProfessionalModal({
           )}
 
           {/* Ações */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 sticky bottom-0 bg-white/95 backdrop-blur-sm pb-2 pt-3">
             <button
               type="button"
               onClick={onClose}
