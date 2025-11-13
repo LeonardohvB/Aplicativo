@@ -223,9 +223,12 @@ const ConsultasDeHoje: React.FC<Props> = ({ onGotoSchedule }) => {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
-                      Nenhuma consulta para hoje
-                    </td>
+                    <td colSpan={6} className="p-0">
+  <div className="rounded-2xl border border-dashed border-blue-300 bg-white p-6 text-center text-gray-500">
+    Nenhuma consulta para hoje.
+  </div>
+</td>
+
                   </tr>
                 ) : (
                   rows.map((s) => (

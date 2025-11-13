@@ -178,62 +178,107 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onDayChange,
   days,
   prosCount,
-}) => (
-  <div className="mb-4 space-y-3">
-    {/* busca */}
-    <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-      <span className="text-gray-400">🔎</span>
-      <input
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        placeholder="Buscar profissional..."
-        className="w-full bg-transparent text-[15px] outline-none placeholder:text-gray-400"
-      />
-    </div>
+}) => {
+  // container da faixa de dias
+  const listRef = React.useRef<HTMLDivElement | null>(null);
 
-    {/* chips de dia */}
-    <div className="flex gap-2 overflow-x-auto no-scrollbar">
-      {days.map((d) => {
-        const dt = new Date(`${d}T12:00:00`);
-        const wd = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
-        const dd = String(dt.getDate()).padStart(2, '0');
-        const active = d === activeDay;
+  // função que centraliza o dia ativo
+  const centerActiveDay = React.useCallback(() => {
+    if (!activeDay || !listRef.current) return;
 
-        return (
-          <button
-            id={`day-${d}`}                           // <- id único para rolar até ele
-            key={d}
-            onClick={() => {
-              onDayChange(d);                         // troca o dia ativo
-              // rola o chip recém-selecionado para o centro da faixa
-              requestAnimationFrame(() => {
-                document.getElementById(`day-${d}`)?.scrollIntoView({
-                  behavior: 'smooth',
-                  inline: 'center',
-                  block: 'nearest',
+    const container = listRef.current;
+    const btn = document.getElementById(`day-${activeDay}`);
+    if (!btn) return;
+
+    const btnRect = btn.getBoundingClientRect();
+    const contRect = container.getBoundingClientRect();
+
+    const offsetInside =
+      btnRect.left - contRect.left + btnRect.width / 2; // centro do botão dentro do container
+
+    const targetScroll = offsetInside - contRect.width / 2;
+    container.scrollTo({
+      left: targetScroll,
+      behavior: "smooth",
+    });
+  }, [activeDay]);
+
+  // centraliza quando:
+  // - a lista de dias é montada
+  // - o dia ativo muda
+  // - a tela é redimensionada
+  React.useEffect(() => {
+    centerActiveDay();
+  }, [centerActiveDay, days.length]);
+
+  React.useEffect(() => {
+    const onResize = () => centerActiveDay();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [centerActiveDay]);
+
+  return (
+    <div className="mb-4 space-y-3">
+      {/* busca */}
+      <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+        <span className="text-gray-400">🔎</span>
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Buscar profissional..."
+          className="w-full bg-transparent text-[15px] outline-none placeholder:text-gray-400"
+        />
+      </div>
+
+      {/* chips de dia */}
+      <div ref={listRef} className="flex gap-2 overflow-x-auto no-scrollbar">
+        {days.map((d) => {
+          const dt = new Date(`${d}T12:00:00`);
+          const wd = dt
+            .toLocaleDateString("pt-BR", { weekday: "short" })
+            .replace(".", "");
+          const dd = String(dt.getDate()).padStart(2, "0");
+          const active = d === activeDay;
+
+          return (
+            <button
+              id={`day-${d}`} // id único para centralizar depois
+              key={d}
+              onClick={() => {
+                onDayChange(d);
+                // ainda rola o clicado, mas o efeito acima vai refinar e centralizar
+                requestAnimationFrame(() => {
+                  document.getElementById(`day-${d}`)?.scrollIntoView({
+                    behavior: "smooth",
+                    inline: "center",
+                    block: "nearest",
+                  });
                 });
-              });
-            }}
-            className={[
-              'min-w-[66px] rounded-2xl px-3 py-2 text-center border shadow-sm transition-colors',
-              active
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50',
-            ].join(' ')}
-          >
-            <div className="text-[11px] opacity-90">{wd}</div>
-            <div className="text-[15px] font-semibold leading-none">{dd}</div>
-          </button>
-        );
-      })}
-    </div>
+              }}
+              className={[
+                "min-w-[66px] rounded-2xl px-3 py-2 text-center border shadow-sm transition-colors",
+                active
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-800 border-gray-200 hover:bg-gray-50",
+              ].join(" ")}
+            >
+              <div className="text-[11px] opacity-90">{wd}</div>
+              <div className="text-[15px] font-semibold leading-none">{dd}</div>
+            </button>
+          );
+        })}
+      </div>
 
-    {/* contador de profissionais */}
-    <div className="text-sm text-gray-600">
-      {prosCount} {prosCount === 1 ? 'profissional disponível' : 'profissionais disponíveis'}
+      {/* contador de profissionais */}
+      <div className="text-sm text-gray-600">
+        {prosCount}{" "}
+        {prosCount === 1
+          ? "profissional disponível"
+          : "profissionais disponíveis"}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 
 /* ======================= Slot Card ======================= */
@@ -889,10 +934,21 @@ const totalAvailable = useMemo(
 </div>
 
       {sections.length === 0 && (
-        <div className="text-center text-gray-500 py-16">
-          Nenhum horário para o dia selecionado.
-        </div>
-      )}
+  <div className="mt-8">
+    <div className="
+      w-full
+      border border-dashed border-blue-300
+      rounded-2xl
+      bg-white
+      px-6 py-10
+      text-center
+      text-gray-600
+    ">
+      Nenhum horário para o dia selecionado.
+    </div>
+  </div>
+)}
+
 
       {sections.map((section) => {
         const total = section.groups.reduce((s, g) => s + g.slots.length, 0);

@@ -23,6 +23,8 @@ type Props = {
   onOpenHistory: () => void;
   onOpenCertificateNew?: () => void;
   onOpenProfessionalsArchived?: () => void;
+  // ⬇️ NOVO: abre a página "Registro do profissional"
+  onOpenProfessionalRecord?: () => void;
 };
 
 export default function OverlayMenu({
@@ -32,6 +34,7 @@ export default function OverlayMenu({
   onOpenHistory,
   onOpenCertificateNew,
   onOpenProfessionalsArchived,
+  onOpenProfessionalRecord, // ⬅️ novo
 }: Props) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -158,7 +161,10 @@ export default function OverlayMenu({
             >
               {/* Cabeçalho */}
               <div className="flex items-center justify-between px-4 py-3">
-                <div id="overlay-menu-title" className="text-xs font-semibold text-emerald-600">
+                <div
+                  id="overlay-menu-title"
+                  className="text-xs font-semibold text-emerald-600"
+                >
                   ● Aberto <span className="text-slate-500 ml-2">(menu)</span>
                 </div>
                 <button
@@ -170,7 +176,7 @@ export default function OverlayMenu({
                 </button>
               </div>
 
-              {/* Conteúdo rolável — com “respiro” suficiente para a TabBar */}
+              {/* Conteúdo rolável */}
               <div className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+96px)]">
                 <div className="px-4 py-2 text-[11px] font-bold tracking-wide text-slate-500">
                   INÍCIO
@@ -222,13 +228,33 @@ export default function OverlayMenu({
                     </button>
                   </li>
 
+                  {/* 🌟 NOVO ITEM: Registro do profissional */}
+                  {onOpenProfessionalRecord && (
+                    <li>
+                      <button
+                        role="menuitem"
+                        ref={(el) => registerItemRef(el, nextIndex())}
+                        onClick={() => {
+                          setOpen(false);
+                          onOpenProfessionalRecord();
+                        }}
+                        className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                      >
+                        <FileText className="h-4 w-4" />
+                        <span>Registro do profissional</span>
+                      </button>
+                    </li>
+                  )}
+
                   <li>
                     <button
                       role="menuitem"
                       ref={(el) => registerItemRef(el, nextIndex())}
                       onClick={() => {
                         setOpen(false);
-                        window.dispatchEvent(new CustomEvent("evolution:open"));
+                        window.dispatchEvent(
+                          new CustomEvent("evolution:open")
+                        );
                       }}
                       className="w-full px-3 py-3 flex items-center gap-2 rounded-lg hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                     >
@@ -270,11 +296,10 @@ export default function OverlayMenu({
                   </li>
                 </ul>
 
-                {/* Espaçador pequeno (o grosso é o pb do container) */}
                 <div className="h-2" />
               </div>
 
-              {/* Rodapé (fica sempre visível, acima da TabBar) */}
+              {/* Rodapé */}
               <div className="bg-white border-t border-slate-100">
                 {onOpenProfessionalsArchived && (
                   <ul className="px-1 py-2 text-sm text-slate-700">
@@ -311,8 +336,16 @@ export default function OverlayMenu({
                       stroke="currentColor"
                       strokeWidth={2}
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 8v8a4 4 0 004 4h2" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M7 8v8a4 4 0 004 4h2"
+                      />
                     </svg>
                     Encerrar sessão
                   </button>

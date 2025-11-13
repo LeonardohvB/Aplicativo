@@ -769,9 +769,11 @@ const Finance: React.FC = () => {
           {/* LISTA EM CARDS (desktop e mobile iguais) */}
           <div className="space-y-8 pb-32">
             {visibleTxs.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-                {emptyMessage}
-              </div>
+              <div className="rounded-2xl border border-dashed border-blue-300 bg-white p-8 text-center text-gray-500">
+  {emptyMessage}
+</div>
+
+
             ) : (
               groups.map((g) => (
                 <div key={g.key}>

@@ -21,6 +21,9 @@ import { ToastContainer } from "./components/ui/Toast";
 // === IMPORT ATESTADOS (apenas o que existe) ===
 import CertificateNew from './pages/CertificateNew'
 
+// ⭐ NOVO: página de Registro do Profissional
+import ProfessionalRecord from './pages/ProfessionalRecord'
+
 // Aceita também “rotas” internas de tela cheia
 type AppTab =
   | Tab                       // suas abas da BottomNav
@@ -28,7 +31,8 @@ type AppTab =
   | 'patients_new'
   | 'evolucao'
   | 'certificate_new'
-  | 'profissionais_arquivados'    // ⬅️ NOVA “rota” para arquivados
+  | 'profissionais_arquivados'    // ⬅️ rota para arquivados
+  | 'registro_profissional'       // ⬅️ NOVA rota: Registro do profissional
   ;
 
 // Dados passados para o prontuário (overlay)
@@ -196,16 +200,21 @@ export default function App() {
     }, 0);
   };
 
-  // ===== conteúdo por aba =====
+  // ===== conteúdo por aba / rota interna =====
   const renderContent = () => {
     switch (activeTab) {
-      case 'profissionais': return <Professionals />
+      case 'profissionais':
+        return <Professionals />
       case 'profissionais_arquivados':
-        // ⬅️ Opção A: passamos onBack para voltar via SPA, sem reload
-        return <ProfessionalsArchived onBack={() => setActiveTab('inicio')} />
-      case 'agenda':        return <Schedule key={scheduleTs} />
-      case 'financeiro':    return <Finance />
-      case 'relatorios':    return <Reports />
+        return (
+          <ProfessionalsArchived onBack={() => setActiveTab('inicio')} />
+        )
+      case 'agenda':
+        return <Schedule key={scheduleTs} />
+      case 'financeiro':
+        return <Finance />
+      case 'relatorios':
+        return <Reports />
       case 'patients_new':
         return (
           <PatientsNew
@@ -225,6 +234,8 @@ export default function App() {
             onCreated={(_id) => setActiveTab('inicio')}
           />
         )
+      case 'registro_profissional':        // ⭐ NOVO: Registro do profissional
+        return <ProfessionalRecord />
       default:
         return (
           <DashboardComp
@@ -256,8 +267,10 @@ export default function App() {
               gotoSchedule('today', { openHistory: true });
             }}
             onOpenCertificateNew={() => setActiveTab('certificate_new')}
-            // ⬇️ NOVO: acessa a lista de arquivados pelo menu suspenso
+            // lista de arquivados pelo menu suspenso
             onOpenProfessionalsArchived={() => setActiveTab('profissionais_arquivados')}
+            // ⭐ NOVO: Registro do profissional
+            onOpenProfessionalRecord={() => setActiveTab('registro_profissional')}
           />
         </div>
 
@@ -271,7 +284,8 @@ export default function App() {
               activeTab === 'patients_new' ||
               activeTab === 'evolucao' ||
               activeTab === 'certificate_new' ||
-              activeTab === 'profissionais_arquivados'  // ⬅️ fora das tabs: mostra “Início” selecionado
+              activeTab === 'profissionais_arquivados' ||
+              activeTab === 'registro_profissional'      // ⭐ nova rota não é tab → “inicio” selecionado
                 ? 'inicio'
                 : (activeTab as Tab)
             }

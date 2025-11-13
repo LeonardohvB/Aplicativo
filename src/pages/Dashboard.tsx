@@ -372,7 +372,12 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
       {distLoading ? (
         <div className="px-1 sm:px-2 py-6 text-slate-500">Carregando…</div>
       ) : distData.length === 0 ? (
-        <div className="px-1 sm:px-2 py-10 text-slate-500">Sem dados no período.</div>
+        <div className="px-1 sm:px-2 py-10">
+  <div className="rounded-2xl border border-dashed border-blue-300 bg-white p-8 text-center text-gray-500">
+    Sem dados no período.
+  </div>
+</div>
+
       ) : (
         <div className="px-1 sm:px-2 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
           {/* Donut */}
@@ -550,9 +555,10 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
               );
             })
           ) : (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-              <p className="text-slate-500 text-center">Nenhum atendimento agendado</p>
-            </div>
+            <div className="rounded-2xl border border-dashed border-blue-300 bg-white p-8 text-center text-gray-500">
+  Nenhum atendimento agendado.
+</div>
+
           )}
         </div>
       </div>

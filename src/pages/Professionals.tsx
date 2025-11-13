@@ -145,6 +145,51 @@ const Professionals: React.FC = () => {
 
   const handlePhotoChange = async (_id: string, _photoFile: File) => {};
 
+
+  // ============================
+  //   🔵 ESTADO VAZIO AQUI
+  // ============================
+
+  if (!loading && professionals.length === 0) {
+    return (
+      <div
+        className="
+          p-6 bg-gray-50 min-h-[100svh] flex flex-col items-center justify-start pt-20
+        "
+        style={{
+          paddingBottom: 'max(96px, env(safe-area-inset-bottom))',
+        }}
+      >
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">
+          Profissionais
+        </h1>
+
+        {/* Caixa tracejada igual ao financeiro */}
+        <div className="w-full border border-dashed border-blue-300 rounded-xl p-6 text-center text-gray-600 bg-white">
+          Nenhum profissional encontrado.
+        </div>
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="
+            mt-6 px-6 py-3 rounded-xl bg-blue-600 text-white shadow
+            hover:bg-blue-700 transition
+          "
+        >
+          Cadastrar profissional
+        </button>
+
+        <AddProfessionalModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onAdd={handleAdd}
+        />
+      </div>
+    );
+  }
+
+  // ============================
+
   if (loading) {
     return (
       <div className="p-6 pb-24 bg-gray-50 min-h-screen flex items-center justify-center">
@@ -153,14 +198,13 @@ const Professionals: React.FC = () => {
     );
   }
 
-  // AGRUPA POR ESPECIALIDADE (ou use outro campo se preferir)
+  // AGRUPA POR ESPECIALIDADE
   const grouped = professionals.reduce((acc: Record<string, Professional[]>, p: Professional) => {
     const key = p.specialty || 'Outros';
     (acc[key] ||= []).push(p);
     return acc;
   }, {});
 
-  // opcional: ordena grupos alfabeticamente
   const groupEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'));
 
   return (
@@ -171,7 +215,6 @@ const Professionals: React.FC = () => {
         pb-32 md:pb-10
       "
       style={{
-        // fallback robusto para iPhone: garante pelo menos 96px ou o safe-area real
         paddingBottom: 'max(96px, env(safe-area-inset-bottom))',
       }}
     >
@@ -179,7 +222,7 @@ const Professionals: React.FC = () => {
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Profissionais</h1>
       </div>
 
-      {/* MOBILE — lista vertical com swipe */}
+      {/* MOBILE */}
       <div className="space-y-4 md:hidden">
         {professionals.map((p) => {
           const isSwipeOpen = swipeOpenId === p.id;
@@ -205,11 +248,10 @@ const Professionals: React.FC = () => {
         })}
       </div>
 
-      {/* DESKTOP — até 5 grupos por linha */}
+      {/* DESKTOP */}
       <div className="hidden md:grid gap-6 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {groupEntries.map(([specialty, list]) => (
           <section key={specialty} className="min-w-0">
-            {/* Cabeçalho do grupo (pílula menor) */}
             <div className="mb-2 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-200 bg-white text-gray-700">
               <span className="font-medium truncate">{specialty}</span>
               <span className="ml-1 text-[11px] px-2 py-[2px] rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -217,7 +259,6 @@ const Professionals: React.FC = () => {
               </span>
             </div>
 
-            {/* Lista de cards desse grupo */}
             <div className="space-y-3">
               {list.map((p: Professional) => {
                 const isSwipeOpen = swipeOpenId === p.id;
@@ -246,7 +287,6 @@ const Professionals: React.FC = () => {
         ))}
       </div>
 
-      {/* Spacer final discreto */}
       <div className="h-8 md:h-0" role="presentation" />
 
       <AddProfessionalModal
