@@ -24,15 +24,28 @@ import { useEncounterDraft } from "../hooks/useEncounterDraft";
 type ToastKind = "success" | "error" | "info";
 type ToastItem = { id: string; kind: ToastKind; title?: string; message?: string };
 
-function useToasts() {
+type ToastHelpers = {
+  items: ToastItem[];
+  dismiss: (id: string) => void;
+  success: (message: string, title?: string) => void;
+  error: (message: string, title?: string) => void;
+  info: (message: string, title?: string) => void;
+};
+
+function useToasts(): ToastHelpers {
   const [items, setItems] = useState<ToastItem[]>([]);
+
+  const dismiss = (id: string) => {
+    setItems((arr) => arr.filter((i) => i.id !== id));
+  };
+
   const push = (t: Omit<ToastItem, "id">, ttl = 4000) => {
     const id = Math.random().toString(36).slice(2);
-    const item = { id, ...t };
+    const item: ToastItem = { id, ...t };
     setItems((arr) => [...arr, item]);
     if (ttl > 0) setTimeout(() => dismiss(id), ttl);
   };
-  const dismiss = (id: string) => setItems((arr) => arr.filter((i) => i.id !== id));
+
   return {
     items,
     dismiss,
@@ -40,9 +53,11 @@ function useToasts() {
       push({ kind: "success", message, title }),
     error: (message: string, title = "Algo deu errado") =>
       push({ kind: "error", message, title }),
-    info: (message: string, title = "Atenção") => push({ kind: "info", message, title }),
+    info: (message: string, title = "Atenção") =>
+      push({ kind: "info", message, title }),
   };
 }
+
 
 // ➜ container agora em CIMA e centralizado
 const Toasts: React.FC<{
@@ -271,37 +286,104 @@ async function findPatientId(patientName?: string, phoneMasked?: string) {
   return patient_id;
 }
 
-/** Busca dados do profissional logado. */
-async function getProfessionalInfo() {
+/** Busca dados do profissional logado / do agendamento (prioriza o profissional da agenda). */
+async function getProfessionalInfo(opts?: {
+  appointmentId?: string;
+  professionalName?: string;
+}) {
+  const appointmentId = opts?.appointmentId;
+  const professionalName = opts?.professionalName;
+
   const { data: auth } = await supabase.auth.getUser();
-  const userId = auth?.user?.id || null;
+  const userId = auth.user?.id || null;
 
   let proId: string | null = null;
   let specialty: string | null = null;
   let profName: string | null = null;
 
-  if (userId) {
-    // Busca pelo owner_id = usuário logado
-    const { data: pro } = await supabase
-      .from("professionals")
-      .select("id, owner_id, name, specialty")
-      .eq("owner_id", userId)
+  // 1) Tenta pelo appointment_slots.professional_id (mais confiável)
+  if (appointmentId) {
+    const { data: slot, error: slotError } = await supabase
+      .from("appointment_slots")
+      .select("professional_id") // ✅ essa coluna existe
+      .eq("id", appointmentId)
       .maybeSingle();
 
-    if (pro) {
-      proId = (pro as any)?.id ?? null;
-      specialty = (pro as any)?.specialty ?? null;
-      profName = (pro as any)?.name ?? null;
+    if (slotError) {
+      console.warn("getProfessionalInfo slot error", slotError);
     }
 
-    if (!profName) {
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", userId)
+    const slotProId = (slot as any)?.professional_id as string | undefined;
+
+    if (slotProId) {
+      const { data: proById, error: proByIdError } = await supabase
+        .from("professionals")
+        .select("id, name, specialty")
+        .eq("id", slotProId)
         .maybeSingle();
-      profName = (prof as any)?.name || null;
+
+      if (proByIdError) {
+        console.warn("getProfessionalInfo professional by id error", proByIdError);
+      }
+
+      if (proById) {
+        proId = (proById as any).id ?? proId;
+        specialty = (proById as any).specialty ?? specialty;
+        profName = (proById as any).name ?? profName;
+      } else {
+        proId = slotProId;
+      }
     }
+  }
+
+  // 2) Se ainda faltar coisa, tenta bater pelo nome do profissional vindo da Agenda
+  if (professionalName && (!proId || !specialty || !profName)) {
+    const { data: proByName, error: proByNameError } = await supabase
+      .from("professionals")
+      .select("id, name, specialty")
+      .ilike("name", professionalName)
+      .limit(1)
+      .maybeSingle();
+
+    if (proByNameError) {
+      console.warn("getProfessionalInfo professional by name error", proByNameError);
+    }
+
+    if (proByName) {
+      if (!proId) proId = (proByName as any).id;
+      if (!specialty) specialty = (proByName as any).specialty ?? specialty;
+      if (!profName) profName = (proByName as any).name ?? profName;
+    }
+  }
+
+  // 3) Fallback: tenta achar um professional cujo id seja o próprio userId
+  if (userId && (!proId || !specialty || !profName)) {
+    const { data: proOwner, error: proOwnerError } = await supabase
+      .from("professionals")
+      .select("id, name, specialty")
+      .eq("id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (proOwnerError) {
+      console.warn("getProfessionalInfo professional by userId error", proOwnerError);
+    }
+
+    if (proOwner) {
+      if (!proId) proId = (proOwner as any).id;
+      if (!specialty) specialty = (proOwner as any).specialty ?? specialty;
+      if (!profName) profName = (proOwner as any).name ?? profName;
+    }
+  }
+
+  // 4) Fallback final só para NOME (profile)
+  if (!profName && userId) {
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", userId)
+      .maybeSingle();
+    profName = (prof as any)?.name || profName;
   }
 
   return { userId, proId, role: specialty, profName };
@@ -549,7 +631,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       setAutoFinalizeRequested(false);
     }, 250);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFinalizeRequested]);
 
   /* ===================== Finalizar + Evolução ===================== */
@@ -640,8 +721,12 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       if (!eid) return;
 
       // pega profissão/cargo e id do registro do profissional
-      const { userId, proId, role, profName } = await getProfessionalInfo();
-      const specialtyValue = (role || serviceName || "Consulta") as string;
+      const { userId, proId, role, profName } = await getProfessionalInfo({
+        appointmentId,
+        professionalName,
+      });
+
+      const specialtyValue: string | null = role || null;
 
       // Cria evolução preenchida
       try {
@@ -691,45 +776,24 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: draft.tags || [],
         };
 
-        // tenta inserir COM medications e specialty
-        let insertedId: string | null = null;
-        let insErr: any = null;
-
+        // tenta inserir COM medications
+        let insErr = null;
         {
-          const { data, error } = await supabase
+          const { error } = await supabase
             .from("patient_evolution")
-            .insert([{ ...evoInsertBase, medications: meds }])
-            .select("id")
-            .maybeSingle();
-
+            .insert([{ ...evoInsertBase, medications: meds }]);
           insErr = error || null;
-          insertedId = (data as any)?.id ?? null;
         }
 
-        // se coluna medications não existir, re-tenta SEM medications,
-        // mas mantendo specialty
+        // se coluna não existir, re-tenta SEM medications
         const medColMissing =
           insErr &&
           (insErr.code === "PGRST204" ||
             /medications.*(does not exist|could not find)/i.test(insErr.message || ""));
         if (medColMissing) {
-          const { data, error } = await supabase
-            .from("patient_evolution")
-            .insert([evoInsertBase])
-            .select("id")
-            .maybeSingle();
-          insertedId = (data as any)?.id ?? insertedId;
-          insErr = error || null;
+          await supabase.from("patient_evolution").insert([evoInsertBase]);
         } else if (insErr) {
           console.warn("evolution insert failed:", insErr);
-        }
-
-        // 🔁 Garantia extra: faz UPDATE explícito da specialty
-        if (insertedId && specialtyValue) {
-          await supabase
-            .from("patient_evolution")
-            .update({ specialty: specialtyValue })
-            .eq("id", insertedId);
         }
       } catch (err) {
         console.warn("evolution creation warning:", err);
@@ -770,12 +834,15 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       });
       if (!eid) return;
 
-      // pega profissão/cargo e id do registro do profissional
-      const { userId, proId, role, profName } = await getProfessionalInfo();
-      const specialtyValue = (role || serviceName || "Consulta") as string;
-
       // 1) toast de pendência
       toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
+
+      const { userId, proId, role, profName } = await getProfessionalInfo({
+        appointmentId,
+        professionalName,
+      });
+
+      const specialtyValue: string | null = role || null;
 
       // Cria evolução “vazia”
       try {
@@ -783,7 +850,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         const occurred_at = new Date().toISOString();
         const title = serviceName || "Consulta";
 
-        const evoInsert: any = {
+        const evoInsert = {
           owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
@@ -816,26 +883,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: [] as string[],
         };
 
-        let insertedId: string | null = null;
-
-        const { data, error } = await supabase
-          .from("patient_evolution")
-          .insert([evoInsert])
-          .select("id")
-          .maybeSingle();
-
-        if (error) {
-          console.warn("evolution blank creation warning:", error);
-        }
-        insertedId = (data as any)?.id ?? null;
-
-        // 🔁 garante specialty via UPDATE, se por algum motivo o insert ignorar
-        if (insertedId && specialtyValue) {
-          await supabase
-            .from("patient_evolution")
-            .update({ specialty: specialtyValue })
-            .eq("id", insertedId);
-        }
+        await supabase.from("patient_evolution").insert([evoInsert]);
       } catch (err) {
         console.warn("evolution blank creation warning:", err);
       }
@@ -930,7 +978,9 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         {/* Profissional */}
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-xs font-semibold text-gray-500 uppercase mb-1">PROFISSIONAL</p>
-          <h3 className="text-lg font-bold text-gray-900">{professionalName || "Profissional"}</h3>
+          <h3 className="text-lg font-bold text-gray-900">
+            {professionalName || "Profissional"}
+          </h3>
           <p className="text-sm text-gray-600">{serviceName || ""}</p>
 
           <div className="mt-4">

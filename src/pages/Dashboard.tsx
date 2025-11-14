@@ -384,7 +384,7 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
         <div className="px-1 sm:px-2 pt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
           {/* Donut */}
           <div className="h-[200px] sm:h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie
                   data={distData}
