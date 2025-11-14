@@ -274,17 +274,18 @@ async function findPatientId(patientName?: string, phoneMasked?: string) {
 /** Busca dados do profissional logado. */
 async function getProfessionalInfo() {
   const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id || null;
+  const userId = auth?.user?.id || null;
 
   let proId: string | null = null;
   let specialty: string | null = null;
   let profName: string | null = null;
 
   if (userId) {
+    // Busca pelo owner_id = usuário logado
     const { data: pro } = await supabase
       .from("professionals")
       .select("id, owner_id, name, specialty")
-      .or(`owner_id.eq.${userId},id.eq.${userId}`)
+      .eq("owner_id", userId)
       .maybeSingle();
 
     if (pro) {
@@ -548,6 +549,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       setAutoFinalizeRequested(false);
     }, 250);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFinalizeRequested]);
 
   /* ===================== Finalizar + Evolução ===================== */
@@ -639,6 +641,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
 
       // pega profissão/cargo e id do registro do profissional
       const { userId, proId, role, profName } = await getProfessionalInfo();
+      const specialtyValue = (role || serviceName || "Consulta") as string;
 
       // Cria evolução preenchida
       try {
@@ -662,7 +665,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           appointment_id: appointmentId || null,
           professional_id: proId ?? userId!,
           professional_name: professionalName || profName || "Profissional",
-          specialty: role,
+          specialty: specialtyValue,
           title,
           type: "consultation",
           occurred_at,
@@ -688,24 +691,45 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: draft.tags || [],
         };
 
-        // tenta inserir COM medications
-        let insErr = null;
+        // tenta inserir COM medications e specialty
+        let insertedId: string | null = null;
+        let insErr: any = null;
+
         {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from("patient_evolution")
-            .insert([{ ...evoInsertBase, medications: meds }]);
+            .insert([{ ...evoInsertBase, medications: meds }])
+            .select("id")
+            .maybeSingle();
+
           insErr = error || null;
+          insertedId = (data as any)?.id ?? null;
         }
 
-        // se coluna não existir, re-tenta SEM medications
+        // se coluna medications não existir, re-tenta SEM medications,
+        // mas mantendo specialty
         const medColMissing =
           insErr &&
           (insErr.code === "PGRST204" ||
             /medications.*(does not exist|could not find)/i.test(insErr.message || ""));
         if (medColMissing) {
-          await supabase.from("patient_evolution").insert([evoInsertBase]);
+          const { data, error } = await supabase
+            .from("patient_evolution")
+            .insert([evoInsertBase])
+            .select("id")
+            .maybeSingle();
+          insertedId = (data as any)?.id ?? insertedId;
+          insErr = error || null;
         } else if (insErr) {
           console.warn("evolution insert failed:", insErr);
+        }
+
+        // 🔁 Garantia extra: faz UPDATE explícito da specialty
+        if (insertedId && specialtyValue) {
+          await supabase
+            .from("patient_evolution")
+            .update({ specialty: specialtyValue })
+            .eq("id", insertedId);
         }
       } catch (err) {
         console.warn("evolution creation warning:", err);
@@ -723,7 +747,6 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         (clearLocal as any)?.();
       } catch {}
 
-    
       // 2) toast padrão
       showFinalizeToast();
 
@@ -747,11 +770,12 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
       });
       if (!eid) return;
 
-      // 1) toast de pendência
-      toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
-
       // pega profissão/cargo e id do registro do profissional
       const { userId, proId, role, profName } = await getProfessionalInfo();
+      const specialtyValue = (role || serviceName || "Consulta") as string;
+
+      // 1) toast de pendência
+      toasts.info("Evolução criada em branco. Preencha quando puder.", "Evolução pendente");
 
       // Cria evolução “vazia”
       try {
@@ -759,13 +783,13 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
         const occurred_at = new Date().toISOString();
         const title = serviceName || "Consulta";
 
-        const evoInsert = {
+        const evoInsert: any = {
           owner_id: userId!,
           patient_id,
           appointment_id: appointmentId || null,
           professional_id: proId ?? userId!,
           professional_name: professionalName || profName || "Profissional",
-          specialty: role,
+          specialty: specialtyValue,
           title,
           type: "consultation",
           occurred_at,
@@ -792,7 +816,26 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           tags: [] as string[],
         };
 
-        await supabase.from("patient_evolution").insert([evoInsert]);
+        let insertedId: string | null = null;
+
+        const { data, error } = await supabase
+          .from("patient_evolution")
+          .insert([evoInsert])
+          .select("id")
+          .maybeSingle();
+
+        if (error) {
+          console.warn("evolution blank creation warning:", error);
+        }
+        insertedId = (data as any)?.id ?? null;
+
+        // 🔁 garante specialty via UPDATE, se por algum motivo o insert ignorar
+        if (insertedId && specialtyValue) {
+          await supabase
+            .from("patient_evolution")
+            .update({ specialty: specialtyValue })
+            .eq("id", insertedId);
+        }
       } catch (err) {
         console.warn("evolution blank creation warning:", err);
       }

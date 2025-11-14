@@ -177,7 +177,7 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     )
     .slice(0, 1);
 
-  /* ===================== Distribuição por Especialidade (180 dias) ===================== */
+   /* ===================== Distribuição por Especialidade (180 dias) ===================== */
   type DonutItem = { name: string; value: number; color: string };
   const [distData, setDistData] = React.useState<DonutItem[]>([]);
   const [distLoading, setDistLoading] = React.useState(true);
@@ -189,68 +189,70 @@ const Dashboard: React.FC<Props> = ({ firstName, onGotoSchedule }) => {
     (async () => {
       setDistLoading(true);
 
-      const from = new Date();
-      from.setDate(from.getDate() - timeframeDays);
-      const fromISO = from.toISOString();
-
-      let rows: Array<{ specialty?: string | null; created_at?: string | null }> = [];
-      let error: any = null;
-
-      // 1) tenta filtrar por created_at
       try {
-        const { data, error: e } = await supabase
+        // 1) Busca evoluções (sem filtro de data ainda)
+        const { data, error } = await supabase
           .from("patient_evolution")
-          .select("specialty, created_at")
-          .gte("created_at", fromISO);
-        rows = data || [];
-        error = e || null;
-      } catch (e) {
-        error = e;
-      }
+          .select("specialty, occurred_at")
+          .order("occurred_at", { ascending: false })
+          .limit(500);
 
-      // 2) fallback sem filtro se não houver created_at
-      if (error) {
-        try {
-          const { data, error: e2 } = await supabase.from("patient_evolution").select("specialty");
-          rows = data || [];
-          error = e2 || null;
-        } catch (e2) {
-          error = e2;
+        if (canceled) return;
+
+        if (error) {
+          console.warn("patient_evolution fetch error:", error);
+          setDistData([]);
+          setDistLoading(false);
+          return;
         }
-      }
 
-      if (canceled) return;
+        const rows = data || [];
 
-      if (error) {
-        console.warn("patient_evolution fetch error:", error);
+        // 2) Calcula “a partir de X dias atrás”
+        const from = new Date();
+        from.setDate(from.getDate() - timeframeDays);
+        const fromTs = from.getTime();
+
+        const counts = new Map<string, number>();
+
+        for (const r of rows) {
+          const specRaw = (r as any).specialty ?? "";
+          const spec = String(specRaw || "").trim();
+          if (!spec) continue; // ignora evoluções sem especialidade
+
+          const occ = (r as any).occurred_at;
+          if (occ) {
+            const t = Date.parse(occ);
+            // se conseguir parsear e for mais antigo que o limite, pula
+            if (!Number.isNaN(t) && t < fromTs) continue;
+          }
+
+          counts.set(spec, (counts.get(spec) || 0) + 1);
+        }
+
+        const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+        if (total === 0) {
+          setDistData([]);
+          setDistLoading(false);
+          return;
+        }
+
+        const items: DonutItem[] = Array.from(counts.entries())
+          .map(([name, count], idx) => ({
+            name,
+            value: Math.round((count / total) * 100),
+            color: DONUT_COLORS[idx % DONUT_COLORS.length],
+          }))
+          .sort((a, b) => b.value - a.value);
+
+        setDistData(items);
+        setDistLoading(false);
+      } catch (err) {
+        if (canceled) return;
+        console.warn("patient_evolution fetch error (catch):", err);
         setDistData([]);
         setDistLoading(false);
-        return;
       }
-
-      const counts = new Map<string, number>();
-      for (const r of rows) {
-        const spec = String(r?.specialty || "").trim();
-        if (!spec) continue;
-        counts.set(spec, (counts.get(spec) || 0) + 1);
-      }
-      const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
-      if (total === 0) {
-        setDistData([]);
-        setDistLoading(false);
-        return;
-      }
-
-      const items: DonutItem[] = Array.from(counts.entries())
-        .map(([name, count], idx) => ({
-          name,
-          value: Math.round((count / total) * 100),
-          color: DONUT_COLORS[idx % DONUT_COLORS.length],
-        }))
-        .sort((a, b) => b.value - a.value);
-
-      setDistData(items);
-      setDistLoading(false);
     })();
 
     return () => {
