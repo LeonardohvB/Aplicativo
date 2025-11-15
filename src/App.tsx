@@ -235,7 +235,8 @@ export default function App() {
           />
         )
       case 'registro_profissional':        // ⭐ NOVO: Registro do profissional
-        return <ProfessionalRecord />
+        // 👇 AQUI adicionamos o onBack para funcionar igual Perfil/Atestados
+        return <ProfessionalRecord onBack={() => setActiveTab('inicio')} />
       default:
         return (
           <DashboardComp
@@ -269,7 +270,6 @@ export default function App() {
             onOpenCertificateNew={() => setActiveTab('certificate_new')}
             // lista de arquivados pelo menu suspenso
             onOpenProfessionalsArchived={() => setActiveTab('profissionais_arquivados')}
-            // ⭐ NOVO: Registro do profissional
             onOpenProfessionalRecord={() => setActiveTab('registro_profissional')}
           />
         </div>
@@ -285,7 +285,7 @@ export default function App() {
               activeTab === 'evolucao' ||
               activeTab === 'certificate_new' ||
               activeTab === 'profissionais_arquivados' ||
-              activeTab === 'registro_profissional'      // ⭐ nova rota não é tab → “inicio” selecionado
+              activeTab === 'registro_profissional'
                 ? 'inicio'
                 : (activeTab as Tab)
             }

@@ -8,37 +8,27 @@ export type UploadProfessionalFileParams = {
   tenantId: string;
   professionalId: string;
   file: File;
-  category?: string | null; // ex.: "documento_pessoal", "registro_conselho"
+  category?: string | null; // "documento_pessoal", "registro_conselho", etc
 };
 
 export type UploadProfessionalResult = {
   id: string;
   storage_path: string;
-  file_name: string;
+  filename: string;
   category: string | null;
 };
 
-/**
- * Gera o caminho final no bucket:
- * {tenantId}/{professionalId}/{uuid}.{ext}
- */
 function buildStoragePath(tenantId: string, professionalId: string, file: File) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
   const random = uuid();
   return `${tenantId}/${professionalId}/${random}.${ext}`;
 }
 
-/**
- * Cria URL pública (se o arquivo estiver acessível publicamente ou via signed URL)
- */
 export function publicUrlFromProfessionalPath(filePath: string) {
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
   return data.publicUrl;
 }
 
-/**
- * Upload do arquivo + INSERT na tabela professional_files
- */
 export async function uploadProfessionalFile({
   tenantId,
   professionalId,
@@ -47,7 +37,7 @@ export async function uploadProfessionalFile({
 }: UploadProfessionalFileParams): Promise<UploadProfessionalResult> {
   const storagePath = buildStoragePath(tenantId, professionalId, file);
 
-  // 1) Upload para o Storage
+  // 1) Upload para o Storage (bucket privado)
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, file, {
@@ -56,6 +46,7 @@ export async function uploadProfessionalFile({
     });
 
   if (uploadError) {
+    console.error("uploadProfessionalFile storage error:", uploadError);
     throw new Error("Falha no upload: " + uploadError.message);
   }
 
@@ -68,7 +59,9 @@ export async function uploadProfessionalFile({
         professional_id: professionalId,
         bucket: BUCKET,
         storage_path: storagePath,
-        file_name: file.name,
+        filename: file.name,
+        content_type: file.type,
+        size_bytes: file.size,
         category,
       },
     ])
@@ -76,7 +69,8 @@ export async function uploadProfessionalFile({
     .single();
 
   if (insertError) {
-    // rollback: remover arquivo do storage caso insert falhar
+    console.error("insert professional_files error", insertError);
+    // rollback se der ruim no insert
     await supabase.storage.from(BUCKET).remove([storagePath]);
     throw new Error("Falha ao registrar arquivo no banco.");
   }
@@ -84,27 +78,53 @@ export async function uploadProfessionalFile({
   return {
     id: data.id,
     storage_path: data.storage_path,
-    file_name: data.file_name,
+    filename: data.filename,
     category: data.category ?? null,
   };
 }
 
-/**
- * Remover arquivo do Storage + linha da tabela
- */
 export async function deleteProfessionalFile(rowId: string, storagePath: string) {
-  // 1) remover do Storage
   const { error: stError } = await supabase.storage
     .from(BUCKET)
     .remove([storagePath]);
 
   if (stError) throw new Error("Falha ao remover do storage.");
 
-  // 2) remover registro do banco
   const { error: dbError } = await supabase
     .from("professional_files")
     .delete()
     .eq("id", rowId);
 
   if (dbError) throw new Error("Falha ao remover registro no banco.");
+}
+
+/**
+ * Download de arquivo em bucket privado, respeitando RLS / auth.
+ * - Baixa via Supabase SDK (rota autenticada)
+ * - Cria um link temporário e dispara o download no navegador.
+ */
+export async function downloadProfessionalFile(
+  storagePath: string,
+  filename: string
+) {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .download(storagePath);
+
+  if (error || !data) {
+    console.error("downloadProfessionalFile storage error:", error);
+    throw new Error("Falha ao baixar o arquivo.");
+  }
+
+  // data é um Blob no browser
+  const blobUrl = URL.createObjectURL(data);
+
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename || "arquivo";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(blobUrl);
 }

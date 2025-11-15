@@ -1,7 +1,7 @@
 // src/pages/PatientsNew.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Search, Trash2, ChevronLeft } from "lucide-react";
+import { Search, Trash2, ArrowLeft } from "lucide-react";
 import { useConfirm } from "../providers/ConfirmProvider";
 
 /* ==================== Tipos ==================== */
@@ -383,22 +383,22 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
   /* ==================== Render (full-screen) ==================== */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* VOLTAR - fora do card, estilo Perfil */}
+      {/* VOLTAR - fora do card, mesmo estilo do Registro do Profissional */}
       <div className="sticky top-0 z-20 bg-transparent px-4 pt-4">
         <button
           onClick={onBack}
           className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
           aria-label="Voltar"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5" />
           <span className="font-medium">Voltar</span>
         </button>
       </div>
 
-      {/* CARD central — mesma largura do Histórico */}
+      {/* CARD central — mesma largura do Histórico / Registro Profissional */}
       <div className="w-full max-w-[1120px] mx-auto px-4 pb-20">
         <div className="rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
-          {/* WRAPPER PARA IGUALAR A LARGURA DO HISTÓRICO */}
+          {/* WRAPPER PARA IGUALAR A LARGURA */}
           <div className="mx-auto w-full max-w-5xl px-4 md:px-6">
             {/* HEADER do card (sem o Voltar) */}
             <header className="border-b">
@@ -437,7 +437,7 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
                 </div>
               )}
 
-              {/* Abas (mobile) – ÚNICO BLOCO (mantido) */}
+              {/* Abas (mobile) */}
               {mode !== "edit" && mode !== "view" && (
                 <div className="px-4 sm:px-6 pb-3 sm:hidden flex gap-2">
                   <button

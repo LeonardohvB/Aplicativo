@@ -1,11 +1,11 @@
 // src/hooks/useProfessionalFiles.ts
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   uploadProfessionalFile,
   deleteProfessionalFile,
   publicUrlFromProfessionalPath,
-  UploadProfessionalResult,
+  downloadProfessionalFile,
 } from "../lib/professionalFiles";
 
 export type ProfessionalFile = {
@@ -14,33 +14,30 @@ export type ProfessionalFile = {
   professional_id: string;
   bucket: string;
   storage_path: string;
-  file_name: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
   category: string | null;
+  notes: string | null;
   created_at: string;
 };
 
-type HookReturn = {
-  files: ProfessionalFile[];
-  loading: boolean;
-  error: string | null;
-  fetchFiles: () => Promise<void>;
-  uploadFile: (file: File, category?: string | null) => Promise<UploadProfessionalResult | null>;
-  removeFile: (rowId: string, path: string) => Promise<void>;
-  getPublicUrl: (filePath: string) => string;
-};
-
-export function useProfessionalFiles(
-  tenantId?: string,
-  professionalId?: string
-): HookReturn {
+export function useProfessionalFiles(tenantId?: string, professionalId?: string) {
   const [files, setFiles] = useState<ProfessionalFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchFiles = useCallback(async () => {
-    if (!tenantId || !professionalId) return;
+  const loadFiles = useCallback(async () => {
+    // Se ainda não temos tenant/profissional, só limpa lista e erro
+    if (!tenantId || !professionalId) {
+      setFiles([]);
+      setError(null);
+      return;
+    }
 
     setLoading(true);
+    setError(null);
+
     const { data, error } = await supabase
       .from("professional_files")
       .select("*")
@@ -49,56 +46,96 @@ export function useProfessionalFiles(
       .order("created_at", { ascending: false });
 
     if (error) {
-      setError(error.message);
+      console.warn("load professional_files error:", error);
+      setError("Erro ao carregar arquivos.");
     } else {
-      setFiles((data || []) as ProfessionalFile[]);
+      setFiles((data ?? []) as ProfessionalFile[]);
     }
 
     setLoading(false);
   }, [tenantId, professionalId]);
 
   useEffect(() => {
-    fetchFiles();
-  }, [fetchFiles]);
+    loadFiles();
+  }, [loadFiles]);
 
   const uploadFile = useCallback(
-    async (file: File, category?: string | null) => {
+    async (file: File, category: string | null) => {
+      // Segurança extra: se por algum motivo ainda não tiver ids, só não faz nada
       if (!tenantId || !professionalId) {
-        setError("tenantId ou professionalId ausente.");
-        return null;
+        console.warn(
+          "uploadFile chamado sem tenantId/professionalId",
+          tenantId,
+          professionalId
+        );
+        return;
       }
 
+      setLoading(true);
+      setError(null);
+
       try {
-        const result = await uploadProfessionalFile({
+        await uploadProfessionalFile({
           tenantId,
           professionalId,
           file,
-          category: category ?? null,
+          category,
         });
 
-        await fetchFiles();
-        return result;
-      } catch (e: any) {
-        setError(e?.message || "Falha ao enviar arquivo.");
-        return null;
+        // Recarrega lista
+        await loadFiles();
+      } catch (err: any) {
+        console.warn("uploadProfessionalFile error:", err);
+        setError(err?.message || "Falha ao enviar arquivo.");
+      } finally {
+        setLoading(false);
       }
     },
-    [tenantId, professionalId, fetchFiles]
+    [tenantId, professionalId, loadFiles]
   );
 
-  const removeFile = useCallback(
-    async (rowId: string, path: string) => {
+  const removeFile = useCallback(async (id: string, storagePath: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await deleteProfessionalFile(id, storagePath);
+      setFiles((prev) => prev.filter((f) => f.id !== id));
+    } catch (err: any) {
+      console.warn("deleteProfessionalFile error:", err);
+      setError(err?.message || "Falha ao remover arquivo.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getPublicUrl = useCallback((path: string) => {
+    return publicUrlFromProfessionalPath(path);
+  }, []);
+
+  // NOVO: download direto via SDK (bucket privado, respeita RLS)
+  const downloadFile = useCallback(
+    async (file: ProfessionalFile) => {
+      setLoading(true);
+      setError(null);
       try {
-        await deleteProfessionalFile(rowId, path);
-        await fetchFiles();
-      } catch (e: any) {
-        setError(e?.message || "Falha ao excluir arquivo.");
+        await downloadProfessionalFile(file.storage_path, file.filename);
+      } catch (err: any) {
+        console.warn("downloadProfessionalFile error:", err);
+        setError(err?.message || "Falha ao baixar arquivo.");
+      } finally {
+        setLoading(false);
       }
     },
-    [fetchFiles]
+    []
   );
 
-  const getPublicUrl = (filePath: string) => publicUrlFromProfessionalPath(filePath);
-
-  return { files, loading, error, fetchFiles, uploadFile, removeFile, getPublicUrl };
+  return {
+    files,
+    loading,
+    error,
+    uploadFile,
+    removeFile,
+    getPublicUrl,  // ainda disponível se usar em outro lugar
+    downloadFile,  // <── usar na UI
+  };
 }
