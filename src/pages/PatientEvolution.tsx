@@ -508,9 +508,10 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
           Voltar
         </button>
 
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-xl font-bold text-gray-900 whitespace-nowrap">
-          Evolução do Paciente
-        </h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-base sm:text-lg font-semibold text-slate-900 whitespace-nowrap">
+  Evolução do Paciente
+</h1>
+
 
        
       </div>

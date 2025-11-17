@@ -384,16 +384,16 @@ export default function PatientsNew({ onBack, onCreated }: Props) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* VOLTAR - fora do card, mesmo estilo do Registro do Profissional */}
-      <div className="sticky top-0 z-20 bg-transparent px-4 pt-4">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-blue-700 hover:bg-blue-50 active:scale-[0.98] transition"
-          aria-label="Voltar"
-        >
-          <ArrowLeft className="h-5 w-5" />
-          <span className="font-medium">Voltar</span>
-        </button>
-      </div>
+    <div className="px-4 pt-4 mb-2">
+  <button
+    onClick={onBack}
+    className="inline-flex items-center text-blue-600 hover:text-blue-800"
+  >
+    <ArrowLeft className="w-5 h-5 mr-2" />
+    Voltar
+  </button>
+</div>
+
 
       {/* CARD central — mesma largura do Histórico / Registro Profissional */}
       <div className="w-full max-w-[1120px] mx-auto px-4 pb-20">

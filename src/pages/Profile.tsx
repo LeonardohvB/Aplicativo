@@ -52,11 +52,13 @@ const isValidCPF = (cpfRaw: string) => {
   if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
   let s = 0;
   for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
-  let d1 = (s * 10) % 11; if (d1 === 10) d1 = 0;
+  let d1 = (s * 10) % 11;
+  if (d1 === 10) d1 = 0;
   if (d1 !== parseInt(c[9])) return false;
   s = 0;
   for (let i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
-  let d2 = (s * 10) % 11; if (d2 === 10) d2 = 0;
+  let d2 = (s * 10) % 11;
+  if (d2 === 10) d2 = 0;
   return d2 === parseInt(c[10]);
 };
 
@@ -64,7 +66,7 @@ const capSingle = (w: string) =>
   w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : "";
 const titleAllWordsLive = (s: string) => {
   const orig = s || "";
-  const hasTrailingSpace = /\s$/.test(orig); // usuário acabou de teclar espaço
+  const hasTrailingSpace = /\s$/.test(orig);
   const normalized = orig
     .toLowerCase()
     .replace(/\s{2,}/g, " ")
@@ -101,7 +103,7 @@ const CLINIC_COLS =
 const BUCKET = "clinic-logos"; // bucket sugerido
 
 export default function Profile({ onBack }: Props) {
-  const { success, error,} = useToast();
+  const { success, error } = useToast();
 
   const [form, setForm] = useState<Form>({
     name: "",
@@ -150,7 +152,10 @@ export default function Profile({ onBack }: Props) {
       try {
         const { data: auth } = await supabase.auth.getUser();
         const uid = auth.user?.id;
-        if (!uid) { setLoading(false); return; }
+        if (!uid) {
+          setLoading(false);
+          return;
+        }
 
         // base
         const { data: base, error: e1 } = await supabase
@@ -160,7 +165,7 @@ export default function Profile({ onBack }: Props) {
           .maybeSingle();
         if (e1 && e1.code !== "PGRST116") console.warn("profile base error:", e1);
 
-        // clínica (campos opcionais)
+        // clínica
         let clinic: any = {};
         const { data: cData, error: e2 } = await supabase
           .from("profiles")
@@ -199,7 +204,9 @@ export default function Profile({ onBack }: Props) {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   /* ========= helpers UI ========= */
@@ -215,12 +222,18 @@ export default function Profile({ onBack }: Props) {
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const v = e.target.value;
       setErrors((s) => ({ ...s, [field]: undefined }));
-      if (field === "name") setForm((f) => ({ ...f, name: titleAllWordsLive(v) }));
-      else if (field === "cpf") setForm((f) => ({ ...f, cpf: formatCPF(v) }));
-      else if (field === "phone") setForm((f) => ({ ...f, phone: formatBRCell(v) }));
-      else if (field === "clinicCnpj") setForm((f) => ({ ...f, clinicCnpj: formatCNPJ(v) }));
-      else if (field === "clinicPhone") setForm((f) => ({ ...f, clinicPhone: formatBRCell(v) }));
-      else if (field === "clinicName") setForm((f) => ({ ...f, clinicName: titleAllWordsLive(v) }));
+      if (field === "name")
+        setForm((f) => ({ ...f, name: titleAllWordsLive(v) }));
+      else if (field === "cpf")
+        setForm((f) => ({ ...f, cpf: formatCPF(v) }));
+      else if (field === "phone")
+        setForm((f) => ({ ...f, phone: formatBRCell(v) }));
+      else if (field === "clinicCnpj")
+        setForm((f) => ({ ...f, clinicCnpj: formatCNPJ(v) }));
+      else if (field === "clinicPhone")
+        setForm((f) => ({ ...f, clinicPhone: formatBRCell(v) }));
+      else if (field === "clinicName")
+        setForm((f) => ({ ...f, clinicName: titleAllWordsLive(v) }));
       else setForm((f) => ({ ...f, [field]: v }));
     };
 
@@ -249,29 +262,38 @@ export default function Profile({ onBack }: Props) {
       const fname = `${Date.now()}.${ext.toLowerCase()}`;
       const path = `${uid}/${fname}`;
 
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
       if (upErr) throw upErr;
 
-      // apaga anterior (se existir)
       if (logoPath && logoPath !== path) {
         await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
       }
 
-      // tenta salvar o path na tabela (se a coluna existir)
       const payload: any = { clinic_logo_path: path };
       let saveErr: any = null;
       if (hasRow) {
-        const { error } = await supabase.from("profiles").update(payload).eq("id", uid);
+        const { error } = await supabase
+          .from("profiles")
+          .update(payload)
+          .eq("id", uid);
         saveErr = error;
       } else {
-        const { error } = await supabase.from("profiles").insert([{ id: uid, ...payload }]);
+        const { error } = await supabase
+          .from("profiles")
+          .insert([{ id: uid, ...payload }]);
         saveErr = error;
       }
-      if (saveErr && (saveErr.code === "42703" || /column .* does not exist/i.test(saveErr.message))) {
-        // coluna não existe — ignorar
+      if (
+        saveErr &&
+        (saveErr.code === "42703" ||
+          /column .* does not exist/i.test(saveErr.message))
+      ) {
+        // ignora falta de coluna
       } else if (saveErr) {
         throw saveErr;
       }
@@ -299,13 +321,19 @@ export default function Profile({ onBack }: Props) {
         await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
       }
 
-      // tenta limpar o path na tabela (se existir a coluna)
       const payload: any = { clinic_logo_path: null };
       let saveErr: any = null;
-      const { error } = await supabase.from("profiles").update(payload).eq("id", uid);
-      saveErr = error;
-      if (saveErr && (saveErr.code === "42703" || /column .* does not exist/i.test(saveErr.message))) {
-        // coluna não existe — ignorar
+      const { error: updErr } = await supabase
+        .from("profiles")
+        .update(payload)
+        .eq("id", uid);
+      saveErr = updErr;
+      if (
+        saveErr &&
+        (saveErr.code === "42703" ||
+          /column .* does not exist/i.test(saveErr.message))
+      ) {
+        // ignora falta de coluna
       } else if (saveErr) {
         throw saveErr;
       }
@@ -322,7 +350,7 @@ export default function Profile({ onBack }: Props) {
     }
   };
 
-  /* ========= salvar (resiliente) ========= */
+  /* ========= salvar ========= */
   const handleSave = async () => {
     if (!validate()) {
       error("Corrija os campos destacados.");
@@ -342,7 +370,10 @@ export default function Profile({ onBack }: Props) {
         email: keepOr(form.email, dbRow?.email),
       };
       const clinicPayload = {
-        clinic_name: keepOr(titleAllWordsFinal(form.clinicName), dbRow?.clinic_name),
+        clinic_name: keepOr(
+          titleAllWordsFinal(form.clinicName),
+          dbRow?.clinic_name
+        ),
         clinic_cnpj: keepOr(onlyDigits(form.clinicCnpj), dbRow?.clinic_cnpj),
         clinic_address: keepOr(form.clinicAddress, dbRow?.clinic_address),
         clinic_phone: keepOr(onlyDigits(form.clinicPhone), dbRow?.clinic_phone),
@@ -353,23 +384,39 @@ export default function Profile({ onBack }: Props) {
         if (hasRow) {
           return supabase.from("profiles").update(payload).eq("id", uid);
         }
-        return supabase.from("profiles").insert([{ id: uid, ...payload }]);
+        return supabase
+          .from("profiles")
+          .insert([{ id: uid, ...payload }]);
       };
 
-      // 1ª tentativa: tudo
-      let { error } = await trySave({ ...basePayload, ...clinicPayload });
+      let { error: saveErr } = await trySave({
+        ...basePayload,
+        ...clinicPayload,
+      });
 
-      // se houver coluna inexistente, salva só básicas
-      if (error && (error.code === "42703" || /column .* does not exist/i.test(error.message))) {
+      if (
+        saveErr &&
+        (saveErr.code === "42703" ||
+          /column .* does not exist/i.test(saveErr.message))
+      ) {
         const r2 = await trySave(basePayload);
-        error = r2.error;
+        saveErr = r2.error;
       }
-      if (error) throw error;
+      if (saveErr) throw saveErr;
 
-      setDbRow((prev: any) => ({ id: uid, ...(prev ?? {}), ...basePayload, ...clinicPayload }));
+      setDbRow((prev: any) => ({
+        id: uid,
+        ...(prev ?? {}),
+        ...basePayload,
+        ...clinicPayload,
+      }));
       setHasRow(true);
 
-      window.dispatchEvent(new CustomEvent("profile:saved", { detail: { name: basePayload.name || "" } }));
+      window.dispatchEvent(
+        new CustomEvent("profile:saved", {
+          detail: { name: basePayload.name || "" },
+        })
+      );
       success("Perfil atualizado com sucesso.");
     } catch (e: any) {
       console.error("save profile error:", e);
@@ -382,8 +429,8 @@ export default function Profile({ onBack }: Props) {
   const reallySignOut = async () => {
     try {
       setSigningOut(true);
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      const { error: signErr } = await supabase.auth.signOut();
+      if (signErr) throw signErr;
     } catch (e: any) {
       console.error("signOut error:", e);
       error(e.message ?? "Erro ao sair");
@@ -394,256 +441,316 @@ export default function Profile({ onBack }: Props) {
   };
 
   return (
-    <div className="p-6 pb-24 bg-gray-50 min-h-screen">
-      {/* topo */}
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={onBack} className="inline-flex items-center text-blue-600 hover:text-blue-800">
-          <ArrowLeft className="w-5 h-5 mr-2" />
-          Voltar
-        </button>
-        <h1 className="text-2xl font-bold text-gray-900">Perfil</h1>
-        <div className="w-[64px]" />
-      </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* BOTÃO VOLTAR – padrão Mimoloo */}
+      <div className="px-4 pt-4">
+  <button
+    onClick={onBack}
+    className="inline-flex items-center text-blue-600 hover:text-blue-800"
+  >
+    <ArrowLeft className="w-5 h-5 mr-2" />
+    Voltar
+  </button>
+</div>
 
-<div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-6 w-full max-w-6xl mx-auto">
-        {/* ===== Dados do usuário ===== */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-600 mb-3">Dados do usuário</h2>
 
-          <label className="block text-sm text-gray-600 mb-1">Nome completo</label>
-          <div className="relative mb-1">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Ex.: Maria Clara D'Ávila"
-              value={form.name}
-              onChange={onChange("name")}
-              onBlur={() => setForm((f) => ({ ...f, name: titleAllWordsFinal(f.name) }))}
-              className={inputClass(!!errors.name)}
-              disabled={loading || saving}
-            />
-          </div>
-          {errors.name && <p className="mb-3 text-xs text-red-600">{errors.name}</p>}
+      {/* CARD central — alinhado com PatientsNew / ProfessionalRecord */}
+      <div className="w-full max-w-[1120px] mx-auto px-4 pb-24 mt-2 sm:mt-2">
+        <div className="rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+          <div className="mx-auto w-full max-w-5xl px-4 md:px-6">
+            {/* Header do card */}
+            <header className="border-b">
+              <div className="px-4 sm:px-6 py-4 text-center">
+                <h1 className="text-base sm:text-lg font-semibold text-slate-900">
+                  Perfil
+                </h1>
+              </div>
+            </header>
 
-          <label className="block text-sm text-gray-600 mb-1">CPF</label>
-          <div className="relative mb-1">
-            <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="000.000.000-00"
-              value={form.cpf}
-              onChange={onChange("cpf")}
-              className={inputClass(!!errors.cpf)}
-              disabled={loading || saving}
-            />
-          </div>
-          {errors.cpf && <p className="mb-3 text-xs text-red-600">{errors.cpf}</p>}
+            {/* Conteúdo */}
+            <div className="p-4 sm:p-6 space-y-6">
+              {/* ===== Dados do usuário ===== */}
+              <section>
+                <h2 className="text-sm font-semibold text-slate-600 mb-3">
+                  Dados do usuário
+                </h2>
 
-          <label className="block text-sm text-gray-600 mb-1">Telefone</label>
-          <div className="relative mb-1">
-            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="tel"
-              inputMode="numeric"
-              placeholder="(11) 9 9999-9999"
-              value={form.phone}
-              onChange={onChange("phone")}
-              className={inputClass(!!errors.phone)}
-              disabled={loading || saving}
-            />
-          </div>
-          {errors.phone && <p className="mb-3 text-xs text-red-600">{errors.phone}</p>}
+                <label className="block text-sm text-gray-600 mb-1">
+                  Nome completo
+                </label>
+                <div className="relative mb-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Ex.: Maria Clara D'Ávila"
+                    value={form.name}
+                    onChange={onChange("name")}
+                    onBlur={() =>
+                      setForm((f) => ({
+                        ...f,
+                        name: titleAllWordsFinal(f.name),
+                      }))
+                    }
+                    className={inputClass(!!errors.name)}
+                    disabled={loading || saving}
+                  />
+                </div>
+                {errors.name && (
+                  <p className="mb-3 text-xs text-red-600">{errors.name}</p>
+                )}
 
-          <label className="block text-sm text-gray-600 mb-1">Email</label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="email"
-              placeholder="voce@email.com"
-              value={form.email}
-              onChange={onChange("email")}
-              className={inputClass()}
-              disabled={loading || saving}
-            />
-          </div>
-        </section>
+                <label className="block text-sm text-gray-600 mb-1">
+                  CPF
+                </label>
+                <div className="relative mb-1">
+                  <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="000.000.000-00"
+                    value={form.cpf}
+                    onChange={onChange("cpf")}
+                    className={inputClass(!!errors.cpf)}
+                    disabled={loading || saving}
+                  />
+                </div>
+                {errors.cpf && (
+                  <p className="mb-3 text-xs text-red-600">{errors.cpf}</p>
+                )}
 
-        <hr className="border-gray-100" />
+                <label className="block text-sm text-gray-600 mb-1">
+                  Telefone
+                </label>
+                <div className="relative mb-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="(11) 9 9999-9999"
+                    value={form.phone}
+                    onChange={onChange("phone")}
+                    className={inputClass(!!errors.phone)}
+                    disabled={loading || saving}
+                  />
+                </div>
+                {errors.phone && (
+                  <p className="mb-3 text-xs text-red-600">{errors.phone}</p>
+                )}
 
-        {/* ===== Dados da clínica ===== */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-600 mb-3">Dados da clínica</h2>
+                <label className="block text-sm text-gray-600 mb-1">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="email"
+                    placeholder="voce@email.com"
+                    value={form.email}
+                    onChange={onChange("email")}
+                    className={inputClass()}
+                    disabled={loading || saving}
+                  />
+                </div>
+              </section>
 
-          {/* Logo da clínica (preview + botões) */}
-          <div className="mb-3 flex items-center gap-4">
-            {/* Preview */}
-            <div className="relative h-16 w-16 rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo da clínica" className="h-full w-full object-cover" />
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  className="h-7 w-7 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                >
-                  <path d="M3 17l6-6 4 4 5-5 3 3v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  <path d="M14 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
-                </svg>
-              )}
-            </div>
+              <hr className="border-gray-100" />
 
-            {/* Ações */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={logoUploading}
-                className={[
-                  "group inline-flex items-center gap-2 rounded-lg px-3 py-2 text-white shadow-sm",
-                  "bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600",
-                  "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400",
-                  "active:scale-[0.98] disabled:opacity-60",
-                ].join(" ")}
-                title="Enviar ou trocar logo"
-              >
-                <Upload className="h-4 w-4 transition-transform group-hover:-translate-y-[1px]" />
-                {logoUploading ? "Enviando..." : logoUrl ? "Trocar logo" : "Enviar logo"}
-              </button>
+              {/* ===== Dados da clínica ===== */}
+              <section>
+                <h2 className="text-sm font-semibold text-slate-600 mb-3">
+                  Dados da clínica
+                </h2>
 
-              {logoUrl && (
+                {/* Logo da clínica */}
+                <div className="mb-3 flex items-center gap-4">
+                  <div className="relative h-16 w-16 rounded-xl bg-white ring-1 ring-gray-200 overflow-hidden flex items-center justify-center shadow-sm">
+                    {logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt="Logo da clínica"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        className="h-7 w-7 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                      >
+                        <path d="M3 17l6-6 4 4 5-5 3 3v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                        <path d="M14 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+                      </svg>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={logoUploading}
+                      className={[
+                        "group inline-flex items-center gap-2 rounded-lg px-3 py-2 text-white shadow-sm",
+                        "bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600",
+                        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400",
+                        "active:scale-[0.98] disabled:opacity-60",
+                      ].join(" ")}
+                      title="Enviar ou trocar logo"
+                    >
+                      <Upload className="h-4 w-4 transition-transform group-hover:-translate-y-[1px]" />
+                      {logoUploading
+                        ? "Enviando..."
+                        : logoUrl
+                        ? "Trocar logo"
+                        : "Enviar logo"}
+                    </button>
+
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemoveLogo(true)}
+                        disabled={logoUploading}
+                        className={[
+                          "inline-flex items-center gap-2 rounded-lg px-3 py-2",
+                          "border border-slate-300 text-slate-700 hover:bg-slate-100",
+                          "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300",
+                          "active:scale-[0.98] disabled:opacity-60",
+                        ].join(" ")}
+                        title="Remover logo"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remover
+                      </button>
+                    )}
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadLogo(f);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </div>
+
+                <label className="block text-sm text-gray-600 mb-1">
+                  Nome da clínica
+                </label>
+                <div className="relative mb-1">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Ex.: Clínica Vida"
+                    value={form.clinicName}
+                    onChange={onChange("clinicName")}
+                    onBlur={() =>
+                      setForm((f) => ({
+                        ...f,
+                        clinicName: titleAllWordsFinal(f.clinicName),
+                      }))
+                    }
+                    className={inputClass()}
+                    disabled={loading || saving}
+                  />
+                </div>
+
+                <label className="block text-sm text-gray-600 mb-1">
+                  CNPJ
+                </label>
+                <div className="relative mb-1">
+                  <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="00.000.000/0000-00"
+                    value={form.clinicCnpj}
+                    onChange={onChange("clinicCnpj")}
+                    className={inputClass()}
+                    disabled={loading || saving}
+                  />
+                </div>
+
+                <label className="block text-sm text-gray-600 mb-1">
+                  Endereço
+                </label>
+                <div className="relative mb-1">
+                  <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                  <textarea
+                    placeholder="Rua, número, bairro, cidade/UF"
+                    value={form.clinicAddress}
+                    onChange={onChange("clinicAddress")}
+                    className="w-full pr-3 pl-9 py-2 rounded-xl border bg-white text-gray-900 focus:outline-none focus:ring-2 border-gray-200 focus:ring-blue-500 focus:border-blue-500 min-h-[70px] resize-y"
+                    disabled={loading || saving}
+                  />
+                </div>
+
+                <label className="block text-sm text-gray-600 mb-1">
+                  Telefone da clínica
+                </label>
+                <div className="relative mb-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="(11) 9 9999-9999"
+                    value={form.clinicPhone}
+                    onChange={onChange("clinicPhone")}
+                    className={inputClass()}
+                    disabled={loading || saving}
+                  />
+                </div>
+
+                <label className="block text-sm text-gray-600 mb-1">
+                  Email da clínica
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="email"
+                    placeholder="contato@clinica.com"
+                    value={form.clinicEmail}
+                    onChange={onChange("clinicEmail")}
+                    className={inputClass()}
+                    disabled={loading || saving}
+                  />
+                </div>
+              </section>
+
+              {/* Ações */}
+              <div className="pt-2">
                 <button
-                  type="button"
-                  onClick={() => setConfirmRemoveLogo(true)}
-                  disabled={logoUploading}
-                  className={[
-                    "inline-flex items-center gap-2 rounded-lg px-3 py-2",
-                    "border border-slate-300 text-slate-700 hover:bg-slate-100",
-                    "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300",
-                    "active:scale-[0.98] disabled:opacity-60",
-                  ].join(" ")}
-                  title="Remover logo"
+                  onClick={handleSave}
+                  disabled={loading || saving}
+                  className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white ${
+                    saving ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
+                  }`}
+                  title="Salvar"
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Remover
+                  <Save className="w-4 h-4" />
+                  {saving ? "Salvando..." : "Salvar"}
                 </button>
-              )}
+
+                <button
+                  onClick={() => setConfirmSignOut(true)}
+                  disabled={signingOut}
+                  className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  title="Encerrar sessão"
+                >
+                  <LogOut className="w-4 h-4" />
+                  {signingOut ? "Saindo..." : "Encerrar sessão"}
+                </button>
+              </div>
             </div>
-
-            {/* input invisível */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleUploadLogo(f);
-                e.currentTarget.value = "";
-              }}
-            />
           </div>
-
-          <label className="block text-sm text-gray-600 mb-1">Nome da clínica</label>
-          <div className="relative mb-1">
-            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Ex.: Clínica Vida"
-              value={form.clinicName}
-              onChange={onChange("clinicName")}
-              onBlur={() =>
-                setForm((f) => ({ ...f, clinicName: titleAllWordsFinal(f.clinicName) }))
-              }
-              className={inputClass()}
-              disabled={loading || saving}
-            />
-          </div>
-
-          <label className="block text-sm text-gray-600 mb-1">CNPJ</label>
-          <div className="relative mb-1">
-            <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="00.000.000/0000-00"
-              value={form.clinicCnpj}
-              onChange={onChange("clinicCnpj")}
-              className={inputClass()}
-              disabled={loading || saving}
-            />
-          </div>
-
-          <label className="block text-sm text-gray-600 mb-1">Endereço</label>
-          <div className="relative mb-1">
-            <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-            <textarea
-              placeholder="Rua, número, bairro, cidade/UF"
-              value={form.clinicAddress}
-              onChange={onChange("clinicAddress")}
-              className={`w-full pr-3 pl-9 py-2 rounded-xl border bg-white text-gray-900 focus:outline-none focus:ring-2 border-gray-200 focus:ring-blue-500 focus:border-blue-500 min-h-[70px] resize-y`}
-              disabled={loading || saving}
-            />
-          </div>
-
-          <label className="block text-sm text-gray-600 mb-1">Telefone da clínica</label>
-          <div className="relative mb-1">
-            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="tel"
-              inputMode="numeric"
-              placeholder="(11) 9 9999-9999"
-              value={form.clinicPhone}
-              onChange={onChange("clinicPhone")}
-              className={inputClass()}
-              disabled={loading || saving}
-            />
-          </div>
-
-          <label className="block text-sm text-gray-600 mb-1">Email da clínica</label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="email"
-              placeholder="contato@clinica.com"
-              value={form.clinicEmail}
-              onChange={onChange("clinicEmail")}
-              className={inputClass()}
-              disabled={loading || saving}
-            />
-          </div>
-        </section>
-
-        {/* Ações */}
-        <div className="pt-2">
-          <button
-            onClick={handleSave}
-            disabled={loading || saving}
-            className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white ${
-              saving ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
-            }`}
-            title="Salvar"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? "Salvando..." : "Salvar"}
-          </button>
-
-          <button
-            onClick={() => setConfirmSignOut(true)}
-            disabled={signingOut}
-            className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
-            title="Encerrar sessão"
-          >
-            <LogOut className="w-4 h-4" />
-            {signingOut ? "Saindo..." : "Encerrar sessão"}
-          </button>
         </div>
       </div>
 
-      {/* ======= Dialogs ======= */}
+      {/* Dialogs */}
       <ConfirmDialog
         open={confirmRemoveLogo}
         onClose={() => setConfirmRemoveLogo(false)}
@@ -666,7 +773,6 @@ export default function Profile({ onBack }: Props) {
         icon={<LogOut className="w-5 h-5" />}
       />
 
-      {/* Toaster (uma vez por página) */}
       <ToastContainer />
     </div>
   );

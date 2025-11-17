@@ -585,16 +585,22 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
       `}</style>
 
       {/* Cabeçalho */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 p-3 border-b bg-white/80 backdrop-blur">
-        <button
-          onClick={handleHeaderBack}
-          className="p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition"
-          title="Voltar"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-lg font-semibold">Gerador de Atestados</h1>
-      </div>
+<div className="sticky top-0 z-10  bg-white/80 backdrop-blur px-3 py-3">
+  <div className="relative flex items-center gap-3">
+    <button
+    onClick={onBack}
+    className="inline-flex items-center text-blue-600 hover:text-blue-800"
+  >
+    <ArrowLeft className="w-5 h-5 mr-2" />
+    Voltar
+  </button>
+
+    <h1 className="absolute left-1/2 -translate-x-1/2 text-base sm:text-lg font-semibold text-slate-900 whitespace-nowrap">
+      Gerador de Atestados
+    </h1>
+  </div>
+</div>
+
 
       {/* Tabs */}
       <div className="no-print flex gap-4 px-4 pt-3 border-b bg-white">

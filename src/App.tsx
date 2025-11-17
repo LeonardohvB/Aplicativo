@@ -218,12 +218,12 @@ export default function App() {
       case 'patients_new':
         return (
           <PatientsNew
-            onBack={() => setActiveTab('agenda')}
-            onCreated={() => setActiveTab('agenda')}
+            onBack={() => setActiveTab('inicio')}
+            onCreated={() => setActiveTab('inicio')}
           />
         )
       case 'evolucao':
-        return <PatientEvolution onBack={() => setActiveTab('agenda')} />
+        return <PatientEvolution onBack={() => setActiveTab('inicio')} />
       case 'perfil':
         return <Profile onBack={() => setActiveTab('inicio')} />
       case 'certificate_new':
