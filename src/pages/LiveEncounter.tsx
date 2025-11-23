@@ -14,6 +14,10 @@ import {
   AlertCircle,
   Info,
   Pill as PillIcon,
+  Clock3,
+   Package,
+  ClipboardList as ClipboardPrescription
+  
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useEncounterDraft } from "../hooks/useEncounterDraft";
@@ -57,7 +61,6 @@ function useToasts(): ToastHelpers {
       push({ kind: "info", message, title }),
   };
 }
-
 
 // ➜ container agora em CIMA e centralizado
 const Toasts: React.FC<{
@@ -504,6 +507,101 @@ function QuickTagInput({
 /* ==========================================================
    Componente Principal
    ========================================================== */
+   /* ==========================
+   COMPONENTE: RecipeTypeCard
+   ========================== */
+
+const RecipeTypeCard = ({
+  value,
+  selected,
+  onChange,
+  color,
+  title,
+}: {
+  value: string;
+  selected: boolean;
+  onChange: (v: string) => void;
+  color: "white" | "blue" | "yellow";
+  title: string;
+  subtitle: string;
+}) => {
+  const baseColors = {
+    white: {
+      bg: "bg-white",
+      border: "border-gray-300",
+      shadow: "shadow-[0_2px_6px_rgba(0,0,0,0.08)]",
+      watermark: "text-gray-800/10"
+    },
+    blue: {
+      bg: "bg-gradient-to-b from-blue-50 to-blue-100",
+      border: "border-blue-300",
+      shadow: "shadow-[0_2px_8px_rgba(37,99,235,0.15)]",
+      watermark: "text-blue-900/10"
+    },
+    yellow: {
+      bg: "bg-gradient-to-b from-yellow-50 to-yellow-100",
+      border: "border-yellow-300",
+      shadow: "shadow-[0_2px_8px_rgba(234,179,8,0.2)]",
+      watermark: "text-yellow-800/10"
+    }
+  }[color];
+
+  return (
+    <label
+      className="relative cursor-pointer block"
+      onClick={() => onChange(value)}
+    >
+      <input
+        type="radio"
+        name="recipeTypeCard"
+        checked={selected}
+        onChange={() => onChange(value)}
+        className="hidden"
+      />
+
+      <div
+        className={`
+          relative rounded-lg p-4 h-[120px] flex flex-col justify-between 
+          border transition-all duration-300
+          ${baseColors.bg} ${baseColors.border} ${baseColors.shadow}
+          ${selected ? "border-2 scale-[1.02]" : "hover:-translate-y-1"}
+        `}
+      >
+        <div className="flex justify-between items-center">
+          <div
+            className={`
+              w-[18px] h-[18px] rounded-full border-2 bg-white flex items-center justify-center
+              ${selected ? "border-blue-600" : "border-gray-300"}
+            `}
+          >
+            {selected && (
+              <div className="w-[10px] h-[10px] rounded-full bg-blue-600 animate-scaleIn"></div>
+            )}
+          </div>
+
+          <svg
+            className="w-5 h-5 opacity-40"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="9" y1="9" x2="15" y2="9" />
+            <line x1="9" y1="15" x2="15" y2="15" />
+          </svg>
+        </div>
+
+        <div className="text-center">
+          <div className="text-sm font-semibold">{title}</div>
+          
+        </div>
+      </div>
+    </label>
+  );
+};
+
 export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   // toasts
   const toasts = useToasts();
@@ -954,6 +1052,22 @@ const handleDurationBlur = (value: string, index: number) => {
   }
 };
 const [showRecipe, setShowRecipe] = useState(false);
+const [recipeName, setRecipeName] = useState("");
+const [recipeDosage, setRecipeDosage] = useState("");
+const [recipeFrequency, setRecipeFrequency] = useState("");
+const [recipeDuration, setRecipeDuration] = useState("");
+const [recipeQuantity, setRecipeQuantity] = useState("");
+const [recipeInstructions, setRecipeInstructions] = useState("");
+const [recipeType, setRecipeType] = useState("comum");
+const resetRecipe = () => {
+  setRecipeName("");
+  setRecipeDosage("");
+  setRecipeFrequency("");
+  setRecipeDuration("");
+  setRecipeQuantity("");
+  setRecipeInstructions("");
+  setRecipeType("comum");
+};
 
 
   /* ===================== Render ===================== */
@@ -962,10 +1076,11 @@ const [showRecipe, setShowRecipe] = useState(false);
       {/* Header */}
 <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
   <div className="w-full px-4 py-4">
-    <div className="grid grid-cols-3 items-center">
+
+    <div className="flex flex-col md:grid md:grid-cols-3 items-center text-center md:text-left gap-2 md:gap-0">
 
       {/* ESQUERDA - Voltar */}
-      <div className="justify-self-start">
+      <div className="justify-self-start w-full md:w-auto flex md:block">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
           className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition"
@@ -975,8 +1090,8 @@ const [showRecipe, setShowRecipe] = useState(false);
         </button>
       </div>
 
-      {/* CENTRO - Título */}
-      <div className="justify-self-center">
+      {/* CENTRO */}
+      <div className="justify-self-center w-full md:w-auto flex md:block justify-center">
         <div className="flex items-center gap-2 text-gray-600">
           <Clock size={18} />
           <span className="text-sm">Atendimento ao Vivo</span>
@@ -984,16 +1099,16 @@ const [showRecipe, setShowRecipe] = useState(false);
         </div>
       </div>
 
-      {/* DIREITA: status salvar colado na direita */}
-      <div className="justify-self-end text-sm text-gray-500">
-        {saveState === "saving" && "Salvando..."}
-        {saveState === "saved" && "✓ Salvo"}
-        {saveState === "error" && "⚠️ Falha ao salvar (offline?)"}
-      </div>
+        <div className="justify-self-end w-full md:w-auto flex md:block justify-center md:justify-end gap-3">
+  <span className="text-sm text-gray-500">
+    {saveState === "saving" && "Salvando..."}
+    {saveState === "saved" && "✓ Salvo"}
+    {saveState === "error" && "⚠️ Falha ao salvar"}
+  </span>
+    </div>
     </div>
   </div>
 </div>
-
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         {/* Paciente */}
@@ -1246,30 +1361,198 @@ const [showRecipe, setShowRecipe] = useState(false);
     </div>
   )}
 </div>
+
 {showRecipe && (
   <div
-    className="fixed inset-0 z-[95] flex items-center justify-center p-4"
-    onClick={() => setShowRecipe(false)}
-  >
+  className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+  onClick={() => {
+    resetRecipe();
+    setShowRecipe(false);
+  }}
+>
+
     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
-    <div
-      className="relative bg-white w-full max-w-lg rounded-2xl p-6 shadow-xl animate-zoom-in"
-      onClick={(e) => e.stopPropagation()}
-    >
+  <div
+  className="
+    relative bg-white w-full max-w-lg rounded-2xl p-6 shadow-xl animate-zoom-in
+    max-h-[90vh] overflow-y-auto modal-scroll-hide
+  "
+
+  onClick={(e) => e.stopPropagation()}
+>
+
       <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
         <PillIcon className="w-5 h-5 text-blue-600" />
         Gerar Receita
       </h2>
 
-      <p className="text-gray-600 text-sm mb-4">
-        Aqui adicionaremos: remédio, dosagem, frequência, duração, quantidade,
-        instruções e tipo de receita (Comum / Azul / Amarela).
-      </p>
+      <div className="space-y-6">
+
+  {/* Medicamento */}
+  <div className="border border-gray-200 rounded-lg p-4">
+    <div className="flex items-center gap-2 mb-3">
+      <PillIcon className="w-5 h-5 text-blue-600" />
+      <h3 className="font-semibold text-gray-900">Medicamento</h3>
+    </div>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+     <input
+  type="text"
+  placeholder="Nome do remédio (ex.: Sertralina 50mg)"
+  className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+  value={recipeName}
+  onChange={(e) => setRecipeName(e.target.value)}
+/>
+
+<input
+  type="text"
+  placeholder="Dosagem (ex.: 50mg)"
+  className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+  value={recipeDosage}
+  onChange={(e) => setRecipeDosage(e.target.value)}
+  onBlur={(e) => {
+    const v = e.target.value.trim();
+    // se digitou só números → monta "XX mg"
+    if (/^\d+$/.test(v)) {
+      setRecipeDosage(`${v} mg`);
+    }
+  }}
+/>
+
+    </div>
+  </div>
+
+  {/* Frequência e Duração */}
+  <div className="border border-gray-200 rounded-lg p-4">
+    <div className="flex items-center gap-2 mb-3">
+      <Clock3 className="w-5 h-5 text-blue-600" />
+      <h3 className="font-semibold text-gray-900">Frequência / Duração</h3>
+    </div>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <input
+  type="text"
+  placeholder="Frequência (ex.: 8/8h)"
+  className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+  value={recipeFrequency}
+  onChange={(e) => setRecipeFrequency(e.target.value)}
+  onBlur={(e) => {
+    const v = e.target.value.trim();
+    // se digitou 1 número → monta "X/Xh"
+    if (/^\d+$/.test(v)) {
+      setRecipeFrequency(`${v}/${v}h`);
+    }
+  }}
+/>
+
+<input
+  type="text"
+  placeholder="Duração (ex.: 7 dias)"
+  className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+  value={recipeDuration}
+  onChange={(e) => setRecipeDuration(e.target.value)}
+  onBlur={(e) => {
+    const v = e.target.value.trim();
+    if (/^\d+$/.test(v)) {
+      const label = Number(v) === 1 ? "1 dia" : `${v} dias`;
+      setRecipeDuration(label);
+    }
+  }}
+/>
+
+    </div>
+  </div>
+
+  {/* Quantidade */}
+  <div className="border border-gray-200 rounded-lg p-4">
+    <div className="flex items-center gap-2 mb-3">
+      <Package className="w-5 h-5 text-blue-600" />
+      <h3 className="font-semibold text-gray-900">Quantidade</h3>
+    </div>
+
+    <input
+  type="text"
+  inputMode="numeric"
+  placeholder="Quantidade (ex.: 30 comprimidos)"
+  className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+  value={recipeQuantity}
+  onChange={(e) => setRecipeQuantity(e.target.value)}
+  onBlur={(e) => {
+    const v = e.target.value.trim();
+    if (/^\d+$/.test(v)) {
+      const label = Number(v) === 1 ? "1 comprimido" : `${v} comprimidos`;
+      setRecipeQuantity(label);
+    }
+  }}
+/>
+
+  </div>
+
+  {/* Instruções */}
+  <div className="border border-gray-200 rounded-lg p-4">
+    <div className="flex items-center gap-2 mb-3">
+      <FileText className="w-5 h-5 text-blue-600" />
+      <h3 className="font-semibold text-gray-900">Instruções</h3>
+    </div>
+
+    <textarea
+      rows={3}
+      placeholder="Instruções adicionais (opcional)"
+      className="border rounded-lg px-3 py-2 w-full focus:ring-2 focus:ring-blue-500"
+      value={recipeInstructions}
+      onChange={(e) => setRecipeInstructions(e.target.value)}
+    ></textarea>
+  </div>
+
+  {/* Tipo da Receita */}
+ <div className="border border-gray-200 rounded-lg p-4">
+  <div className="flex items-center gap-2 mb-3">
+    <ClipboardPrescription className="w-5 h-5 text-blue-600" />
+    <h3 className="font-semibold text-gray-900">Tipo de Receita</h3>
+  </div>
+
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+    <RecipeTypeCard
+      value="comum"
+      selected={recipeType === "comum"}
+      onChange={setRecipeType}
+      color="white"
+      title="Comum"
+      subtitle="(Branca)"
+    />
+
+    <RecipeTypeCard
+      value="azul"
+      selected={recipeType === "azul"}
+      onChange={setRecipeType}
+      color="blue"
+      title="Controlada"
+      subtitle="(Azul)"
+    />
+
+    <RecipeTypeCard
+      value="amarela"
+      selected={recipeType === "amarela"}
+      onChange={setRecipeType}
+      color="yellow"
+      title="Controlada"
+      subtitle="(Amarela)"
+    />
+  </div>
+</div>
+
+
+</div>
+
 
       <div className="flex justify-end gap-2 mt-6">
         <button
-          onClick={() => setShowRecipe(false)}
+  onClick={() => {
+    resetRecipe();
+    setShowRecipe(false);
+  }}
           className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
         >
           Cancelar
@@ -1285,12 +1568,23 @@ const [showRecipe, setShowRecipe] = useState(false);
     </div>
 
     <style>{`
-      @keyframes zoom-in {
-        0% { transform: scale(.92); opacity: 0; }
-        100% { transform: scale(1); opacity: 1; }
-      }
-      .animate-zoom-in { animation: zoom-in .2s ease-out; }
-    `}</style>
+  @keyframes zoom-in {
+    0% { transform: scale(.92); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .animate-zoom-in { animation: zoom-in .2s ease-out; }
+
+  /* ======== REMOVER SCROLLBAR do modal ======== */
+  .modal-scroll-hide::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+  }
+  .modal-scroll-hide {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+`}</style>
+
   </div>
 )}
 

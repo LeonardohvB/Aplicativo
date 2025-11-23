@@ -170,3 +170,18 @@ body::after {
   pointer-events: none;
 }
 */
+
+/* Remove scrollbars (mantém rolagem funcional) */
+::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
