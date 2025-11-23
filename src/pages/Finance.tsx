@@ -30,25 +30,6 @@ import { ToastContainer, useToast } from '../components/ui/Toast';
 
 /* ====================== Tipos ====================== */
 type TxStatus = 'paid' | 'pending' | (string & {});
-type Pt = { x: number; y: number };
-
-/* ====================== Utils spark ====================== */
-function catmullToBezier(points: Pt[]): string {
-  if (points.length < 2) return `M0,110 C150,110 300,110 600,110`;
-  let d = `M ${points[0].x},${points[0].y}`;
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] || points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] || p2;
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
-  }
-  return d;
-}
 
 /* ====================== Número animado ====================== */
 function useAnimatedNumber(
@@ -352,9 +333,6 @@ const Finance: React.FC = () => {
   const paidIncomes = transactions.filter((t) => t.type === 'income' && (t.status ?? 'pending') === 'paid');
   const avgTicket = paidIncomes.length ? totalRevenuePaid / paidIncomes.length : 0;
 
-  const MASK = '•'.repeat(6);
-  const isNegative = balance < 0, isPositive = balance > 0;
-
   // animações
   const animatedBalance = useAnimatedNumber(balance, {
     duration: 900,
@@ -370,34 +348,6 @@ const Finance: React.FC = () => {
     duration: 900,
     onFinish: () => { setExpPulse(true); setTimeout(() => setExpPulse(false), 180); },
   });
-
-  const sparkPathD = useMemo(() => {
-    const sorted = [...transactions].sort(
-      (a, b) => parseBrDate(a.date) - parseBrDate(b.date) || String(a.id).localeCompare(String(b.id))
-    );
-    let running = 0;
-    const acc: number[] = [];
-    for (const t of sorted) {
-      if (t.type === 'income') {
-        if ((t.status ?? 'pending') === 'paid') running += Number(t.amount) || 0;
-      } else if (t.type === 'expense') running -= Number(t.amount) || 0;
-      acc.push(running);
-    }
-    if (acc.length === 0) return `M0,110 C150,110 300,110 600,110`;
-    const last = acc.slice(-16),
-      min = Math.min(...last),
-      max = Math.max(...last),
-      range = Math.max(1, max - min);
-    const width = 600, height = 200;
-    const midY = height * 0.52,
-      ampLog = Math.log10(range + 10),
-      ampBase = Math.min(96, Math.max(36, ampLog * 28));
-    const pts: Pt[] = last.map((v, i) => ({
-      x: (i / (last.length - 1)) * width,
-      y: midY - ((v - (min + range / 2)) / range) * ampBase * 1.9,
-    }));
-    return catmullToBezier(pts);
-  }, [transactions]);
 
   /* Agrupamento por dia (para lista de cards) */
   type Group = { key: string; label: string; items: any[] };
@@ -485,8 +435,6 @@ const Finance: React.FC = () => {
     );
   }
 
-  const neutralMode = !showBalance || balance === 0;
-
   /* ====================== LAYOUT ====================== */
   return (
     <div className="min-h-screen pb-24 bg-gradient-to-b from-slate-50 via-slate-50 to-white text-slate-800">
@@ -524,18 +472,6 @@ const Finance: React.FC = () => {
           {/* Coluna principal (Saldo grande) */}
           <div className="col-span-12 xl:col-span-8">
             <div className="relative overflow-hidden rounded-2xl p-6 ring-1 ring-white/10 bg-gradient-to-br from-slate-900 to-indigo-950 shadow-xl">
-              {/* sparkline */}
-              <svg className="pointer-events-none absolute inset-0 w-full h-full" viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true">
-                <path
-                  d={sparkPathD}
-                  fill="none"
-                  stroke={neutralMode ? 'rgba(148,163,184,.35)' : isNegative ? '#ef4444' : '#22c55e'}
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                >
-                  <animateTransform attributeName="transform" type="translate" from="-120 0" to="0 0" dur="5s" repeatCount="indefinite" />
-                </path>
-              </svg>
 
               <div className="relative z-10 flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -770,10 +706,8 @@ const Finance: React.FC = () => {
           <div className="space-y-8 pb-32">
             {visibleTxs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-blue-300 bg-white p-8 text-center text-gray-500">
-  {emptyMessage}
-</div>
-
-
+                {emptyMessage}
+              </div>
             ) : (
               groups.map((g) => (
                 <div key={g.key}>

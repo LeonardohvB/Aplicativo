@@ -936,36 +936,64 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
   const delMed = (idx: number) =>
     setDraft((d) => ({ ...d, medications: (d.medications || []).filter((_, i) => i !== idx) }));
 
+  /* ===================== Autocomplete Medicações ===================== */
+
+// Quando o usuário digita um único número em "frequência"
+const handleFreqBlur = (value: string, index: number) => {
+  if (/^\d$/.test(value)) {
+    setMed(index, { freq: `${value}/${value}h` });
+  }
+};
+
+// Quando o usuário digita um único número em "duração"
+const handleDurationBlur = (value: string, index: number) => {
+  if (/^\d$/.test(value)) {
+    const num = Number(value);
+    const label = num === 1 ? "1 dia" : `${num} dias`;
+    setMed(index, { duration: label });
+  }
+};
+const [showRecipe, setShowRecipe] = useState(false);
+
+
   /* ===================== Render ===================== */
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            {/* Voltar */}
-            <button
-              className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
-              onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
-            >
-              <ChevronLeft size={20} />
-              <span className="font-medium">Voltar</span>
-            </button>
+<div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+  <div className="w-full px-4 py-4">
+    <div className="grid grid-cols-3 items-center">
 
-            <div className="flex items-center gap-2 text-gray-600">
-              <Clock size={18} />
-              <span className="text-sm">Atendimento ao Vivo</span>
-              <Stethoscope className="w-4 h-4 opacity-80" />
-            </div>
+      {/* ESQUERDA - Voltar */}
+      <div className="justify-self-start">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("encounter:close"))}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition"
+        >
+          <ChevronLeft size={18} className="mt-px" />
+          <span>Voltar</span>
+        </button>
+      </div>
 
-            <div className="text-sm text-gray-500">
-              {saveState === "saving" && "Salvando..."}
-              {saveState === "saved" && "✓ Salvo"}
-              {saveState === "error" && "⚠️ Falha ao salvar (offline?)"}
-            </div>
-          </div>
+      {/* CENTRO - Título */}
+      <div className="justify-self-center">
+        <div className="flex items-center gap-2 text-gray-600">
+          <Clock size={18} />
+          <span className="text-sm">Atendimento ao Vivo</span>
+          <Stethoscope className="w-4 h-4 opacity-80" />
         </div>
       </div>
+
+      {/* DIREITA: status salvar colado na direita */}
+      <div className="justify-self-end text-sm text-gray-500">
+        {saveState === "saving" && "Salvando..."}
+        {saveState === "saved" && "✓ Salvo"}
+        {saveState === "error" && "⚠️ Falha ao salvar (offline?)"}
+      </div>
+    </div>
+  </div>
+</div>
+
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         {/* Paciente */}
@@ -984,7 +1012,7 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
           <p className="text-sm text-gray-600">{serviceName || ""}</p>
 
           <div className="mt-4">
-            <div className="flex">
+            <div className="flex gap-3">
               <button
                 onClick={() => setConfirmOpen(true)}
                 title="Gerar evolução agora"
@@ -995,102 +1023,25 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
                   whitespace-normal text-center min-h-[40px]
                 "
               >
+                
                 <FileText className="w-4 h-4 shrink-0" />
                 <span className="text-[14px] leading-tight">Finalizar Evolução</span>
               </button>
+
+              {/* Novo botão GERAR RECEITA */}
+              
+        <button
+          onClick={() => setShowRecipe(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-green-600 hover:bg-green-700 text-white px-3 py-2 text-sm shadow transition"
+        >
+          <PillIcon className="w-4 h-4" />
+          <span>Gerar Receita</span>
+        </button>
             </div>
           </div>
         </div>
 
-        {/* VITAIS */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Activity className="text-blue-600" size={20} />
-              <h3 className="text-lg font-bold text-gray-900">SINAIS VITAIS</h3>
-            </div>
-
-            {/* Toggle */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">
-                {showVitals ? "Ocultar" : "Mostrar"} sinais vitais
-              </span>
-              <button
-                onClick={toggleVitals}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                  showVitals ? "bg-blue-600" : "bg-gray-300"
-                }`}
-                aria-label="Alternar sinais vitais"
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    showVitals ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {showVitals ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <VitalInput
-                icon={<Activity className="w-4 h-4 text-blue-600" />}
-                label="Pressão"
-                placeholder="120/80"
-                value={draft.vitals.bp || ""}
-                onChange={(v) => setVital("bp", v)}
-                chips={["120/80", "130/85", "110/70"]}
-                onQuick={(v) => setVital("bp", v)}
-              />
-              <VitalInput
-                icon={<Heart className="w-4 h-4 text-blue-600" />}
-                label="FC"
-                placeholder="72 bpm"
-                value={draft.vitals.hr || ""}
-                onChange={(v) => setVital("hr", v)}
-                chips={["68 bpm", "72 bpm", "78 bpm"]}
-                onQuick={(v) => setVital("hr", v)}
-              />
-              <VitalInput
-                icon={<Thermometer className="w-4 h-4 text-blue-600" />}
-                label="Temp."
-                placeholder="36.5 °C"
-                value={draft.vitals.temp || ""}
-                onChange={(v) => setVital("temp", v)}
-                chips={["36.3 °C", "36.5 °C", "37.0 °C"]}
-                onQuick={(v) => setVital("temp", v)}
-              />
-              <VitalInput
-                icon={<Scale className="w-4 h-4 text-blue-600" />}
-                label="Peso"
-                placeholder="78.5 kg"
-                value={draft.vitals.weight || ""}
-                onChange={(v) => setVital("weight", v)}
-                chips={["70 kg", "78.5 kg", "80 kg"]}
-                onQuick={(v) => setVital("weight", v)}
-              />
-              <VitalInput
-                icon={<Ruler className="w-4 h-4 text-blue-600" />}
-                label="Altura"
-                placeholder="175 cm"
-                value={draft.vitals.height || ""}
-                onChange={(v) => setVital("height", v)}
-                chips={["170 cm", "175 cm", "180 cm"]}
-                onQuick={(v) => setVital("height", v)}
-              />
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Activity className="mx-auto text-gray-300 mb-3" size={48} />
-              <p className="text-gray-500 text-sm">
-                Os sinais vitais estão ocultos para este tipo de atendimento.
-              </p>
-              <p className="text-gray-400 text-xs mt-1">
-                Ative o switch acima se precisar registrar sinais vitais.
-              </p>
-            </div>
-          )}
-        </div>
+        
 
         {/* Editor SOAP */}
         <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -1153,31 +1104,47 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
 
             <div className="mt-3 space-y-2">
               {(draft.medications || []).map((m, i) => (
-                <div key={i} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+<div key={i} className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-12 gap-2 items-start">
                   <input
                     className="md:col-span-5 rounded-lg border border-slate-300 px-3 py-2"
                     placeholder="Nome (ex.: sertralina 50mg)"
                     value={m.name || ""}
                     onChange={(e) => setMed(i, { name: e.target.value })}
                   />
+                 <input
+  className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+  placeholder="Frequência (ex.: 8/8h)"
+  value={m.freq || ""}
+  onChange={(e) => setMed(i, { freq: e.target.value })}
+  onBlur={(e) => handleFreqBlur(e.target.value, i)}
+/>
+
                   <input
-                    className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
-                    placeholder="Frequência (ex.: 8/8h)"
-                    value={m.freq || ""}
-                    onChange={(e) => setMed(i, { freq: e.target.value })}
-                  />
-                  <input
-                    className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
-                    placeholder="Duração (ex.: 7 dias)"
-                    value={m.duration || ""}
-                    onChange={(e) => setMed(i, { duration: e.target.value })}
-                  />
-                  <button
-                    className="md:col-span-1 rounded-lg border border-rose-200 text-rose-700 px-3 py-2 text-sm hover:bg-rose-50"
-                    onClick={() => delMed(i)}
-                  >
-                    Remover
-                  </button>
+  className="md:col-span-3 rounded-lg border border-slate-300 px-3 py-2"
+  placeholder="Duração (ex.: 7 dias)"
+  value={m.duration || ""}
+  onChange={(e) => setMed(i, { duration: e.target.value })}
+  onBlur={(e) => handleDurationBlur(e.target.value, i)}
+/>
+
+               <button
+  className="
+    md:col-span-1 
+    rounded-lg 
+    border border-rose-200 
+    text-rose-700 
+    px-3 py-2 
+    text-sm 
+    whitespace-nowrap
+    hover:bg-rose-50
+    w-full md:w-auto
+  "
+  onClick={() => delMed(i)}
+>
+  Remover
+</button>
+
+
                 </div>
               ))}
             </div>
@@ -1190,6 +1157,144 @@ export default function LiveEncounter({ initialData }: LiveEncounterProps) {
             </button>
           </div>
         </div>
+        {/* VITAIS */}
+<div className="bg-white border border-gray-200 rounded-lg p-4 overflow-hidden">
+  <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center gap-2">
+      <Activity className="text-blue-600" size={20} />
+      <h3 className="text-lg font-bold text-gray-900">SINAIS VITAIS</h3>
+    </div>
+
+    {/* Toggle */}
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-gray-600">
+        {showVitals ? "Ocultar" : "Mostrar"} sinais vitais
+      </span>
+      <button
+        onClick={toggleVitals}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+          showVitals ? "bg-blue-600" : "bg-gray-300"
+        }`}
+        aria-label="Alternar sinais vitais"
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            showVitals ? "translate-x-6" : "translate-x-1"
+          }`}
+        />
+      </button>
+    </div>
+  </div>
+
+  {showVitals ? (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <VitalInput
+        icon={<Activity className="w-4 h-4 text-blue-600" />}
+        label="Pressão"
+        placeholder="120/80"
+        value={draft.vitals.bp || ""}
+        onChange={(v) => setVital("bp", v)}
+        chips={["120/80", "130/85", "110/70"]}
+        onQuick={(v) => setVital("bp", v)}
+      />
+      <VitalInput
+        icon={<Heart className="w-4 h-4 text-blue-600" />}
+        label="FC"
+        placeholder="72 bpm"
+        value={draft.vitals.hr || ""}
+        onChange={(v) => setVital("hr", v)}
+        chips={["68 bpm", "72 bpm", "78 bpm"]}
+        onQuick={(v) => setVital("hr", v)}
+      />
+      <VitalInput
+        icon={<Thermometer className="w-4 h-4 text-blue-600" />}
+        label="Temp."
+        placeholder="36.5 °C"
+        value={draft.vitals.temp || ""}
+        onChange={(v) => setVital("temp", v)}
+        chips={["36.3 °C", "36.5 °C", "37.0 °C"]}
+        onQuick={(v) => setVital("temp", v)}
+      />
+      <VitalInput
+        icon={<Scale className="w-4 h-4 text-blue-600" />}
+        label="Peso"
+        placeholder="78.5 kg"
+        value={draft.vitals.weight || ""}
+        onChange={(v) => setVital("weight", v)}
+        chips={["70 kg", "78.5 kg", "80 kg"]}
+        onQuick={(v) => setVital("weight", v)}
+      />
+      <VitalInput
+        icon={<Ruler className="w-4 h-4 text-blue-600" />}
+        label="Altura"
+        placeholder="175 cm"
+        value={draft.vitals.height || ""}
+        onChange={(v) => setVital("height", v)}
+        chips={["170 cm", "175 cm", "180 cm"]}
+        onQuick={(v) => setVital("height", v)}
+      />
+    </div>
+  ) : (
+    <div className="text-center py-8">
+      <Activity className="mx-auto text-gray-300 mb-3" size={48} />
+      <p className="text-gray-500 text-sm">
+        Os sinais vitais estão ocultos para este tipo de atendimento.
+      </p>
+      <p className="text-gray-400 text-xs mt-1">
+        Ative o switch acima se precisar registrar sinais vitais.
+      </p>
+    </div>
+  )}
+</div>
+{showRecipe && (
+  <div
+    className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+    onClick={() => setShowRecipe(false)}
+  >
+    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+
+    <div
+      className="relative bg-white w-full max-w-lg rounded-2xl p-6 shadow-xl animate-zoom-in"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <PillIcon className="w-5 h-5 text-blue-600" />
+        Gerar Receita
+      </h2>
+
+      <p className="text-gray-600 text-sm mb-4">
+        Aqui adicionaremos: remédio, dosagem, frequência, duração, quantidade,
+        instruções e tipo de receita (Comum / Azul / Amarela).
+      </p>
+
+      <div className="flex justify-end gap-2 mt-6">
+        <button
+          onClick={() => setShowRecipe(false)}
+          className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+        >
+          Cancelar
+        </button>
+
+        <button
+          onClick={() => alert('Aqui depois vamos gerar a receita')}
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+        >
+          Salvar Receita
+        </button>
+      </div>
+    </div>
+
+    <style>{`
+      @keyframes zoom-in {
+        0% { transform: scale(.92); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .animate-zoom-in { animation: zoom-in .2s ease-out; }
+    `}</style>
+  </div>
+)}
+
+
       </div>
 
       {/* Modal Finalizar */}
