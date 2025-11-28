@@ -563,12 +563,28 @@ useEffect(() => {
       medications: raw.medications || dj.medications || [],
     };
 
-    // ----- 🔵 Carregar dados da clínica -----
-    await loadPdfClinic();
+  // ----- 🔵 Carregar dados da clínica -----
+await loadPdfClinic();
 
-    // ----- 🔵 Abrir apenas esse PDF -----
-    setPdfConsults([formatted]);
-    setPdfOpen(true);
+// ----- 🔥 Contar consultas deste mesmo profissional -----
+if (patient?.id) {
+  const { data: allRows } = await supabase
+    .from("patient_evolution")
+    .select("professional_name")
+    .eq("patient_id", patient.id);
+
+  const professionalCount =
+    allRows?.filter((r) => r.professional_name === formatted.professional).length || 1;
+
+  setPdfClinic((prev) =>
+    prev ? { ...prev, professionalCount } : { professionalCount }
+  );
+}
+
+// ----- 🔵 Abrir apenas esse PDF -----
+setPdfConsults([formatted]);
+setPdfOpen(true);
+
   };
 
   window.addEventListener("open:pdf:single", handleSingle as EventListener);

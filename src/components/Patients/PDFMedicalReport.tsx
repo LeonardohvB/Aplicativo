@@ -38,7 +38,9 @@ export type PDFClinic = {
   email?: string;
   shortId?: string; // 2 letras
   logoUrl?: string | null;
+  professionalCount?: number | null;
 };
+
 
 export type PDFConsultation = {
   id: string;
@@ -162,16 +164,28 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
 
   useEffect(() => { ensureHtml2Pdf().catch(() => {}); }, []);
 
-  const counters = useMemo(() => {
-    const total = (patient.totalConsultations ?? consultations.length) || 0;
-    const last =
-      patient.lastConsultation
-        ? fmtBR(patient.lastConsultation)
-        : consultations[0]?.occurred_at
-        ? fmtBR(consultations[0].occurred_at)
-        : null;
-    return { total, last };
-  }, [patient.totalConsultations, patient.lastConsultation, consultations]);
+ const counters = useMemo(() => {
+  const isSinglePdf = consultations.length === 1;
+
+  const total = isSinglePdf
+    ? clinic.professionalCount ?? 1
+    : (patient.totalConsultations ?? consultations.length) || 0;
+
+  const last =
+    patient.lastConsultation
+      ? fmtBR(patient.lastConsultation)
+      : consultations[0]?.occurred_at
+      ? fmtBR(consultations[0].occurred_at)
+      : null;
+
+  return { total, last };
+}, [
+  clinic.professionalCount,
+  patient.totalConsultations,
+  patient.lastConsultation,
+  consultations
+]);
+
 
   const generatePDF = async () => {
     await ensureHtml2Pdf();
