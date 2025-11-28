@@ -509,6 +509,75 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
     setPdfOpen(true);
   }, [loadPdfData, loadPdfClinic]);
 
+  // 🔵 Listener do PDF individual (corrigido)
+useEffect(() => {
+  const handleSingle = async (e: Event) => {
+    const detail = (e as CustomEvent<any>).detail;
+    const raw = detail?.consultation;
+    if (!raw) return;
+
+    // ----- 🔥 Reconstruir objeto EXACTO do PDF geral -----
+    const dj = raw.data_json || {};
+    const v = raw.vitals || dj.vitals || {};
+
+    const formatted: PDFConsultation = {
+      id: raw.id,
+      occurred_at: raw.occurred_at,
+
+      // Nome do profissional
+      professional: raw.professional_name || "Profissional",
+
+      // Especialidade igual à timeline
+      specialty:
+        raw.professional_specialty ||
+        raw.specialty ||
+        raw.professional_role ||
+        dj.specialty ||
+        null,
+
+      type: raw.title || "Consulta",
+
+      symptoms: raw.symptoms || dj.tags || [],
+      diagnosis: raw.diagnosis || [],
+
+      conduct: raw.conduct ?? null,
+
+      observations:
+        raw.observations ??
+        dj.observations ??
+        null,
+
+      S: dj.S || raw.s_text || "",
+      O: dj.O || raw.o_text || "",
+      A: dj.A || raw.a_text || "",
+      P: dj.P || raw.p_text || raw.conduct || "",
+
+      vitals: {
+        pressure: v.bp || "",
+        heartRate: v.hr || "",
+        temperature: v.temp || "",
+        weight: v.weight || "",
+        height: v.height || "",
+      },
+
+      medications: raw.medications || dj.medications || [],
+    };
+
+    // ----- 🔵 Carregar dados da clínica -----
+    await loadPdfClinic();
+
+    // ----- 🔵 Abrir apenas esse PDF -----
+    setPdfConsults([formatted]);
+    setPdfOpen(true);
+  };
+
+  window.addEventListener("open:pdf:single", handleSingle as EventListener);
+  return () => {
+    window.removeEventListener("open:pdf:single", handleSingle as EventListener);
+  };
+}, [loadPdfClinic]);
+
+
   /* ===== UI ===== */
   return (
     <div className="p-4 pb-24 bg-gray-50 min-h-screen">

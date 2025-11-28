@@ -75,6 +75,12 @@ declare global {
 
 /* ===================== Utils ===================== */
 
+function maskCPF(value?: string | null) {
+  const v = (value || "").replace(/\D/g, "");
+  if (v.length !== 11) return value || "";
+  return `${v.slice(0, 3)}.${v.slice(3, 6)}.${v.slice(6, 9)}-${v.slice(9)}`;
+}
+
 // 🔵 MÁSCARAS — ADICIONE AQUI, logo antes de fmtBR
 function maskCNPJ(value?: string | null) {
   const v = (value || "").replace(/\D/g, "");
@@ -288,7 +294,7 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
             </div>
             <div>
               <p className="text-[11px] font-semibold text-gray-500 uppercase">CPF</p>
-              <p className=" text-gray-900">{patient.cpf || "—"}</p>
+<p className=" text-gray-900">{patient.cpf ? maskCPF(patient.cpf) : "—"}</p>
             </div>
             <div>
               <p className="text-[11px] font-semibold text-gray-500 uppercase">Idade / Nascimento</p>
@@ -308,8 +314,12 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
             <div className="col-span-2">
               <p className="text-[11px] font-semibold text-gray-500 uppercase">Telefone / Email</p>
               <p className=" text-gray-800">
-                {[patient.phone, patient.email].filter(Boolean).join(" | ") || "—"}
-              </p>
+  {[
+    patient.phone ? maskPhone(patient.phone) : null,
+    patient.email
+  ].filter(Boolean).join(" | ") || "—"}
+</p>
+
             </div>
           </div>
         </div>
