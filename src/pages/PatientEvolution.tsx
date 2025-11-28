@@ -460,37 +460,48 @@ export default function PatientEvolution({ onBack }: { onBack: () => void }) {
 
   // Carrega CLÍNICA a partir de profiles do usuário logado
   const loadPdfClinic = useCallback(async () => {
-    const { data: auth } = await supabase.auth.getUser();
-    const userId = auth.user?.id;
-    if (!userId) {
-      setPdfClinic(null);
-      return;
-    }
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) {
+    setPdfClinic(null);
+    return;
+  }
 
-    const { data: prof, error } = await supabase
-      .from("profiles")
-      .select("clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email")
-      .eq("id", userId)
-      .maybeSingle();
+  const { data: prof, error } = await supabase
+    .from("profiles")
+    .select("clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_path")
+    .eq("id", userId)
+    .maybeSingle();
 
-    if (error) {
-      console.warn("profile load error:", error);
-      setPdfClinic(null);
-      return;
-    }
+  if (error) {
+    console.warn("profile load error:", error);
+    setPdfClinic(null);
+    return;
+  }
 
-    const clinic: PDFClinic = {
-      name: prof?.clinic_name || "—",
-      cnpj: prof?.clinic_cnpj || "—",
-      address: prof?.clinic_address || "—",
-      phone: prof?.clinic_phone || "—",
-      email: prof?.clinic_email || "—",
-      shortId: (prof?.clinic_name || "SI").slice(0, 2).toUpperCase(),
-      city: "",
-    };
+  let logoUrl: string | null = null;
+  if (prof?.clinic_logo_path) {
+    const { data } = supabase.storage
+      .from("clinic-logos") // seu bucket
+      .getPublicUrl(prof.clinic_logo_path);
 
-    setPdfClinic(clinic);
-  }, []);
+    logoUrl = data?.publicUrl ?? null;
+  }
+
+  const clinic: PDFClinic = {
+    name: prof?.clinic_name || "—",
+    cnpj: prof?.clinic_cnpj || "—",
+    address: prof?.clinic_address || "—",
+    phone: prof?.clinic_phone || "—",
+    email: prof?.clinic_email || "—",
+    shortId: (prof?.clinic_name || "SI").slice(0, 2).toUpperCase(),
+    city: "",
+    logoUrl,           // 👈 AQUI VAI A LOGO
+  };
+
+  setPdfClinic(clinic);
+}, []);
+
 
   // Abrir modal já carregando tudo
   const openPdfModal = useCallback(async () => {

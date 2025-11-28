@@ -37,6 +37,7 @@ export type PDFClinic = {
   phone?: string;
   email?: string;
   shortId?: string; // 2 letras
+  logoUrl?: string | null;
 };
 
 export type PDFConsultation = {
@@ -73,6 +74,25 @@ declare global {
 }
 
 /* ===================== Utils ===================== */
+
+// 🔵 MÁSCARAS — ADICIONE AQUI, logo antes de fmtBR
+function maskCNPJ(value?: string | null) {
+  const v = (value || "").replace(/\D/g, "");
+  if (v.length !== 14) return value || "";
+  return `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8, 12)}-${v.slice(12)}`;
+}
+
+function maskPhone(value?: string | null) {
+  const v = (value || "").replace(/\D/g, "");
+  if (v.length < 10) return value || "";
+
+  if (v.length === 11) {
+    return `(${v.slice(0, 2)}) ${v.slice(2, 3)} ${v.slice(3, 7)}-${v.slice(7)}`;
+  }
+
+  return `(${v.slice(0, 2)}) ${v.slice(2, 6)}-${v.slice(6)}`;
+}
+
 
 function fmtBR(iso?: string | null, mask = "dd/MM/yyyy") {
   if (!iso) return "";
@@ -174,10 +194,7 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
     : "bg-blue-50";
 
   const clinicAddressLine = [clinic.address, clinic.city].filter(Boolean).join(" - ");
-  const clinicContactLine = [clinic.phone && `Tel: ${clinic.phone}`, clinic.email && `Email: ${clinic.email}`]
-    .filter(Boolean)
-    .join(" | ");
-
+  
   return (
     <div className="min-h-[60vh] bg-gray-100 p-4">
       <style>{`
@@ -219,13 +236,33 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6">
           <div className="flex justify-between items-start gap-4">
             <div>
-              <div className="w-14 h-14 bg-white rounded-lg flex items-center justify-center mb-3 shadow">
-                <span className="text-blue-700 font-bold text-xl">{clinic.shortId || "CL"}</span>
-              </div>
+              <div className="w-14 h-14 bg-white rounded-lg overflow-hidden flex items-center justify-center mb-3 shadow">
+  {clinic.logoUrl ? (
+    <img
+      src={clinic.logoUrl}
+      alt="Logo da clínica"
+      className="w-full h-full object-cover"  // 👈 preenche toda área
+      crossOrigin="anonymous"
+    />
+  ) : (
+    <span className="text-blue-700 font-bold text-xl">
+      {clinic.shortId || "CL"}
+    </span>
+  )}
+</div>
+
+
               <h1 className="text-2xl font-bold">{clinic.name || "—"}</h1>
-              {clinic.cnpj && <p className="text-blue-100 text-sm">CNPJ: {clinic.cnpj}</p>}
+{clinic.cnpj && (
+  <p className="text-blue-100 text-sm">
+    CNPJ: {maskCNPJ(clinic.cnpj)}
+  </p>
+)}
               {clinicAddressLine && <p className="text-blue-100 text-sm">{clinicAddressLine}</p>}
-              {clinicContactLine && <p className="text-blue-100 text-sm mt-1">{clinicContactLine}</p>}
+<p className="text-blue-100 text-sm mt-1">
+  {clinic.phone ? `Tel: ${maskPhone(clinic.phone)}` : ""}
+  {clinic.email ? ` | Email: ${clinic.email}` : ""}
+</p>
             </div>
             <div className="text-right">
               <div className="bg-white text-blue-800 px-3 py-2 rounded-lg shadow mb-2">
@@ -432,8 +469,9 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
         <div className="bg-gray-800 text-white p-5 text-center text-[11px]">
           <p className="mb-1 font-semibold">DOCUMENTO CONFIDENCIAL — SIGILO PROFISSIONAL</p>
           <p className="text-gray-300">
-            {clinic.name}{clinic.cnpj ? ` — CNPJ: ${clinic.cnpj}` : ""}
-          </p>
+  {clinic.name}{clinic.cnpj ? ` — CNPJ: ${maskCNPJ(clinic.cnpj)}` : ""}
+</p>
+
           <p className="text-gray-400 mt-1">
             {counters.total || 0} atendimento(s) | Gerado em {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
           </p>
