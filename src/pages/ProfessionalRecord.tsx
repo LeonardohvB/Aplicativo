@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useProfessionalFiles } from "../hooks/useProfessionalFiles";
+import { useConfirm } from "../providers/ConfirmProvider";
 
 type Professional = {
   id: string;
@@ -47,11 +48,7 @@ export default function ProfessionalRecord({ onBack }: Props) {
   const [otherCategory, setOtherCategory] = useState<string>("");
   const [uploading, setUploading] = useState(false);
 
-  /** VOLTAR */
-  const handleBack = () => {
-    if (onBack) onBack();
-    else window.history.back();
-  };
+  const confirm = useConfirm();
 
   /** CARREGAR TENANT */
   useEffect(() => {
@@ -151,22 +148,19 @@ export default function ProfessionalRecord({ onBack }: Props) {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* BOTÃO VOLTAR */}
       <div className="px-4 pt-4 mb-2">
-  <button
-    onClick={onBack}
-    className="inline-flex items-center text-blue-600 hover:text-blue-800"
-  >
-    <ArrowLeft className="w-5 h-5 mr-2" />
-    Voltar
-  </button>
-</div>
+        <button
+          onClick={onBack}
+          className="inline-flex items-center text-blue-600 hover:text-blue-800"
+        >
+          <ArrowLeft className="w-5 h-5 mr-2" />
+          Voltar
+        </button>
+      </div>
 
-
-      {/* CARD EXTERNO — IGUAL AO PACIENTE */}
+      {/* CARD EXTERNO */}
       <div className="w-full max-w-[1120px] mx-auto px-4 pb-20">
         <div className="rounded-2xl bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
           <div className="mx-auto w-full max-w-5xl px-4 md:px-6">
-
-            {/* TÍTULO SUP */}
             <header className="border-b">
               <div className="px-4 sm:px-6 py-4 text-center">
                 <h1 className="text-base sm:text-lg font-semibold text-slate-900">
@@ -175,9 +169,7 @@ export default function ProfessionalRecord({ onBack }: Props) {
               </div>
             </header>
 
-            {/* CONTEÚDO */}
             <div className="p-4 space-y-6">
-
               {/* BUSCA */}
               <div className="p-4">
                 <div className="relative">
@@ -242,9 +234,11 @@ export default function ProfessionalRecord({ onBack }: Props) {
                     )}
                   </div>
 
-                  {/* LISTA */}
+                  {/* LISTA DE ARQUIVOS */}
                   {files.length === 0 && (
-                    <p className="text-gray-500 text-sm">Nenhum documento enviado.</p>
+                    <p className="text-gray-500 text-sm">
+                      Nenhum documento enviado.
+                    </p>
                   )}
 
                   <div className="divide-y">
@@ -260,8 +254,8 @@ export default function ProfessionalRecord({ onBack }: Props) {
                           <div className="text-xs text-gray-500">
                             Categoria:{" "}
                             <span className="font-medium text-gray-700">
-                              {CATEGORIES.find((c) => c.value === f.category)?.label ||
-                                f.category}
+                              {CATEGORIES.find((c) => c.value === f.category)
+                                ?.label || f.category}
                             </span>
                           </div>
                           <div className="text-xs text-gray-400">
@@ -270,6 +264,7 @@ export default function ProfessionalRecord({ onBack }: Props) {
                         </div>
 
                         <div className="flex items-center gap-3">
+                          {/* DOWNLOAD */}
                           <button
                             onClick={() =>
                               handleDownload(f.storage_path, f.filename)
@@ -279,8 +274,22 @@ export default function ProfessionalRecord({ onBack }: Props) {
                             <Download className="w-4 h-4" />
                           </button>
 
+                          {/* EXCLUSÃO COM CONFIRMAÇÃO */}
                           <button
-                            onClick={() => removeFile(f.id, f.storage_path)}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: "Excluir documento",
+                                description:
+                                  "Tem certeza que deseja excluir este arquivo? Esta ação não pode ser desfeita.",
+                                confirmText: "Excluir",
+                                cancelText: "Cancelar",
+                                variant: "danger",
+                              });
+
+                              if (ok) {
+                                await removeFile(f.id, f.storage_path);
+                              }
+                            }}
                             className="text-red-600 hover:bg-red-50 p-1 rounded"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -296,7 +305,7 @@ export default function ProfessionalRecord({ onBack }: Props) {
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* MODAL DE CATEGORIA */}
       {categoryModalOpen && pendingFile && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-4">
