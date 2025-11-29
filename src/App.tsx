@@ -16,26 +16,29 @@ import PatientEvolution from './pages/PatientEvolution'
 import LiveEncounter from './pages/LiveEncounter'
 import { ConfirmProvider } from './providers/ConfirmProvider'
 import ProfessionalsArchived from './pages/ProfessionalsArchived'
-import { ToastContainer } from "./components/ui/Toast";
+import { ToastContainer } from "./components/ui/Toast"
 
-// === IMPORT ATESTADOS (apenas o que existe) ===
+// Atestados
 import CertificateNew from './pages/CertificateNew'
 
-// ⭐ NOVO: página de Registro do Profissional
+// Registro profissional (manter)
 import ProfessionalRecord from './pages/ProfessionalRecord'
 
-// Aceita também “rotas” internas de tela cheia
+// ⭐ Novo cadastro via página
+import ProfessionalNew from './pages/ProfessionalNew'
+
+// Aceita também rotas internas em tela cheia
 type AppTab =
-  | Tab                       // suas abas da BottomNav
+  | Tab
   | 'perfil'
   | 'patients_new'
   | 'evolucao'
   | 'certificate_new'
-  | 'profissionais_arquivados'    // ⬅️ rota para arquivados
-  | 'registro_profissional'       // ⬅️ NOVA rota: Registro do profissional
+  | 'profissionais_arquivados'
+  | 'registro_profissional'
+  | 'professional_new'     // ⭐ NOVA ROTA
   ;
 
-// Dados passados para o prontuário (overlay)
 type EncounterData = {
   appointmentId?: string
   patientName?: string
@@ -55,17 +58,14 @@ export default function App() {
   }
   const [firstName, setFirstName] = useState<string | null>(null)
 
-  // ======= ESTADOS ATESTADOS =======
   const [certificateInitialData, setCertificateInitialData] = useState<any | null>(null)
 
-  // ===== estado do prontuário em overlay =====
   const [liveOpen, setLiveOpen] = useState(false)
   const [encounterData, setEncounterData] = useState<EncounterData | null>(null)
 
-  // 🔹 “carimbo” para forçar remount da Agenda
   const [scheduleTs, setScheduleTs] = useState<number>(0)
 
-  // Abre o prontuário via evento global (fallback/atalhos internos)
+  // Prontuário via evento
   useEffect(() => {
     const open = (e: any) => {
       const d = e?.detail || {}
@@ -81,38 +81,50 @@ export default function App() {
     return () => window.removeEventListener('encounter:open', open as EventListener)
   }, [])
 
-  // Fecha o prontuário
   useEffect(() => {
     const close = () => setLiveOpen(false)
     window.addEventListener('encounter:close', close as EventListener)
     return () => window.removeEventListener('encounter:close', close as EventListener)
   }, [])
 
-  // ===== LISTENER ATESTADOS (apenas 'certificate:new' por enquanto) =====
+  // Atestado: novo
   useEffect(() => {
     const onCertificateNew = (e: any) => {
-      setCertificateInitialData(e?.detail || null) // { patientId, professionalId, title, ... }
+      setCertificateInitialData(e?.detail || null)
       setActiveTab('certificate_new')
     }
     window.addEventListener('certificate:new', onCertificateNew as EventListener)
-    return () => {
-      window.removeEventListener('certificate:new', onCertificateNew as EventListener)
-    }
+    return () => window.removeEventListener('certificate:new', onCertificateNew as EventListener)
   }, [])
 
-  // Abrir "Novo Paciente" a partir do Dashboard
+  // Novo Paciente
   useEffect(() => {
-    const openPatientsNew = () => setActiveTab('patients_new');
-    window.addEventListener('patients:new', openPatientsNew as EventListener);
-    return () => window.removeEventListener('patients:new', openPatientsNew as EventListener);
-  }, []);
+    const open = () => setActiveTab('patients_new')
+    window.addEventListener('patients:new', open as EventListener)
+    return () => window.removeEventListener('patients:new', open as EventListener)
+  }, [])
 
-  // Abrir "Relatórios" a partir do Dashboard
+  // Novo **Profissional** via evento global ⭐
   useEffect(() => {
-    const openReports = () => setActiveTab('relatorios');
-    window.addEventListener('reports:open', openReports as EventListener);
-    return () => window.removeEventListener('reports:open', openReports as EventListener);
-  }, []);
+    const open = () => setActiveTab('professional_new')
+    window.addEventListener('professional:new', open as EventListener)
+    return () =>
+      window.removeEventListener('professional:new', open as EventListener)
+  }, [])
+
+  // Abrir relatórios
+  useEffect(() => {
+    const open = () => setActiveTab('relatorios')
+    window.addEventListener('reports:open', open as EventListener)
+    return () => window.removeEventListener('reports:open', open as EventListener)
+  }, [])
+
+  // Evolução
+  useEffect(() => {
+    const open = () => setActiveTab('evolucao')
+    window.addEventListener('evolution:open', open as EventListener)
+    return () => window.removeEventListener('evolution:open', open as EventListener)
+  }, [])
 
   // ===== sessão / auth =====
   useEffect(() => {
@@ -123,39 +135,33 @@ export default function App() {
       setUser(session?.user ?? null)
 
       if (session?.user) {
-        try { await ensureProfile() } catch (e) { console.warn('ensureProfile(getSession) error:', e) }
+        try { await ensureProfile() } catch (e) {}
       }
 
       setCheckingAuth(false)
 
       const { data: sub } = supabase.auth.onAuthStateChange(async (_event, sess) => {
         setUser(sess?.user ?? null)
-        if (sess?.user) {
-          try { await ensureProfile() } catch (e) { console.warn('ensureProfile(onAuth) error:', e) }
-        }
+        if (sess?.user) try { await ensureProfile() } catch (e) {}
       })
       unsub = () => sub.subscription.unsubscribe()
     })()
-
     return () => unsub()
   }, [])
 
-  // ===== nome do usuário =====
+  // Nome do usuário
   useEffect(() => {
     if (!user) return
-
     let canceled = false
+
     ;(async () => {
-      const { data: row, error } = await supabase
+      const { data: row } = await supabase
         .from('profiles')
         .select('name')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (!canceled) {
-        if (error) console.warn('fetch profile name error:', error)
-        setFirstName(onlyFirst(row?.name ?? null))
-      }
+      if (!canceled) setFirstName(onlyFirst(row?.name ?? null))
     })()
 
     return () => { canceled = true }
@@ -167,13 +173,6 @@ export default function App() {
     return () => window.removeEventListener('profile:saved', onSaved)
   }, [])
 
-  useEffect(() => {
-    const open = () => setActiveTab('evolucao');
-    window.addEventListener('evolution:open', open as EventListener);
-    return () => window.removeEventListener('evolution:open', open as EventListener);
-  }, [])
-
-  // ===== carregando / login =====
   if (checkingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -184,37 +183,43 @@ export default function App() {
 
   if (!user) return <LoginGate />
 
-  // cast temporário para aceitar a prop firstName em Dashboard
   const DashboardComp: any = Dashboard
 
-  // 🔹 função única pra ir à Agenda e forçar reload
   const gotoSchedule = (filter: 'today' | 'week', opts?: { openHistory?: boolean }) => {
-    const ts = Date.now();
-    setScheduleTs(ts);            // muda a key da Agenda → remount
-    setActiveTab('agenda');
+    const ts = Date.now()
+    setScheduleTs(ts)
+    setActiveTab('agenda')
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('agenda:filter', { detail: { range: filter, ts } }));
+      window.dispatchEvent(new CustomEvent('agenda:filter', { detail: { range: filter, ts } }))
       if (opts?.openHistory) {
-        window.dispatchEvent(new CustomEvent('agenda:openHistory', { detail: { ts } }));
+        window.dispatchEvent(new CustomEvent('agenda:openHistory', { detail: { ts } }))
       }
-    }, 0);
-  };
+    }, 0)
+  }
 
-  // ===== conteúdo por aba / rota interna =====
+  // =======================================================================
+  // 🔹 ROTAS INTERNAS
+  // =======================================================================
   const renderContent = () => {
     switch (activeTab) {
       case 'profissionais':
         return <Professionals />
+
+      case 'professional_new':      // ⭐ NOVA PÁGINA
+        return <ProfessionalNew onBack={() => setActiveTab('profissionais')} />
+
       case 'profissionais_arquivados':
-        return (
-          <ProfessionalsArchived onBack={() => setActiveTab('inicio')} />
-        )
+        return <ProfessionalsArchived onBack={() => setActiveTab('inicio')} />
+
       case 'agenda':
         return <Schedule key={scheduleTs} />
+
       case 'financeiro':
         return <Finance />
+
       case 'relatorios':
         return <Reports />
+
       case 'patients_new':
         return (
           <PatientsNew
@@ -222,53 +227,53 @@ export default function App() {
             onCreated={() => setActiveTab('inicio')}
           />
         )
+
       case 'evolucao':
         return <PatientEvolution onBack={() => setActiveTab('inicio')} />
+
       case 'perfil':
         return <Profile onBack={() => setActiveTab('inicio')} />
+
       case 'certificate_new':
         return (
           <CertificateNew
             onBack={() => setActiveTab('inicio')}
             initialData={certificateInitialData || undefined}
-            onCreated={(_id) => setActiveTab('inicio')}
+            onCreated={() => setActiveTab('inicio')}
           />
         )
-      case 'registro_profissional':        // ⭐ NOVO: Registro do profissional
-        // 👇 AQUI adicionamos o onBack para funcionar igual Perfil/Atestados
+
+      case 'registro_profissional':
         return <ProfessionalRecord onBack={() => setActiveTab('inicio')} />
+
       default:
         return (
           <DashboardComp
             firstName={firstName ?? undefined}
             onOpenProfile={() => setActiveTab('perfil')}
-            onGotoSchedule={(filter: 'today' | 'week') => {
+            onGotoSchedule={(filter: 'today' | 'week') =>
               gotoSchedule(filter, { openHistory: filter === 'today' })
-            }}
+            }
           />
         )
     }
   }
 
-  // ===== retorno =====
+  // =======================================================================
+  // RENDER PRINCIPAL
+  // =======================================================================
   return (
     <ConfirmProvider>
-      {/* Wrapper de viewport: rolagem só aqui */}
       <div className="app-viewport min-h-screen overflow-y-auto overscroll-contain bg-gray-50 relative">
-        {/* Menu suspenso fixo em TODAS as abas */}
+        
+        {/* MENU FIXO */}
         <div className="fixed right-4 top-4 z-40">
           <OverlayMenu
             onOpenProfile={() => setActiveTab('perfil')}
             onOpenNewPatient={() => setActiveTab('patients_new')}
-            onOpenNewProfessional={() => {
-              setActiveTab('profissionais');
-              setTimeout(() => window.dispatchEvent(new CustomEvent('professionals:add')), 0);
-            }}
-            onOpenHistory={() => {
-              gotoSchedule('today', { openHistory: true });
-            }}
+            onOpenNewProfessional={() => setActiveTab('professional_new')}   // ⭐ ALTERADO
+            onOpenHistory={() => gotoSchedule('today', { openHistory: true })}
             onOpenCertificateNew={() => setActiveTab('certificate_new')}
-            // lista de arquivados pelo menu suspenso
             onOpenProfessionalsArchived={() => setActiveTab('profissionais_arquivados')}
             onOpenProfessionalRecord={() => setActiveTab('registro_profissional')}
           />
@@ -276,7 +281,7 @@ export default function App() {
 
         {renderContent()}
 
-        {/* Esconde a BottomNavigation quando o prontuário estiver aberto */}
+        {/* Bottom Navigation */}
         {!liveOpen && (
           <BottomNavigation
             activeTab={
@@ -285,24 +290,26 @@ export default function App() {
               activeTab === 'evolucao' ||
               activeTab === 'certificate_new' ||
               activeTab === 'profissionais_arquivados' ||
+              activeTab === 'professional_new' ||
               activeTab === 'registro_profissional'
                 ? 'inicio'
                 : (activeTab as Tab)
             }
             onTabChange={(t: Tab) => {
-              if (t === 'agenda') setScheduleTs(Date.now());
-              setActiveTab(t);
+              if (t === 'agenda') setScheduleTs(Date.now())
+              setActiveTab(t)
             }}
           />
         )}
 
-        {/* Overlay do LiveEncounter em tela cheia */}
+        {/* Live Encounter */}
         {liveOpen && (
           <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
             <LiveEncounter initialData={encounterData || undefined} />
           </div>
         )}
       </div>
+
       <ToastContainer />
     </ConfirmProvider>
   )

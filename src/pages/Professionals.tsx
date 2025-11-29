@@ -1,7 +1,6 @@
 // src/pages/Professionals.tsx
 import React, { useEffect, useState } from 'react';
 import ProfessionalCard from '../components/Professionals/ProfessionalCard';
-import AddProfessionalModal from '../components/Professionals/AddProfessionalModal';
 import EditProfessionalModal from '../components/Professionals/EditProfessionalModal';
 import { useProfessionals } from '../hooks/useProfessionals';
 import { Professional } from '../types';
@@ -13,7 +12,6 @@ import { useConfirm } from '../providers/ConfirmProvider';
 import { useToast } from '../components/ui/Toast';
 
 const Professionals: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState<Professional | null>(null);
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>(null);
@@ -24,7 +22,6 @@ const Professionals: React.FC = () => {
   const {
     professionals,
     loading,
-    addProfessional,
     updateProfessional,
     toggleProfessional,
     deleteProfessional,
@@ -41,28 +38,9 @@ const Professionals: React.FC = () => {
   };
 
   useEffect(() => {
-    const open = () => setIsModalOpen(true);
-    window.addEventListener('professionals:add', open);
-    return () => window.removeEventListener('professionals:add', open);
-  }, []);
-
-  useEffect(() => {
     refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleAdd = async (newProfessional: {
-    name: string;
-    cpf: string;
-    specialty: string;
-    phone: string;
-    registrationCode: string;
-    commissionRate?: number;
-  }) => {
-    await addProfessional(newProfessional as any);
-    setIsModalOpen(false);
-    refetch();
-  };
 
   const handleUpdate = async (
     id: string,
@@ -145,9 +123,8 @@ const Professionals: React.FC = () => {
 
   const handlePhotoChange = async (_id: string, _photoFile: File) => {};
 
-
   // ============================
-  //   🔵 ESTADO VAZIO AQUI
+  //   🔵 ESTADO VAZIO
   // ============================
 
   if (!loading && professionals.length === 0) {
@@ -169,8 +146,15 @@ const Professionals: React.FC = () => {
           Nenhum profissional encontrado.
         </div>
 
+        {/* AGORA NAVEGA PARA A NOVA PÁGINA */}
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent('navigate', {
+                detail: { page: 'professional_new' },
+              })
+            )
+          }
           className="
             mt-6 px-6 py-3 rounded-xl bg-blue-600 text-white shadow
             hover:bg-blue-700 transition
@@ -178,12 +162,6 @@ const Professionals: React.FC = () => {
         >
           Cadastrar profissional
         </button>
-
-        <AddProfessionalModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onAdd={handleAdd}
-        />
       </div>
     );
   }
@@ -289,12 +267,7 @@ const Professionals: React.FC = () => {
 
       <div className="h-8 md:h-0" role="presentation" />
 
-      <AddProfessionalModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onAdd={handleAdd}
-      />
-
+      {/* EDITAR PROFISSIONAL */}
       <EditProfessionalModal
         isOpen={isEditModalOpen}
         onClose={() => {
