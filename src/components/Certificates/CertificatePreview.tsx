@@ -1,44 +1,8 @@
 // src/components/Certificates/CertificatePreview.tsx
 import { forwardRef } from "react";
+import type { CertificateFormData } from "../../pages/CertificateNew";
 
-export type CertificateFormData = {
-  // Paciente
-  patientName: string;
-  patientCPF?: string;
-  patientRG?: string;
-  patientPhone?: string;
-  patientBirthISO?: string;
 
-  // Profissional
-  professionalName: string;
-  professionalSpecialty?: string;
-  professionalCRM?: string;
-
-  // Clínica
-  clinicName?: string;
-  clinicCNPJ?: string;
-
-  // Atestado
-  certificateType:
-    | "saude"
-    | "comparecimento"
-    | "afastamento"
-    | "aptidao"
-    | "incapacidade";
-  reason: string;
-  startDate?: string;  // yyyy-mm-dd
-  endDate?: string;    // yyyy-mm-dd
-  daysOfAbsence?: number;
-  observations?: string;
-  issueDate: string;   // yyyy-mm-dd
-
-  // Opções
-  isPaid?: boolean;
-  requiresRest?: boolean;
-  restrictedActivities?: string;
-  includeSignature?: boolean;
-  includeQRCode?: boolean;
-};
 
 // ===== Helpers de formatação =====
 const onlyDigits = (s?: string | null) => (s || "").replace(/\D+/g, "");
@@ -84,21 +48,34 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
   return (
     <div ref={ref} className="certificate-container max-w-3xl mx-auto bg-white shadow-2xl">
       {/* Header */}
-      <div className="border-b-4 border-blue-600 p-12 text-center bg-white">
-        <div className="mb-6">
-          <div className="inline-block w-20 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-2xl mb-4">
-            SI
-          </div>
-        </div>
+<div className="border-b-4 border-blue-600 p-12 bg-white">
+  <div className="flex items-center gap-4 mb-6">
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">ATESTADO</h1>
-        <p className="text-sm text-gray-600 font-semibold">
-          {CERT_TYPES[data.certificateType].label}
-        </p>
-        <div className="mt-4 inline-block px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
-          Documento Oficial
-        </div>
+    {/* Logo */}
+    {data.clinicLogoUrl ? (
+      <img
+        src={data.clinicLogoUrl}
+        alt="Logo da Clínica"
+        className="w-24 h-24 object-contain rounded-lg shadow-sm"
+      />
+    ) : (
+      <div className="w-20 h-20 bg-blue-600 text-white flex items-center justify-center rounded-lg text-2xl font-bold">
+        {(data.clinicName || "CL").slice(0, 2).toUpperCase()}
       </div>
+    )}
+
+    <div className="flex-1 text-center pr-20">
+      <h1 className="text-3xl font-bold text-gray-900">ATESTADO</h1>
+      <p className="text-sm text-gray-600 font-semibold">
+        {CERT_TYPES[data.certificateType].label}
+      </p>
+      <div className="mt-3 inline-block px-4 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+        Documento Oficial
+      </div>
+    </div>
+  </div>
+</div>
+
 
       {/* Body */}
       <div className="p-12 space-y-8 text-justify">

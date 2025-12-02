@@ -25,6 +25,9 @@ export type CertificateFormData = {
   clinicName?: string;
   clinicCNPJ?: string;
 
+  // Logo da clínica (novo)
+clinicLogoUrl?: string | null;
+
   // Atestado
   certificateType: CertificateType;
   reason: string;
@@ -139,12 +142,10 @@ function AsyncSearchSelect<T>({
     const digits = val.replace(/\D+/g, "");
     if (digits && /^\d+$/.test(digits)) {
       if (digits.length === 11) {
-        // pode ser CPF ou celular; para busca, CPF já ajuda
         val = formatCPF(digits);
       } else if (digits.length === 10 || digits.length === 11) {
         val = formatPhoneBR(digits);
       }
-      // se incompleto, não formata
     } else {
       val = titleAllWordsLive(val);
     }
@@ -287,17 +288,14 @@ async function searchProfessionalsSupabase(q: string) {
     .select("id, name, specialty, registration_code, phone, cpf")
     .limit(50)
     .order("name", { ascending: true })
-    .is("deleted_at", null)   // não arquivados
-    .eq("is_active", true);   // apenas ativos
+    .is("deleted_at", null) // não arquivados
+    .eq("is_active", true); // apenas ativos
 
   if (uid) query = query.eq("owner_id", uid);
 
   const digits = (q || "").replace(/\D+/g, "");
 
-  // 🔧 Só o nome por padrão
   const parts: string[] = [`name.ilike.%${q}%`];
-
-  // 🔧 Acrescenta filtros numéricos apenas se houver dígitos
   if (digits) {
     parts.push(
       `registration_code.ilike.%${digits}%`,
@@ -330,6 +328,7 @@ async function searchProfessionalsSupabase(q: string) {
     raw: p,
   }));
 }
+
 /* ============================================================
    Campos controlados
    ============================================================ */
@@ -431,6 +430,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     restrictedActivities: initialData?.restrictedActivities || "",
     includeSignature: initialData?.includeSignature ?? true,
     includeQRCode: initialData?.includeQRCode ?? false,
+    clinicLogoUrl: null,
   }));
 
   const [history, setHistory] = useState<SavedRow[]>([]);
@@ -445,56 +445,101 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     document.body.appendChild(s);
   }, []);
 
-  // Carrega nome da clínica/CNPJ do perfil do usuário
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        const uid = user?.id;
-        if (!uid) return;
+  // Carregar nome, CNPJ e LOGO da clínica
+useEffect(() => {
+  let cancelled = false;
 
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('clinic_name, clinic_cnpj')
-          .eq('id', uid)
-          .maybeSingle();
+  (async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) return;
 
-        if (error) throw error;
-        if (!canceled && data) {
-          setForm(prev => ({
-            ...prev,
-            clinicName: prev.clinicName?.trim() ? prev.clinicName : (data.clinic_name ?? ''),
-            clinicCNPJ: prev.clinicCNPJ?.trim() ? prev.clinicCNPJ : (data.clinic_cnpj ?? ''),
-          }));
+    const { data: prof, error } = await supabase
+      .from("profiles")
+      .select("clinic_name, clinic_cnpj, clinic_logo_path")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error || !prof) return;
+
+    let logoUrl: string | null = null;
+
+    if (prof.clinic_logo_path) {
+      const { data } = supabase.storage
+        .from("clinic-logos")
+        .getPublicUrl(prof.clinic_logo_path);
+
+      logoUrl = data?.publicUrl ?? null;
+    }
+
+    if (!cancelled) {
+      setForm((prev) => ({
+        ...prev,
+        clinicName: prev.clinicName || prof.clinic_name || "",
+        clinicCNPJ: prev.clinicCNPJ || prof.clinic_cnpj || "",
+        clinicLogoUrl: logoUrl,
+      }));
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, []);
+
+
+  // ===== Ações de impressão / PDF =====
+  const handlePrint = () => {
+    // garante que estamos na aba de preview
+    if (activeTab !== "preview") {
+      setActiveTab("preview");
+      setTimeout(() => {
+        if (printRef.current) {
+          window.print();
         }
-      } catch (err) {
-        console.warn('load clinic from profile error:', err);
-      }
-    })();
-    return () => { canceled = true; };
-  }, []);
+      }, 80);
+      return;
+    }
 
-  // Ações
-  const handlePrint = () => window.print();
+    if (!printRef.current) {
+      alert("Abra a aba Visualizar para imprimir o atestado.");
+      return;
+    }
+
+    window.print();
+  };
 
   const handleDownloadPDF = () => {
-    const w = (window as any);
-    if (w.html2pdf && printRef.current) {
+    const w = window as any;
+
+    const run = () => {
+      if (!printRef.current) {
+        alert("Abra a aba Visualizar para gerar o PDF do atestado.");
+        return;
+      }
+      if (!w.html2pdf) {
+        alert("Preparando módulo de PDF. Aguarde 1–2 segundos e tente novamente.");
+        return;
+      }
+
       const opt = {
         margin: 10,
         filename: `Atestado_${(form.patientName || "Paciente").replace(/\s+/g, "_")}_${Date.now()}.pdf`,
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
       };
+
       w.html2pdf().set(opt).from(printRef.current).save();
+    };
+
+    if (activeTab !== "preview") {
+      setActiveTab("preview");
+      setTimeout(run, 120);
     } else {
-      window.print();
+      run();
     }
   };
 
-  // Cabeçalho: voltar com comportamento inteligente
+  // Cabeçalho: voltar com comportamento inteligente (mantive se quiser usar depois)
   const handleHeaderBack = useCallback(() => {
     if (activeTab !== "form") {
       setActiveTab("form");
@@ -522,7 +567,9 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     parts.push(`Motivo: ${d.reason}.`);
     parts.push(`Emitido em: ${isoToBR(d.issueDate)}.`);
     if (["afastamento", "incapacidade"].includes(d.certificateType)) {
-      parts.push(`Período: ${isoToBR(d.startDate)} a ${isoToBR(d.endDate)}. Dias: ${d.daysOfAbsence ?? 1}.`);
+      parts.push(
+        `Período: ${isoToBR(d.startDate)} a ${isoToBR(d.endDate)}. Dias: ${d.daysOfAbsence ?? 1}.`
+      );
       if (d.restrictedActivities) parts.push(`Restrições: ${d.restrictedActivities}.`);
       if (d.requiresRest) parts.push(`Repouso obrigatório.`);
       if (d.isPaid) parts.push(`Repouso remunerado.`);
@@ -550,7 +597,9 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
         professional_id: professionalId || null,
         title: buildDbTitle(form),
         description: buildDbDescription(form),
-        issued_at: form.issueDate ? new Date(form.issueDate).toISOString() : new Date().toISOString(),
+        issued_at: form.issueDate
+          ? new Date(form.issueDate).toISOString()
+          : new Date().toISOString(),
         duration: buildDbDuration(form),
         signature_url: null,
         pdf_url: null,
@@ -561,7 +610,10 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
       if (error) throw error;
 
       const newId = data?.id as string;
-      setHistory((prev) => [{ id: newId, createdAt: new Date().toLocaleDateString("pt-BR"), ...form }, ...prev]);
+      setHistory((prev) => [
+        { id: newId, createdAt: new Date().toLocaleDateString("pt-BR"), ...form },
+        ...prev,
+      ]);
       onCreated?.(newId);
       alert("Atestado salvo com sucesso!");
     } catch (err: any) {
@@ -579,28 +631,49 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
         @media print {
           .no-print { display: none !important; }
           body { background: white; }
-          .certificate-container { box-shadow: none; margin: 0; padding: 0; }
+
+          /* Esconde tudo... */
+          body * {
+            visibility: hidden;
+          }
+
+          /* ...menos o conteúdo do atestado */
+          #print-area, #print-area * {
+            visibility: visible;
+          }
+
+          #print-area {
+            position: absolute;
+            inset: 0;
+            margin: 0;
+          }
+
+          .certificate-container {
+            box-shadow: none;
+            margin: 0;
+            padding: 0;
+          }
+
           @page { margin: 15mm; size: A4; }
         }
       `}</style>
 
       {/* Cabeçalho */}
-<div className="sticky top-0 z-10  bg-white/80 backdrop-blur px-3 py-3">
-  <div className="relative flex items-center gap-3">
-    <button
-    onClick={onBack}
-    className="inline-flex items-center text-blue-600 hover:text-blue-800"
-  >
-    <ArrowLeft className="w-5 h-5 mr-2" />
-    Voltar
-  </button>
+      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur px-3 py-3 no-print">
+        <div className="relative flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center text-blue-600 hover:text-blue-800"
+          >
+            <ArrowLeft className="w-5 h-5 mr-2" />
+            Voltar
+          </button>
 
-    <h1 className="absolute left-1/2 -translate-x-1/2 text-base sm:text-lg font-semibold text-slate-900 whitespace-nowrap">
-      Gerador de Atestados
-    </h1>
-  </div>
-</div>
-
+          <h1 className="absolute left-1/2 -translate-x-1/2 text-base sm:text-lg font-semibold text-slate-900 whitespace-nowrap">
+            Gerador de Atestados
+          </h1>
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="no-print flex gap-4 px-4 pt-3 border-b bg-white">
@@ -609,10 +682,16 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
             key={t}
             onClick={() => setActiveTab(t)}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-gray-900"
+              activeTab === t
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
-            {t === "form" ? "Novo Atestado" : t === "preview" ? "Visualizar" : `Histórico (${history.length})`}
+            {t === "form"
+              ? "Novo Atestado"
+              : t === "preview"
+              ? "Visualizar"
+              : `Histórico (${history.length})`}
           </button>
         ))}
       </div>
@@ -628,38 +707,41 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
               <div className="bg-white rounded-lg shadow-sm border p-6">
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Tipo de Atestado</h2>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {(["saude", "comparecimento", "afastamento", "aptidao", "incapacidade"] as CertificateType[]).map(
-                    (key) => (
-                      <label
-                        key={key}
-                        className="flex items-start gap-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="radio"
-                          name="certificateType"
-                          value={key}
-                          checked={form.certificateType === key}
-                          onChange={(e) =>
-                            setForm((prev) => ({ ...prev, certificateType: e.target.value as CertificateType }))
-                          }
-                          className="mt-1"
-                        />
-                        <div>
-                          <p className="font-semibold text-gray-900">
-                            {key === "saude"
-                              ? "Atestado de Saúde"
-                              : key === "comparecimento"
-                              ? "Atestado de Comparecimento"
-                              : key === "afastamento"
-                              ? "Atestado de Afastamento"
-                              : key === "aptidao"
-                              ? "Atestado de Aptidão"
-                              : "Atestado de Incapacidade"}
-                          </p>
-                        </div>
-                      </label>
-                    )
-                  )}
+                  {(
+                    ["saude", "comparecimento", "afastamento", "aptidao", "incapacidade"] as CertificateType[]
+                  ).map((key) => (
+                    <label
+                      key={key}
+                      className="flex items-start gap-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="radio"
+                        name="certificateType"
+                        value={key}
+                        checked={form.certificateType === key}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            certificateType: e.target.value as CertificateType,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {key === "saude"
+                            ? "Atestado de Saúde"
+                            : key === "comparecimento"
+                            ? "Atestado de Comparecimento"
+                            : key === "afastamento"
+                            ? "Atestado de Afastamento"
+                            : key === "aptidao"
+                            ? "Atestado de Aptidão"
+                            : "Atestado de Incapacidade"}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -759,7 +841,9 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     label="Motivo/Descrição *"
                     rows={3}
                     value={form.reason}
-                    onChange={(e) => setForm((prev) => ({ ...prev, reason: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, reason: e.target.value }))
+                    }
                     placeholder="Ex: Consulta médica"
                   />
 
@@ -772,7 +856,11 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                         setForm((prev) => {
                           const startDate = e.target.value;
                           const days = daysBetweenInclusive(startDate, prev.endDate);
-                          return { ...prev, startDate, daysOfAbsence: days ?? prev.daysOfAbsence };
+                          return {
+                            ...prev,
+                            startDate,
+                            daysOfAbsence: days ?? prev.daysOfAbsence,
+                          };
                         })
                       }
                     />
@@ -784,7 +872,11 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                         setForm((prev) => {
                           const endDate = e.target.value;
                           const days = daysBetweenInclusive(prev.startDate, endDate);
-                          return { ...prev, endDate, daysOfAbsence: days ?? prev.daysOfAbsence };
+                          return {
+                            ...prev,
+                            endDate,
+                            daysOfAbsence: days ?? prev.daysOfAbsence,
+                          };
                         })
                       }
                     />
@@ -796,7 +888,10 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
-                          daysOfAbsence: Math.max(1, parseInt(e.target.value || "1", 10)),
+                          daysOfAbsence: Math.max(
+                            1,
+                            parseInt(e.target.value || "1", 10)
+                          ),
                         }))
                       }
                     />
@@ -805,7 +900,12 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                   <Field
                     label="Atividades Restritas"
                     value={form.restrictedActivities}
-                    onChange={(e) => setForm((prev) => ({ ...prev, restrictedActivities: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        restrictedActivities: e.target.value,
+                      }))
+                    }
                     placeholder="Ex: Trabalho pesado, Dirigir, Levantamento de peso..."
                   />
 
@@ -814,17 +914,31 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                       <input
                         type="checkbox"
                         checked={!!form.requiresRest}
-                        onChange={(e) => setForm((prev) => ({ ...prev, requiresRest: e.target.checked }))}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            requiresRest: e.target.checked,
+                          }))
+                        }
                       />
-                      <span className="text-sm font-medium text-gray-700">Repouso obrigatório</span>
+                      <span className="text-sm font-medium text-gray-700">
+                        Repouso obrigatório
+                      </span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={!!form.isPaid}
-                        onChange={(e) => setForm((prev) => ({ ...prev, isPaid: e.target.checked }))}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            isPaid: e.target.checked,
+                          }))
+                        }
                       />
-                      <span className="text-sm font-medium text-gray-700">Repouso remunerado</span>
+                      <span className="text-sm font-medium text-gray-700">
+                        Repouso remunerado
+                      </span>
                     </label>
                   </div>
 
@@ -832,7 +946,12 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     label="Observações Adicionais"
                     rows={3}
                     value={form.observations}
-                    onChange={(e) => setForm((prev) => ({ ...prev, observations: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        observations: e.target.value,
+                      }))
+                    }
                     placeholder="Paciente apresenta melhora clínica satisfatória. Recomenda-se repouso relativo."
                   />
 
@@ -840,7 +959,12 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     label="Data da Emissão"
                     type="date"
                     value={form.issueDate}
-                    onChange={(e) => setForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        issueDate: e.target.value,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -848,7 +972,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
 
             {/* Sidebar */}
             <div className="space-y-4">
-              <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-24">
+              <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-24 no-print">
                 <h3 className="font-bold text-gray-900 mb-4">Ações</h3>
                 <div className="space-y-2">
                   <button
@@ -880,7 +1004,10 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
 
                 <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex gap-3">
-                    <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+                    <AlertCircle
+                      className="text-blue-600 flex-shrink-0 mt-0.5"
+                      size={20}
+                    />
                     <div>
                       <p className="font-semibold text-blue-900 text-sm mb-1">Dicas</p>
                       <ul className="text-xs text-blue-800 space-y-1">
@@ -891,7 +1018,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                     </div>
                   </div>
                 </div>
-
               </div>
             </div>
           </div>
@@ -921,7 +1047,11 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
               </button>
             </div>
 
-            <div ref={printRef} className="pb-8">
+            <div
+              ref={printRef}
+              id="print-area"
+              className="pb-8 certificate-container"
+            >
               <CertificatePreview data={form} />
             </div>
           </div>
@@ -944,7 +1074,7 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
                           Criado em: {h.createdAt} | Tipo: {h.certificateType}
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 no-print">
                         <button
                           onClick={() => {
                             setForm(h);
