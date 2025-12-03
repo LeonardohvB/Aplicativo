@@ -1,8 +1,12 @@
 // src/pages/CertificateNew.tsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { ArrowLeft, Eye, Download, Printer, Plus, AlertCircle } from "lucide-react";
+import { ArrowLeft, Download, Printer, Plus, AlertCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import CertificatePreview from "../components/Certificates/CertificatePreview";
+import { useConfirm } from "../providers/ConfirmProvider";
+import { useToast } from "../components/ui/Toast";
+
+
 
 /* ============================================================
    Tipos
@@ -51,7 +55,12 @@ type Props = {
   initialData?: Partial<CertificateFormData> & { patientId?: string; professionalId?: string };
 };
 
-type SavedRow = CertificateFormData & { id: string; createdAt: string };
+type SavedRow = CertificateFormData & {
+  id: string;
+  createdAt: string;
+  patientId?: string;
+  professionalId?: string;
+};
 
 /* ============================================================
    Helpers
@@ -402,8 +411,13 @@ function SummaryCard({
    Página
    ============================================================ */
 export default function CertificateNew({ onBack, onCreated, initialData }: Props) {
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "history">("form");
   const printRef = useRef<HTMLDivElement | null>(null);
+ const toast = useToast();
+
+
+
 
   const [patientId, setPatientId] = useState<string>(String((initialData as any)?.patientId || ""));
   const [professionalId, setProfessionalId] = useState<string>(String((initialData as any)?.professionalId || ""));
@@ -435,6 +449,8 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
 
   const [history, setHistory] = useState<SavedRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [savedCertificateId, setSavedCertificateId] = useState<string | null>(null);
+
 
   // Carrega html2pdf
   useEffect(() => {
@@ -486,37 +502,117 @@ useEffect(() => {
 }, []);
 
 
+useEffect(() => {
+  if (activeTab !== "history") return;
+
+  (async () => {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (!uid) return;
+
+    const { data, error } = await supabase
+      .from("certificates")
+      .select("id, created_at, data_json")
+      .eq("owner_id", uid)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setHistory(
+        data.map((row) => ({
+          id: row.id,
+          createdAt: new Date(row.created_at).toLocaleDateString("pt-BR"),
+          ...row.data_json,
+        }))
+      );
+    }
+  })();
+}, [activeTab]);
+
+
   // ===== Ações de impressão / PDF =====
-  const handlePrint = () => {
-    // garante que estamos na aba de preview
-    if (activeTab !== "preview") {
-      setActiveTab("preview");
-      setTimeout(() => {
-        if (printRef.current) {
-          window.print();
-        }
-      }, 80);
-      return;
-    }
+const handlePrint = async () => {
+  const ok = await confirm({
+    title: "Imprimir Atestado?",
+    description: (
+      <>
+        Ao confirmar, este atestado será <strong>salvo automaticamente</strong> no sistema
+        <br />
+        e, em seguida, a impressão será iniciada.
+      </>
+    ),
+    confirmText: "Confirmar",
+    cancelText: "Cancelar",
+    variant: "primary",
+  });
 
-    if (!printRef.current) {
-      alert("Abra a aba Visualizar para imprimir o atestado.");
-      return;
-    }
+  if (!ok) return; // usuário cancelou: não imprime e não salva
 
+  // 1. Salvar antes de imprimir
+  await handleSave();
+
+  // 2. Garantir que está na aba visualização
+  if (activeTab !== "preview") {
+    setActiveTab("preview");
+
+    setTimeout(() => {
+      if (printRef.current) window.print();
+    }, 100);
+
+    return;
+  }
+
+  // 3. Se já estiver na aba preview
+  if (printRef.current) {
     window.print();
-  };
+  }
+};
 
-  const handleDownloadPDF = () => {
+const saveCertificateToHistory = (id: string) => {
+  setHistory((prev) => [
+    {
+      id,
+      createdAt: new Date().toLocaleDateString("pt-BR"),
+      patientId,
+      professionalId,
+      ...form,
+    },
+    ...prev,
+  ]);
+};
+
+  const handleDownloadPDF = async () => {
+  const ok = await confirm({
+    title: "Gerar PDF do Atestado?",
+    description: (
+      <>
+        Ao confirmar, este atestado será <strong>salvo automaticamente</strong> no sistema
+        <br />
+        e o arquivo PDF será baixado.
+      </>
+    ),
+    confirmText: "Confirmar",
+    cancelText: "Cancelar",
+    variant: "primary",
+  });
+  
+    // Se cancelar, não salva e não baixa o PDF
+    if (!ok) return;
+
+    // 2) Salva no banco (registra que o atestado foi gerado)
+    const savedId = await handleSave();
+    if (savedId) setActiveTab("history");
+    if (!savedId) return;
+
+    // 3) Gera e baixa o PDF
     const w = window as any;
 
     const run = () => {
       if (!printRef.current) {
-        alert("Abra a aba Visualizar para gerar o PDF do atestado.");
+toast.error("Abra a visualização do atestado antes de gerar o PDF.");
         return;
       }
       if (!w.html2pdf) {
-        alert("Preparando módulo de PDF. Aguarde 1–2 segundos e tente novamente.");
+        toast.error("Preparando módulo de PDF. Aguarde 1–2 segundos e tente novamente.");
         return;
       }
 
@@ -531,12 +627,9 @@ useEffect(() => {
       w.html2pdf().set(opt).from(printRef.current).save();
     };
 
-    if (activeTab !== "preview") {
-      setActiveTab("preview");
-      setTimeout(run, 120);
-    } else {
-      run();
-    }
+    // Já estamos na tela de preview quando clica em Baixar PDF,
+    // então só chamamos direto:
+    run();
   };
 
   // Cabeçalho: voltar com comportamento inteligente (mantive se quiser usar depois)
@@ -580,10 +673,10 @@ useEffect(() => {
     return parts.join(" ");
   };
 
-  const handleSave = async () => {
+    const handleSave = async (): Promise<string | null> => {
     if (!form.patientName?.trim() || !form.professionalName?.trim() || !form.reason?.trim()) {
-      alert("Selecione paciente e profissional, e preencha Motivo/Descrição.");
-      return;
+     toast.error("Selecione paciente e profissional, e preencha Motivo/Descrição.");
+      return null;
     }
     setSaving(true);
     try {
@@ -591,38 +684,56 @@ useEffect(() => {
       const uid = auth.user?.id;
       if (!uid) throw new Error("Usuário não autenticado.");
 
-      const payload: any = {
-        owner_id: uid,
-        patient_id: patientId || null,
-        professional_id: professionalId || null,
-        title: buildDbTitle(form),
-        description: buildDbDescription(form),
-        issued_at: form.issueDate
-          ? new Date(form.issueDate).toISOString()
-          : new Date().toISOString(),
-        duration: buildDbDuration(form),
-        signature_url: null,
-        pdf_url: null,
-        notes: form.observations || null,
-      };
+ const payload = {
+  owner_id: uid,
+  patient_id: patientId || null,
+  professional_id: professionalId || null,
+
+  title: buildDbTitle(form),
+  description: buildDbDescription(form),
+
+  // Datas
+  issue_date: new Date(form.issueDate).toISOString(),
+  start_date: form.startDate || null,
+  end_date: form.endDate || null,
+
+  // Motivo / descrição resumida
+  reason_text: form.reason,
+
+  // Restrições
+  restrictions: form.restrictedActivities || null,
+
+  // Data json completa do atestado (opcional mas recomendado)
+  data_json: form,
+
+
+  // PDF vai ser salvo depois
+  pdf_url: null,
+
+  created_at: new Date().toISOString(),
+};
 
       const { data, error } = await supabase.from("certificates").insert(payload).select("id").single();
       if (error) throw error;
 
       const newId = data?.id as string;
-      setHistory((prev) => [
-        { id: newId, createdAt: new Date().toLocaleDateString("pt-BR"), ...form },
-        ...prev,
-      ]);
-      onCreated?.(newId);
-      alert("Atestado salvo com sucesso!");
+      setSavedCertificateId(newId);
+      saveCertificateToHistory(newId);
+onCreated?.(newId);
+setActiveTab("history");
+
+      // ⬅ sem alert aqui, para não ficar alerta duplicado
+      return newId;
     } catch (err: any) {
       console.warn("Erro ao salvar atestado:", err);
-      alert(err?.message || "Não foi possível salvar o atestado.");
+toast.error(err?.message || "Não foi possível salvar o atestado.");
+
     } finally {
       setSaving(false);
     }
+    return null;
   };
+
 
   return (
     <div className="flex flex-col h-full">
@@ -675,26 +786,31 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Tabs */}
+            {/* Tabs */}
       <div className="no-print flex gap-4 px-4 pt-3 border-b bg-white">
-        {(["form", "preview", "history"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === t
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            {t === "form"
-              ? "Novo Atestado"
-              : t === "preview"
-              ? "Visualizar"
-              : `Histórico (${history.length})`}
-          </button>
-        ))}
+        <button
+          onClick={() => setActiveTab("form")}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === "form"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          Novo Atestado
+        </button>
+
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === "history"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          Histórico ({history.length})
+        </button>
       </div>
+
 
       {/* Conteúdo */}
       <div className="p-4 overflow-y-auto flex-1 pb-28 sm:pb-20 lg:pb-10">
@@ -974,33 +1090,15 @@ useEffect(() => {
             <div className="space-y-4">
               <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-24 no-print">
                 <h3 className="font-bold text-gray-900 mb-4">Ações</h3>
-                <div className="space-y-2">
+                                <div className="space-y-2">
                   <button
                     onClick={() => setActiveTab("preview")}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                   >
-                    <Eye className="w-4 h-4" /> Visualizar
-                  </button>
-                  <button
-                    onClick={handleDownloadPDF}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-                  >
-                    <Download className="w-4 h-4" /> Baixar PDF
-                  </button>
-                  <button
-                    onClick={handlePrint}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-medium"
-                  >
-                    <Printer className="w-4 h-4" /> Imprimir
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 font-medium disabled:opacity-60"
-                  >
-                    <Plus className="w-4 h-4" /> {saving ? "Salvando..." : "Salvar"}
+                    <Plus className="w-4 h-4" /> Gerar Atestado
                   </button>
                 </div>
+
 
                 <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex gap-3">
@@ -1024,28 +1122,37 @@ useEffect(() => {
         )}
 
         {/* PREVIEW */}
-        {activeTab === "preview" && (
+                {activeTab === "preview" && (
           <div className="space-y-4">
             <div className="no-print flex gap-3 mb-6">
-              <button
-                onClick={() => setActiveTab("form")}
-                className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
-              >
-                Voltar
-              </button>
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
-              >
-                <Printer className="w-4 h-4" /> Imprimir
-              </button>
-              <button
-                onClick={handleDownloadPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-              >
-                <Download className="w-4 h-4" /> Baixar PDF
-              </button>
-            </div>
+  <button
+    onClick={() => setActiveTab("history")}
+    className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
+  >
+    Voltar
+  </button>
+
+  {/* Só mostra imprimir/baixar se o atestado AINDA NÃO FOI SALVO */}
+  {!savedCertificateId && (
+
+    <>
+      <button
+        onClick={handlePrint}
+        className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 font-medium"
+      >
+        <Printer className="w-4 h-4" /> Imprimir
+      </button>
+
+      <button
+        onClick={handleDownloadPDF}
+        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+      >
+        <Download className="w-4 h-4" /> Baixar PDF
+      </button>
+    </>
+  )}
+</div>
+
 
             <div
               ref={printRef}
@@ -1076,10 +1183,16 @@ useEffect(() => {
                       </div>
                       <div className="flex gap-2 no-print">
                         <button
-                          onClick={() => {
-                            setForm(h);
-                            setActiveTab("preview");
-                          }}
+ onClick={() => {
+  window.dispatchEvent(
+    new CustomEvent("certificate:view", {
+      detail: { id: h.id }
+    })
+  );
+}}
+
+
+
                           className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
                         >
                           Visualizar
