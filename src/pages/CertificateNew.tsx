@@ -1,5 +1,5 @@
 // src/pages/CertificateNew.tsx
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState,} from "react";
 import { ArrowLeft, Download, Printer, Plus, AlertCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import CertificatePreview from "../components/Certificates/CertificatePreview";
@@ -58,6 +58,7 @@ type Props = {
 type SavedRow = CertificateFormData & {
   id: string;
   createdAt: string;
+  createdAtTs: number;
   patientId?: string;
   professionalId?: string;
 };
@@ -439,8 +440,6 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
     daysOfAbsence: initialData?.daysOfAbsence ?? 1,
     observations: initialData?.observations || "",
     issueDate: initialData?.issueDate || new Date().toISOString().slice(0, 10),
-    isPaid: initialData?.isPaid ?? true,
-    requiresRest: initialData?.requiresRest ?? false,
     restrictedActivities: initialData?.restrictedActivities || "",
     includeSignature: initialData?.includeSignature ?? true,
     includeQRCode: initialData?.includeQRCode ?? false,
@@ -448,8 +447,15 @@ export default function CertificateNew({ onBack, onCreated, initialData }: Props
   }));
 
   const [history, setHistory] = useState<SavedRow[]>([]);
-  const [saving, setSaving] = useState(false);
   const [savedCertificateId, setSavedCertificateId] = useState<string | null>(null);
+  // 🔍 filtros e paginação
+const [search, setSearch] = useState("");
+const [dateRange, setDateRange] = useState("all");
+const [startDate, setStartDate] = useState("");
+const [endDate, setEndDate] = useState("");
+const [page, setPage] = useState(1);
+const itemsPerPage = 10;
+
 
 
   // Carrega html2pdf
@@ -517,13 +523,15 @@ useEffect(() => {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setHistory(
-        data.map((row) => ({
-          id: row.id,
-          createdAt: new Date(row.created_at).toLocaleDateString("pt-BR"),
-          ...row.data_json,
-        }))
-      );
+     setHistory(
+  data.map((row) => ({
+    id: row.id,
+    createdAt: new Date(row.created_at).toLocaleDateString("pt-BR"),
+    createdAtTs: new Date(row.created_at).getTime(), // 👈 ESTE NOME PRECISA SER EXATO
+    ...row.data_json,
+  }))
+);
+
     }
   })();
 }, [activeTab]);
@@ -531,6 +539,12 @@ useEffect(() => {
 
   // ===== Ações de impressão / PDF =====
 const handlePrint = async () => {
+  // ⛔ valida antes de abrir modal
+  if (!form.patientName?.trim() || !form.professionalName?.trim()) {
+    toast.error("Selecione paciente e profissional antes de imprimir.");
+    return;
+  }
+
   const ok = await confirm({
     title: "Imprimir Atestado?",
     description: (
@@ -545,26 +559,20 @@ const handlePrint = async () => {
     variant: "primary",
   });
 
-  if (!ok) return; // usuário cancelou: não imprime e não salva
+  if (!ok) return;
 
-  // 1. Salvar antes de imprimir
-  await handleSave();
+  // 1. salvar primeiro
+  const savedId = await handleSave();
+  if (!savedId) return;
 
-  // 2. Garantir que está na aba visualização
+  // 2. garantir preview visível antes de printar
   if (activeTab !== "preview") {
     setActiveTab("preview");
-
-    setTimeout(() => {
-      if (printRef.current) window.print();
-    }, 100);
-
+    setTimeout(() => window.print(), 150);
     return;
   }
 
-  // 3. Se já estiver na aba preview
-  if (printRef.current) {
-    window.print();
-  }
+  window.print();
 };
 
 const saveCertificateToHistory = (id: string) => {
@@ -572,6 +580,7 @@ const saveCertificateToHistory = (id: string) => {
     {
       id,
       createdAt: new Date().toLocaleDateString("pt-BR"),
+      createdAtTs: Date.now(),
       patientId,
       professionalId,
       ...form,
@@ -580,7 +589,13 @@ const saveCertificateToHistory = (id: string) => {
   ]);
 };
 
-  const handleDownloadPDF = async () => {
+ const handleDownloadPDF = async () => {
+  // ⛔ valida antes de abrir modal
+  if (!form.patientName?.trim() || !form.professionalName?.trim()) {
+    toast.error("Selecione paciente e profissional antes de gerar PDF.");
+    return;
+  }
+
   const ok = await confirm({
     title: "Gerar PDF do Atestado?",
     description: (
@@ -594,52 +609,29 @@ const saveCertificateToHistory = (id: string) => {
     cancelText: "Cancelar",
     variant: "primary",
   });
-  
-    // Se cancelar, não salva e não baixa o PDF
-    if (!ok) return;
 
-    // 2) Salva no banco (registra que o atestado foi gerado)
-    const savedId = await handleSave();
-    if (savedId) setActiveTab("history");
-    if (!savedId) return;
+  if (!ok) return;
 
-    // 3) Gera e baixa o PDF
-    const w = window as any;
+  const savedId = await handleSave();
+  if (!savedId) return;
 
-    const run = () => {
-      if (!printRef.current) {
-toast.error("Abra a visualização do atestado antes de gerar o PDF.");
-        return;
-      }
-      if (!w.html2pdf) {
-        toast.error("Preparando módulo de PDF. Aguarde 1–2 segundos e tente novamente.");
-        return;
-      }
+  const w = window as any;
+  if (!printRef.current || !w.html2pdf) {
+    toast.error("Abra a visualização antes de gerar PDF.");
+    return;
+  }
 
-      const opt = {
-        margin: 10,
-        filename: `Atestado_${(form.patientName || "Paciente").replace(/\s+/g, "_")}_${Date.now()}.pdf`,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
-      };
-
-      w.html2pdf().set(opt).from(printRef.current).save();
-    };
-
-    // Já estamos na tela de preview quando clica em Baixar PDF,
-    // então só chamamos direto:
-    run();
-  };
-
-  // Cabeçalho: voltar com comportamento inteligente (mantive se quiser usar depois)
-  const handleHeaderBack = useCallback(() => {
-    if (activeTab !== "form") {
-      setActiveTab("form");
-      return;
-    }
-    onBack();
-  }, [activeTab, onBack]);
+  w.html2pdf()
+    .set({
+      margin: 10,
+      filename: `Atestado_${(form.patientName || "Paciente").replace(/\s+/g, "_")}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    })
+    .from(printRef.current)
+    .save();
+};
 
   // Mapeamento -> DB
   const CERT_TYPES_LABEL_DB: Record<CertificateType, string> = {
@@ -651,10 +643,6 @@ toast.error("Abra a visualização do atestado antes de gerar o PDF.");
   };
   const buildDbTitle = (d: CertificateFormData) =>
     `${CERT_TYPES_LABEL_DB[d.certificateType] || "Atestado"} - ${d.patientName}`;
-  const buildDbDuration = (d: CertificateFormData) =>
-    ["afastamento", "incapacidade"].includes(d.certificateType)
-      ? `${d.daysOfAbsence ?? 1} dia${(d.daysOfAbsence ?? 1) > 1 ? "s" : ""}`
-      : null;
   const buildDbDescription = (d: CertificateFormData) => {
     const parts: string[] = [];
     parts.push(`Motivo: ${d.reason}.`);
@@ -664,8 +652,6 @@ toast.error("Abra a visualização do atestado antes de gerar o PDF.");
         `Período: ${isoToBR(d.startDate)} a ${isoToBR(d.endDate)}. Dias: ${d.daysOfAbsence ?? 1}.`
       );
       if (d.restrictedActivities) parts.push(`Restrições: ${d.restrictedActivities}.`);
-      if (d.requiresRest) parts.push(`Repouso obrigatório.`);
-      if (d.isPaid) parts.push(`Repouso remunerado.`);
     } else if (d.restrictedActivities) {
       parts.push(`Restrições: ${d.restrictedActivities}.`);
     }
@@ -678,7 +664,7 @@ toast.error("Abra a visualização do atestado antes de gerar o PDF.");
      toast.error("Selecione paciente e profissional, e preencha Motivo/Descrição.");
       return null;
     }
-    setSaving(true);
+    
     try {
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
@@ -700,9 +686,6 @@ toast.error("Abra a visualização do atestado antes de gerar o PDF.");
   // Motivo / descrição resumida
   reason_text: form.reason,
 
-  // Restrições
-  restrictions: form.restrictedActivities || null,
-
   // Data json completa do atestado (opcional mas recomendado)
   data_json: form,
 
@@ -719,7 +702,6 @@ toast.error("Abra a visualização do atestado antes de gerar o PDF.");
       const newId = data?.id as string;
       setSavedCertificateId(newId);
       saveCertificateToHistory(newId);
-onCreated?.(newId);
 setActiveTab("history");
 
       // ⬅ sem alert aqui, para não ficar alerta duplicado
@@ -729,11 +711,34 @@ setActiveTab("history");
 toast.error(err?.message || "Não foi possível salvar o atestado.");
 
     } finally {
-      setSaving(false);
+      
     }
     return null;
   };
 
+// =======================================
+// 🔎 FILTRAGEM + PAGINAÇÃO
+// =======================================
+const filtered = history.filter((h) => {
+  if (search && !h.patientName.toLowerCase().includes(search.toLowerCase()))
+    return false;
+
+  if (dateRange === "7") return h.createdAtTs >= Date.now() - 7 * 86400000;
+  if (dateRange === "30") return h.createdAtTs >= Date.now() - 30 * 86400000;
+
+  if (dateRange === "custom" && startDate && endDate) {
+    return (
+      h.createdAtTs >= new Date(startDate).getTime() &&
+      h.createdAtTs <= new Date(endDate).getTime()
+    );
+  }
+
+  return true;
+});
+
+
+const totalPages = Math.ceil(filtered.length / itemsPerPage);
+const pagedHistory = filtered.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
   return (
     <div className="flex flex-col h-full">
@@ -789,7 +794,41 @@ toast.error(err?.message || "Não foi possível salvar o atestado.");
             {/* Tabs */}
       <div className="no-print flex gap-4 px-4 pt-3 border-b bg-white">
         <button
-          onClick={() => setActiveTab("form")}
+  onClick={() => {
+    setActiveTab("form");
+
+    // limpa estado de atestado salvo
+    setSavedCertificateId(null);
+
+    // limpa seleção
+    setPatientId("");
+    setProfessionalId("");
+
+    // reseta o form, mantendo os dados fixos da clínica
+    setForm((prev) => ({
+      patientName: "",
+      patientCPF: "",
+      patientPhone: "",
+      patientBirthISO: "",
+      professionalName: "",
+      professionalSpecialty: "",
+      professionalCRM: "",
+      clinicName: prev.clinicName,       // mantém
+      clinicCNPJ: prev.clinicCNPJ,       // mantém
+      clinicLogoUrl: prev.clinicLogoUrl, // mantém
+      certificateType: "saude",
+      reason: "Consulta médica",
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: new Date().toISOString().slice(0, 10),
+      daysOfAbsence: 1,
+      observations: "",
+      issueDate: new Date().toISOString().slice(0, 10),
+      restrictedActivities: "",
+      includeSignature: true,
+      includeQRCode: false,
+    }));
+  }}
+
           className={`px-4 py-2 font-medium border-b-2 transition-colors ${
             activeTab === "form"
               ? "border-blue-600 text-blue-600"
@@ -997,20 +1036,31 @@ toast.error(err?.message || "Não foi possível salvar o atestado.");
                       }
                     />
                     <Field
-                      label="Dias de Ausência"
-                      type="number"
-                      min={1}
-                      value={String(form.daysOfAbsence ?? 1)}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          daysOfAbsence: Math.max(
-                            1,
-                            parseInt(e.target.value || "1", 10)
-                          ),
-                        }))
-                      }
-                    />
+  label="Dias de Ausência"
+  type="number"
+  min={1}
+  value={String(form.daysOfAbsence ?? 1)}
+  onChange={(e) => {
+    const val = Math.max(1, parseInt(e.target.value || "1", 10));
+    const start = form.startDate ? new Date(form.startDate + "T00:00:00") : null;
+
+    let newEnd = form.endDate;
+
+    // SE existe data de início, calcula automaticamente data fim
+    if (start && !isNaN(start.getTime())) {
+      const calc = new Date(start);
+      calc.setDate(calc.getDate() + (val - 1)); // diferença inclusiva
+      newEnd = calc.toISOString().slice(0, 10);
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      daysOfAbsence: val,
+      endDate: newEnd,
+    }));
+  }}
+/>
+
                   </div>
 
                   <Field
@@ -1024,39 +1074,6 @@ toast.error(err?.message || "Não foi possível salvar o atestado.");
                     }
                     placeholder="Ex: Trabalho pesado, Dirigir, Levantamento de peso..."
                   />
-
-                  <div className="flex items-center gap-6">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!form.requiresRest}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            requiresRest: e.target.checked,
-                          }))
-                        }
-                      />
-                      <span className="text-sm font-medium text-gray-700">
-                        Repouso obrigatório
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!form.isPaid}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            isPaid: e.target.checked,
-                          }))
-                        }
-                      />
-                      <span className="text-sm font-medium text-gray-700">
-                        Repouso remunerado
-                      </span>
-                    </label>
-                  </div>
 
                   <TextArea
                     label="Observações Adicionais"
@@ -1166,45 +1183,111 @@ toast.error(err?.message || "Não foi possível salvar o atestado.");
 
         {/* HISTORY */}
         {activeTab === "history" && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-900">Histórico de Atestados</h2>
-            {history.length === 0 ? (
-              <div className="text-sm text-gray-500">Nenhum atestado salvo ainda.</div>
-            ) : (
-              <div className="space-y-3">
-                {history.map((h) => (
-                  <div key={h.id} className="bg-white rounded-lg border p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-gray-900">{h.patientName}</div>
-                        <div className="text-xs text-gray-500">
-                          Criado em: {h.createdAt} | Tipo: {h.certificateType}
-                        </div>
-                      </div>
-                      <div className="flex gap-2 no-print">
-                        <button
- onClick={() => {
-  window.dispatchEvent(
-    new CustomEvent("certificate:view", {
-      detail: { id: h.id }
-    })
-  );
-}}
+  <div className="space-y-4">
+    <h2 className="text-xl font-bold text-gray-900">Histórico de Atestados</h2>
 
+    {/* 🔍 Busca + Filtro */}
+    <div className="flex flex-wrap items-center gap-3">
+      <input
+        type="text"
+        placeholder="Buscar paciente..."
+        value={search}
+        onChange={(e) => {
+          setPage(1); 
+          setSearch(e.target.value);
+        }}
+        className="w-full sm:w-64 px-3 py-2 border rounded-lg text-sm"
+      />
 
+      <select
+        value={dateRange}
+        onChange={(e) => {
+          setPage(1);
+          setDateRange(e.target.value);
+        }}
+        className="px-3 py-2 border rounded-lg text-sm"
+      >
+        <option value="all">Todos</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+        <option value="custom">Personalizado…</option>
+      </select>
+    </div>
 
-                          className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-                        >
-                          Visualizar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+    {dateRange === "custom" && (
+      <div className="flex gap-3">
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="px-3 py-2 border rounded-lg text-sm"
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="px-3 py-2 border rounded-lg text-sm"
+        />
+      </div>
+    )}
+
+    {pagedHistory.length === 0 ? (
+      <div className="text-sm text-gray-500">Nenhum atestado encontrado.</div>
+    ) : (
+      <div className="space-y-3">
+        {pagedHistory.map((h) => (
+          <div key={h.id} className="bg-white rounded-lg border p-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="font-bold text-gray-900">{h.patientName}</div>
+                <div className="text-xs text-gray-500">
+                  Criado em: {h.createdAt} | Tipo: {h.certificateType}
+                </div>
               </div>
-            )}
+
+              <button
+                onClick={() => {
+                  window.dispatchEvent(
+                    new CustomEvent("certificate:view", { detail: { id: h.id } })
+                  );
+                }}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              >
+                Visualizar
+              </button>
+            </div>
           </div>
-        )}
+        ))}
+      </div>
+    )}
+
+    {/* ▶ PAGINAÇÃO */}
+    {totalPages > 1 && (
+      <div className="flex justify-between items-center pt-4">
+        <button
+          disabled={page === 1}
+          onClick={() => setPage((p) => p - 1)}
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          ← Anterior
+        </button>
+
+        <span className="text-sm text-gray-600">
+          Página {page} de {totalPages}
+        </span>
+
+        <button
+          disabled={page === totalPages}
+          onClick={() => setPage((p) => p + 1)}
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          Próxima →
+        </button>
+      </div>
+    )}
+  </div>
+)}
+
       </div>
     </div>
   );

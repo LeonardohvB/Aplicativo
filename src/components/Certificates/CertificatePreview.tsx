@@ -95,32 +95,32 @@ const CertificatePreview = forwardRef<HTMLDivElement, Props>(({ data }, ref) => 
 
         {/* Main */}
         <div className="space-y-4 text-gray-800 leading-relaxed">
-          <p>
-            Compareceu a esta instituição em{" "}
-            <span className="font-bold underline">
-              {isoToBR(data.issueDate)}
-            </span>{" "}
-            para{" "}
-            <span className="font-bold underline">{data.reason}</span>.
-          </p>
+          {["afastamento", "incapacidade"].includes(data.certificateType) ? (
+  <>
+    <p>
+      O paciente esteve sob atendimento nesta instituição e necessita de
+      afastamento no período de{" "}
+      <span className="font-bold underline">{isoToBR(data.startDate)}</span> a{" "}
+      <span className="font-bold underline">{isoToBR(data.endDate)}</span>, totalizando{" "}
+      <span className="font-bold underline">
+{(data.daysOfAbsence ?? 1)} dia{(data.daysOfAbsence ?? 1) > 1 ? "s" : ""}
+      </span>.
+    </p>
 
-          {/* Bloco específico de afastamento/incapacidade */}
-          {["afastamento", "incapacidade"].includes(data.certificateType) && (
-            <>
-              <p>
-                O paciente necessita de afastamento de suas atividades no período de{" "}
-                <span className="font-bold underline">{isoToBR(data.startDate)}</span> a{" "}
-                <span className="font-bold underline">{isoToBR(data.endDate)}</span>, totalizando{" "}
-                <span className="font-bold underline">{data.daysOfAbsence ?? 1} dias</span>.
-              </p>
-
-              {data.requiresRest ? (
-                <p>
-                  <span className="font-bold">REPOUSO OBRIGATÓRIO</span> é necessário durante o período de afastamento.
-                </p>
-              ) : null}
-            </>
-          )}
+    {data.requiresRest && (
+      <p>
+        Durante este período, é indicado <strong>repouso obrigatório</strong>.
+      </p>
+    )}
+  </>
+) : (
+  <p>
+    Compareceu a esta instituição em{" "}
+    <span className="font-bold underline">{isoToBR(data.issueDate)}</span>{" "}
+    para{" "}
+    <span className="font-bold underline">{data.reason}</span>.
+  </p>
+)}
 
           {/* ⚠️ Agora SEMPRE mostramos se houver conteúdo */}
           {data.restrictedActivities ? (
