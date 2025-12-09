@@ -1,6 +1,6 @@
 // src/components/Patients/PDFMedicalReport.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Eye, Printer } from "lucide-react";
+import { useEffect, useMemo, useRef, } from "react";
+import { Download, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -160,12 +160,12 @@ function sanitizeObservations(obs?: string | null, s?: string, o?: string) {
 
 export default function PDFMedicalReport({ clinic, patient, consultations }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
-  const [viewMode, setViewMode] = useState<"preview" | "print">("preview");
 
   useEffect(() => { ensureHtml2Pdf().catch(() => {}); }, []);
 
  const counters = useMemo(() => {
-  const isSinglePdf = consultations.length === 1;
+ const isSinglePdf = clinic.professionalCount != null;
+
 
   const total = isSinglePdf
     ? clinic.professionalCount ?? 1
@@ -228,25 +228,20 @@ export default function PDFMedicalReport({ clinic, patient, consultations }: Pro
 
       {/* Controles */}
       <div className="no-print mb-4 flex gap-3 justify-end">
-        <button
-          onClick={() => setViewMode("preview")}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-            viewMode === "preview" ? "bg-blue-600 text-white" : "bg-white border"
-          }`}
-        >
-          <Eye size={18} /> Visualizar
-        </button>
+        
         <button
           onClick={() => window.print()}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-white border"
+          title="Imprimir"
         >
-          <Printer size={18} /> Imprimir
+          <Printer size={18} />
         </button>
         <button
           onClick={generatePDF}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-green-600 text-white"
+          title="Baixar"
         >
-          <Download size={18} /> Baixar PDF
+          <Download size={18} />
         </button>
       </div>
 

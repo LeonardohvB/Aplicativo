@@ -1,6 +1,6 @@
 // src/pages/CertificateNew.tsx
 import React, { useEffect, useRef, useState,} from "react";
-import { ArrowLeft, Download, Printer, Plus, AlertCircle } from "lucide-react";
+import { ArrowLeft, Download, Printer, Plus, AlertCircle, Eye } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import CertificatePreview from "../components/Certificates/CertificatePreview";
 import { useConfirm } from "../providers/ConfirmProvider";
@@ -664,6 +664,43 @@ const saveCertificateToHistory = (id: string) => {
      toast.error("Selecione paciente e profissional, e preencha Motivo/Descrição.");
       return null;
     }
+
+    // ============================================================
+// ⚠️ GERA PDF E SALVA NO STORAGE + DB
+// ============================================================
+const generateAndUploadPDF = async (certId: string) => {
+  const w = window as any;
+  if (!printRef.current || !w.html2pdf) return;
+
+  // 1. GERAR PDF COMO BLOB
+  const pdfBlob = await w.html2pdf()
+    .set({
+      margin: 10,
+      filename: `Atestado_${(form.patientName || "Paciente").replace(/\s+/g, "_")}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    })
+    .from(printRef.current)
+    .outputPdf("blob");
+
+  // 2. UPLOAD NO STORAGE
+  const storagePath = `certificates/${certId}.pdf`;
+  await supabase.storage.from("certificates").upload(storagePath, pdfBlob, {
+    contentType: "application/pdf",
+    upsert: true,
+  });
+
+  // 3. PUBLIC URL
+  const { data } = supabase.storage.from("certificates").getPublicUrl(storagePath);
+  const publicUrl = data.publicUrl;
+
+  // 4. ATUALIZA CERTIFICADO
+  await supabase.from("certificates")
+    .update({ pdf_url: publicUrl })
+    .eq("id", certId);
+};
+
     
     try {
       const { data: auth } = await supabase.auth.getUser();
@@ -700,12 +737,17 @@ const saveCertificateToHistory = (id: string) => {
       if (error) throw error;
 
       const newId = data?.id as string;
-      setSavedCertificateId(newId);
-      saveCertificateToHistory(newId);
+setSavedCertificateId(newId);
+saveCertificateToHistory(newId);
+
+// ⚠️ GERAR E SUBIR PDF AGORA
+await generateAndUploadPDF(newId);
+
+// depois volta para histórico
 setActiveTab("history");
 
-      // ⬅ sem alert aqui, para não ficar alerta duplicado
-      return newId;
+return newId;
+
     } catch (err: any) {
       console.warn("Erro ao salvar atestado:", err);
 toast.error(err?.message || "Não foi possível salvar o atestado.");
@@ -852,8 +894,7 @@ const pagedHistory = filtered.slice((page - 1) * itemsPerPage, page * itemsPerPa
 
 
       {/* Conteúdo */}
-      <div className="p-4 overflow-y-auto flex-1 pb-28 sm:pb-20 lg:pb-10">
-        {/* FORM */}
+<div className="p-4 overflow-y-auto flex-1 pb-[85px] sm:pb-[95px] lg:pb-[110px]">        {/* FORM */}
         {activeTab === "form" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Coluna principal */}
@@ -1128,7 +1169,7 @@ const pagedHistory = filtered.slice((page - 1) * itemsPerPage, page * itemsPerPa
                       <ul className="text-xs text-blue-800 space-y-1">
                         <li>• Selecione paciente e profissional pela busca</li>
                         <li>• Verifique os dados antes de imprimir</li>
-                        <li>• Guarde cópia para seus registros</li>
+                        <li>• A cópia será gerada automaticamente para seus registros</li>
                       </ul>
                     </div>
                   </div>
@@ -1246,15 +1287,17 @@ const pagedHistory = filtered.slice((page - 1) * itemsPerPage, page * itemsPerPa
               </div>
 
               <button
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent("certificate:view", { detail: { id: h.id } })
-                  );
-                }}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-              >
-                Visualizar
-              </button>
+  onClick={() =>
+    window.dispatchEvent(
+      new CustomEvent("certificate:view", { detail: { id: h.id } })
+    )
+  }
+  title="Visualizar documento"
+  className="w-9 h-9 flex items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-700"
+>
+  <Eye className="w-5 h-5" />
+</button>
+
             </div>
           </div>
         ))}
