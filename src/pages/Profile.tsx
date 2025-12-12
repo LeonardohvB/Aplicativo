@@ -366,27 +366,13 @@ if (tErr) throw tErr;
       };
       
 
-      const trySave = async (payload: any) => {
-        if (hasRow) {
-          return supabase.from("profiles").update(payload).eq("id", uid);
-        }
-        return supabase
-          .from("profiles")
-          .insert([{ id: uid, ...payload }]);
-      };
+      const { error: saveErr } = await supabase
+  .from("profiles")
+  .update(basePayload)
+  .eq("id", uid);
 
-      let { error: saveErr } = await trySave(basePayload);
+if (saveErr) throw saveErr;
 
-
-      if (
-        saveErr &&
-        (saveErr.code === "42703" ||
-          /column .* does not exist/i.test(saveErr.message))
-      ) {
-        const r2 = await trySave(basePayload);
-        saveErr = r2.error;
-      }
-      if (saveErr) throw saveErr;
 
       // salvar dados da clínica (tenant)
 const tenantId = dbRow?.tenant?.id;
