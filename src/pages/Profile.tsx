@@ -119,7 +119,6 @@ export default function Profile({ onBack }: Props) {
   });
 
   const [dbRow, setDbRow] = useState<any | null>(null);
-  const [hasRow, setHasRow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -167,7 +166,7 @@ export default function Profile({ onBack }: Props) {
         if (e1 && e1.code !== "PGRST116") console.warn("profile base error:", e1);
 
    // tenant (clínica)
-let tenant: any = {};
+let tenant: any = null;
 
 if (base?.tenant_id) {
   const { data: tData, error: tErr } = await supabase
@@ -176,7 +175,7 @@ if (base?.tenant_id) {
     .eq("id", base.tenant_id)
     .maybeSingle();
 
-  if (!tErr) tenant = tData ?? {};
+  if (!tErr && tData) tenant = tData;
   else console.warn("tenant load error:", tErr);
 }
 
@@ -189,7 +188,7 @@ const merged = {
 
 
         if (alive) {
-          setHasRow(!!base);
+          
           setDbRow(merged);
 
           setForm({
@@ -366,12 +365,18 @@ if (tErr) throw tErr;
       };
       
 
-      const { error: saveErr } = await supabase
+if (!dbRow?.tenant?.id) {
+  throw new Error("Tenant não carregado. Recarregue a página.");
+}
+
+const { error: saveErr } = await supabase
   .from("profiles")
   .update(basePayload)
   .eq("id", uid);
 
 if (saveErr) throw saveErr;
+
+
 
 
       // salvar dados da clínica (tenant)
@@ -411,7 +416,7 @@ if (tenantId) {
 
 }));
 
-      setHasRow(true);
+      
 
       window.dispatchEvent(
         new CustomEvent("profile:saved", {
