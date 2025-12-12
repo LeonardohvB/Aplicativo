@@ -62,6 +62,11 @@ function hasFirstAndLastName(full: string) {
   return strong.length >= 2;
 }
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.toLowerCase());
+}
+
+
 /* Conselhos */
 const COUNCILS = [
   "CRM",
@@ -101,6 +106,8 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
   const [name, setName] = useState("");
   const [cpf, setCpf] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+
 
   const [council, setCouncil] = useState("CRM");
   const [customCouncil, setCustomCouncil] = useState("");
@@ -130,6 +137,10 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
     if (!isValidCell(phone))
       next.phone = "Informe 11 dígitos (DDD + 9).";
 
+    if (!isValidEmail(email))
+      next.email = "Informe um e-mail válido.";
+
+
     const chosen = council === "OUTRO"
       ? (customCouncil || "").toUpperCase()
       : council;
@@ -150,12 +161,14 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
     setSaving(true);
     try {
       await addProfessional({
-        name: name.trim(),
-        cpf: onlyDigits(cpf),
-        specialty,
-        phone: onlyDigits(phone),
-        registrationCode,
-      } as any);
+  name: name.trim(),
+  email: email.trim().toLowerCase(),
+  cpf: onlyDigits(cpf),
+  specialty,
+  phone: onlyDigits(phone),
+  registrationCode,
+} as any);
+
 
       await refetch();
       onBack();
@@ -256,6 +269,29 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
                     <p className="text-red-600 text-xs mt-1">{errors.phone}</p>
                   )}
                 </div>
+
+                {/* E-mail */}
+<div>
+  <label className="text-sm font-medium text-gray-700">
+    E-mail profissional
+  </label>
+  <input
+    type="email"
+    value={email}
+    onChange={(e) => {
+      setEmail(e.target.value.toLowerCase().trim());
+      setErrors((s: any) => ({ ...s, email: undefined }));
+    }}
+    className={`mt-1 w-full rounded-lg border px-3 py-2 ${
+      errors.email ? "border-red-400" : "border-gray-300"
+    }`}
+    placeholder="email@clinica.com"
+  />
+  {errors.email && (
+    <p className="text-red-600 text-xs mt-1">{errors.email}</p>
+  )}
+</div>
+
 
                 {/* Registro */}
                 <div>

@@ -1,14 +1,9 @@
 // src/lib/ensureProfile.ts
 import { supabase } from './supabase'
+import { v4 as uuidv4 } from 'uuid'
 
 let ensureOnce: Promise<any> | null = null
 
-/**
- * Garante que exista uma linha em `profiles` para o usuário logado.
- * - Usa UPSERT para evitar violação de chave única.
- * - É idempotente (roda no máx. 1x por sessão).
- * - Sempre trata erros e nunca explode a UI.
- */
 export function ensureProfile() {
   if (ensureOnce) return ensureOnce
 
@@ -18,7 +13,7 @@ export function ensureProfile() {
       const user = auth?.user
       if (!user) return null
 
-      // Tenta buscar
+      // 1️⃣ Já existe profile por ID?
       const { data: found, error: selErr } = await supabase
         .from('profiles')
         .select('*')
@@ -27,11 +22,40 @@ export function ensureProfile() {
 
       if (!selErr && found) return found
 
-      // Não existe → UPSERT mínimo (só id). Se sua tabela exigir outros NOT NULL SEM default,
-      // me diga os nomes que incluímos aqui.
-      const { data: upserted, error: upErr } = await supabase
+      // 2️⃣ Existe profile com esse email? (caso profissional criado antes)
+      const { data: byEmail } = await supabase
         .from('profiles')
-        .upsert({ id: user.id }, { onConflict: 'id' })
+        .select('*')
+        .eq('email', user.email)
+        .maybeSingle()
+
+      if (byEmail) {
+        // Vincula Auth ao profile existente
+        const { data: linked } = await supabase
+          .from('profiles')
+          .update({ id: user.id })
+          .eq('email', user.email)
+          .select('*')
+          .single()
+
+        return linked
+      }
+
+      // 3️⃣ NÃO existe → é OWNER → cria tenant
+      const tenant_id = uuidv4()
+
+      const { data: created, error: upErr } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            email: user.email,
+            tenant_id,
+            role: 'owner',
+            full_name: user.user_metadata?.full_name ?? null,
+          },
+          { onConflict: 'id' }
+        )
         .select('*')
         .single()
 
@@ -39,7 +63,8 @@ export function ensureProfile() {
         console.warn('ensureProfile upsert error:', upErr)
         return null
       }
-      return upserted
+
+      return created
     } catch (e) {
       console.warn('ensureProfile fatal:', e)
       return null
