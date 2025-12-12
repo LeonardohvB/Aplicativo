@@ -96,9 +96,10 @@ type Form = {
   clinicEmail: string;
 };
 
-const BASE_COLS = "id, name, cpf, phone, email";
-const CLINIC_COLS =
-  "clinic_name, clinic_cnpj, clinic_address, clinic_phone, clinic_email, clinic_logo_path";
+const BASE_COLS = "id, name, cpf, phone, email, tenant_id";
+const TENANT_COLS =
+  "id, name, cnpj, address, phone, email, logo_path";
+
 
 const BUCKET = "clinic-logos"; // bucket sugerido
 
@@ -165,37 +166,49 @@ export default function Profile({ onBack }: Props) {
           .maybeSingle();
         if (e1 && e1.code !== "PGRST116") console.warn("profile base error:", e1);
 
-        // clínica
-        let clinic: any = {};
-        const { data: cData, error: e2 } = await supabase
-          .from("profiles")
-          .select(CLINIC_COLS)
-          .eq("id", uid)
-          .maybeSingle();
-        if (!e2) clinic = cData ?? {};
-        else if (e2.code !== "PGRST116" && e2.code !== "42703") {
-          console.warn("clinic cols error:", e2);
-        }
+   // tenant (clínica)
+let tenant: any = {};
 
-        const merged = { ...(base ?? {}), ...(clinic ?? {}) };
+if (base?.tenant_id) {
+  const { data: tData, error: tErr } = await supabase
+    .from("tenants")
+    .select(TENANT_COLS)
+    .eq("id", base.tenant_id)
+    .maybeSingle();
+
+  if (!tErr) tenant = tData ?? {};
+  else console.warn("tenant load error:", tErr);
+}
+
+
+const merged = {
+  ...(base ?? {}),
+  tenant: tenant ?? null,
+};
+
+
 
         if (alive) {
           setHasRow(!!base);
           setDbRow(merged);
 
           setForm({
-            name: titleAllWordsFinal(merged?.name ?? ""),
-            cpf: formatCPF(merged?.cpf ?? ""),
-            phone: formatBRCell(merged?.phone ?? ""),
-            email: merged?.email ?? auth.user?.email ?? "",
-            clinicName: merged?.clinic_name ?? "",
-            clinicCnpj: formatCNPJ(merged?.clinic_cnpj ?? ""),
-            clinicAddress: merged?.clinic_address ?? "",
-            clinicPhone: formatBRCell(merged?.clinic_phone ?? ""),
-            clinicEmail: merged?.clinic_email ?? "",
-          });
+  name: titleAllWordsFinal(merged?.name ?? ""),
+  cpf: formatCPF(merged?.cpf ?? ""),
+  phone: formatBRCell(merged?.phone ?? ""),
+  email: merged?.email ?? auth.user?.email ?? "",
 
-          const path = merged?.clinic_logo_path ?? null;
+  clinicName: merged?.tenant?.name ?? "",
+clinicCnpj: formatCNPJ(merged?.tenant?.cnpj ?? ""),
+clinicAddress: merged?.tenant?.address ?? "",
+clinicPhone: formatBRCell(merged?.tenant?.phone ?? ""),
+clinicEmail: merged?.tenant?.email ?? "",
+
+});
+
+
+          const path = merged?.tenant?.logo_path ?? null;
+
           const url = publicUrlFromPath(path);
           setLogoPath(path);
           setLogoUrl(url);
@@ -273,31 +286,18 @@ export default function Profile({ onBack }: Props) {
       if (logoPath && logoPath !== path) {
         await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
       }
+const tenantId = dbRow?.tenant?.id;
 
-      const payload: any = { clinic_logo_path: path };
-      let saveErr: any = null;
-      if (hasRow) {
-        const { error } = await supabase
-          .from("profiles")
-          .update(payload)
-          .eq("id", uid);
-        saveErr = error;
-      } else {
-        const { error } = await supabase
-          .from("profiles")
-          .insert([{ id: uid, ...payload }]);
-        saveErr = error;
-      }
-      if (
-        saveErr &&
-        (saveErr.code === "42703" ||
-          /column .* does not exist/i.test(saveErr.message))
-      ) {
-        // ignora falta de coluna
-      } else if (saveErr) {
-        throw saveErr;
-      }
+if (!tenantId) throw new Error("Tenant não encontrado");
 
+const { error: tErr } = await supabase
+  .from("tenants")
+  .update({ logo_path: path })
+  .eq("id", tenantId);
+
+if (tErr) throw tErr;
+
+       
       const url = publicUrlFromPath(path);
       setLogoPath(path);
       setLogoUrl(url);
@@ -321,22 +321,17 @@ export default function Profile({ onBack }: Props) {
         await supabase.storage.from(BUCKET).remove([logoPath]).catch(() => {});
       }
 
-      const payload: any = { clinic_logo_path: null };
-      let saveErr: any = null;
-      const { error: updErr } = await supabase
-        .from("profiles")
-        .update(payload)
-        .eq("id", uid);
-      saveErr = updErr;
-      if (
-        saveErr &&
-        (saveErr.code === "42703" ||
-          /column .* does not exist/i.test(saveErr.message))
-      ) {
-        // ignora falta de coluna
-      } else if (saveErr) {
-        throw saveErr;
-      }
+      const tenantId = dbRow?.tenant?.id;
+
+if (!tenantId) throw new Error("Tenant não encontrado");
+
+const { error: tErr } = await supabase
+  .from("tenants")
+  .update({ logo_path: null })
+  .eq("id", tenantId);
+
+if (tErr) throw tErr;
+
 
       setLogoPath(null);
       setLogoUrl(null);
@@ -369,16 +364,7 @@ export default function Profile({ onBack }: Props) {
         phone: keepOr(onlyDigits(form.phone), dbRow?.phone),
         email: keepOr(form.email, dbRow?.email),
       };
-      const clinicPayload = {
-        clinic_name: keepOr(
-          titleAllWordsFinal(form.clinicName),
-          dbRow?.clinic_name
-        ),
-        clinic_cnpj: keepOr(onlyDigits(form.clinicCnpj), dbRow?.clinic_cnpj),
-        clinic_address: keepOr(form.clinicAddress, dbRow?.clinic_address),
-        clinic_phone: keepOr(onlyDigits(form.clinicPhone), dbRow?.clinic_phone),
-        clinic_email: keepOr(form.clinicEmail, dbRow?.clinic_email),
-      };
+      
 
       const trySave = async (payload: any) => {
         if (hasRow) {
@@ -389,10 +375,8 @@ export default function Profile({ onBack }: Props) {
           .insert([{ id: uid, ...payload }]);
       };
 
-      let { error: saveErr } = await trySave({
-        ...basePayload,
-        ...clinicPayload,
-      });
+      let { error: saveErr } = await trySave(basePayload);
+
 
       if (
         saveErr &&
@@ -404,12 +388,43 @@ export default function Profile({ onBack }: Props) {
       }
       if (saveErr) throw saveErr;
 
+      // salvar dados da clínica (tenant)
+const tenantId = dbRow?.tenant?.id;
+
+
+if (tenantId) {
+ const tenantPayload = {
+  name: keepOr(titleAllWordsFinal(form.clinicName), dbRow?.tenant?.name),
+  cnpj: keepOr(onlyDigits(form.clinicCnpj), dbRow?.tenant?.cnpj),
+  address: keepOr(form.clinicAddress, dbRow?.tenant?.address),
+  phone: keepOr(onlyDigits(form.clinicPhone), dbRow?.tenant?.phone),
+  email: keepOr(form.clinicEmail, dbRow?.tenant?.email),
+};
+
+
+  const { error: tErr } = await supabase
+    .from("tenants")
+    .update(tenantPayload)
+    .eq("id", tenantId);
+
+  if (tErr) throw tErr;
+}
+
+
       setDbRow((prev: any) => ({
-        id: uid,
-        ...(prev ?? {}),
-        ...basePayload,
-        ...clinicPayload,
-      }));
+  ...(prev ?? {}),
+  ...basePayload,
+ tenant: {
+  ...(prev?.tenant ?? {}),
+  name: titleAllWordsFinal(form.clinicName),
+  cnpj: onlyDigits(form.clinicCnpj),
+  address: form.clinicAddress,
+  phone: onlyDigits(form.clinicPhone),
+  email: form.clinicEmail,
+},
+
+}));
+
       setHasRow(true);
 
       window.dispatchEvent(
