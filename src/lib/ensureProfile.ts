@@ -1,6 +1,5 @@
 // src/lib/ensureProfile.ts
 import { supabase } from './supabase'
-import { v4 as uuidv4 } from 'uuid'
 
 let ensureOnce: Promise<any> | null = null
 
@@ -41,8 +40,14 @@ export function ensureProfile() {
         return linked
       }
 
-      // 3️⃣ NÃO existe → é OWNER → cria tenant
-      const tenant_id = uuidv4()
+      // 3️⃣ Caso contrário, cria novo profile (com papel profissional)
+      const role = user.user_metadata?.role ?? 'professional' // Certifique-se de que o papel seja sempre 'professional'
+      const tenant_id = user.user_metadata?.tenant_id ?? null
+
+      if (!tenant_id) {
+        console.warn('ensureProfile: tenant_id ausente no metadata')
+        return null
+      }
 
       const { data: created, error: upErr } = await supabase
         .from('profiles')
@@ -51,7 +56,7 @@ export function ensureProfile() {
             id: user.id,
             email: user.email,
             tenant_id,
-            role: 'owner',
+            role, // Define role corretamente
             full_name: user.user_metadata?.full_name ?? null,
           },
           { onConflict: 'id' }
@@ -65,6 +70,7 @@ export function ensureProfile() {
       }
 
       return created
+
     } catch (e) {
       console.warn('ensureProfile fatal:', e)
       return null

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useProfessionals } from "../hooks/useProfessionals";
 import { titleAllWordsLive, titleAllWordsFinal } from "../lib/strings";
+import { supabase } from "../lib/supabase";
 
 /* ========= Helpers ========= */
 
@@ -107,6 +108,8 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
   const [cpf, setCpf] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [sendInvite, setSendInvite] = useState(false);
+
 
 
   const [council, setCouncil] = useState("CRM");
@@ -157,18 +160,83 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
     }
 
     const registrationCode = `${chosen} - ${regNumber.trim()}`;
+const {
+  data: { user },
+  error: authError,
+} = await supabase.auth.getUser();
+
+if (authError || !user) {
+  throw new Error("Usuário não autenticado.");
+}
+
+const { data: ownerProfile, error: profileError } = await supabase
+  .from("profiles")
+  .select("tenant_id")
+  .eq("id", user.id)
+  .single();
+
+if (profileError || !ownerProfile?.tenant_id) {
+  throw new Error("Não foi possível identificar a clínica do usuário.");
+}
 
     setSaving(true);
     try {
-      await addProfessional({
+   await addProfessional({
   name: name.trim(),
   email: email.trim().toLowerCase(),
   cpf: onlyDigits(cpf),
   specialty,
   phone: onlyDigits(phone),
   registrationCode,
+  tenant_id: ownerProfile.tenant_id, // ✅ AQUI
 } as any);
 
+
+// ===================================
+// ENVIO DE CONVITE (APENAS SE MARCADO)
+// ===================================
+if (sendInvite) {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuário não autenticado.");
+  }
+
+  // 🔑 BUSCA O TENANT REAL DO OWNER
+  const { data: ownerProfile, error: profileError } = await supabase
+    .from("profiles")
+    .select("tenant_id")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !ownerProfile?.tenant_id) {
+    throw new Error("Não foi possível identificar a clínica do usuário.");
+  }
+
+  const { data: invite, error: inviteError } = await supabase
+    .from("invites")
+    .insert({
+      email: email.trim().toLowerCase(),
+      tenant_id: ownerProfile.tenant_id,
+      invited_by: user.id,
+      expires_at: new Date(
+        Date.now() + 3 * 24 * 60 * 60 * 1000
+      ),
+    })
+    .select("token")
+    .single();
+
+  if (inviteError || !invite) {
+    throw new Error("Erro ao criar convite.");
+  }
+
+  const inviteLink = `${window.location.origin}/invite?token=${invite.token}`;
+
+  alert(`Convite criado com sucesso:\n\n${inviteLink}`);
+}
 
       await refetch();
       onBack();
@@ -291,6 +359,20 @@ export default function ProfessionalNew({ onBack }: { onBack: () => void }) {
     <p className="text-red-600 text-xs mt-1">{errors.email}</p>
   )}
 </div>
+
+<div className="flex items-center gap-3 pt-1">
+  <input
+    id="sendInvite"
+    type="checkbox"
+    checked={sendInvite}
+    onChange={(e) => setSendInvite(e.target.checked)}
+    className="h-4 w-4"
+  />
+  <label htmlFor="sendInvite" className="text-sm text-gray-700">
+    Enviar convite de acesso para este profissional
+  </label>
+</div>
+
 
 
                 {/* Registro */}

@@ -18,6 +18,7 @@ import LiveEncounter from "./pages/LiveEncounter";
 import { ConfirmProvider } from "./providers/ConfirmProvider";
 import ProfessionalsArchived from "./pages/ProfessionalsArchived";
 import { ToastContainer } from "./components/ui/Toast";
+import Invite from "./pages/Invite";
 
 // Atestados
 import CertificateNew from "./pages/CertificateNew";
@@ -218,6 +219,14 @@ export default function App() {
       </div>
     );
   }
+
+  // ===============================
+// ROTA PÚBLICA: /invite
+// ===============================
+const isInviteRoute = window.location.pathname === "/invite";
+if (isInviteRoute) {
+  return <Invite />;
+}
 
   if (!user) return <LoginGate />;
 
